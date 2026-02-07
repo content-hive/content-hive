@@ -71,19 +71,27 @@ class PluginManager:
             return False
 
     def _install_dependencies(self, plugin_id):
-        """Install plugin dependencies from requirements.txt"""
-        requirements_file = self.plugins_dir / plugin_id / "requirements.txt"
-    
-        if not requirements_file.exists():
+        """Install plugin dependencies from manifest.json"""
+        record = self.plugins.get(plugin_id)
+        if not record or not record.manifest:
             return True
-    
+        
+        dependencies = record.manifest.get("dependencies", {})
+        if not dependencies:
+            return True
+        
         try:
-            self.context.logger.info(f"Plugins[Dependencies]: {plugin_id} - Installing from {requirements_file}")
+            self.context.logger.info(f"Plugins[Dependencies]: {plugin_id} - Installing {len(dependencies)} packages")
+            
+            packages = [f"{pkg}{ver}" for pkg, ver in dependencies.items()]
+            
             subprocess.check_call([
-                sys.executable, "-m", "pip", "install", 
-                "-r", str(requirements_file), "--quiet",
+                sys.executable, "-m", "pip", "install",
+                *packages,
+                "--quiet",
                 "--root-user-action=ignore"
             ])
+            
             self.context.logger.info(f"Plugins[Dependencies]: {plugin_id} - Installed successfully")
             return True
         except subprocess.CalledProcessError as e:
