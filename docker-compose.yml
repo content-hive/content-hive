@@ -1,0 +1,11 @@
+services:
+  content-hive:
+    build: .
+    container_name: content-hive
+    ports:
+      - "6123:6123"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./plugins:/plugins
+    restart: unless-stopped
