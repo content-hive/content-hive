@@ -186,3 +186,17 @@ class PluginManager:
                 self.context.logger.error(f"Error checking if {plugin_id} can parse URL: {e}")
         
         return None, None
+    
+
+"""
+Plugin Manager Singleton
+"""
+
+_plugin_manager = None
+
+def set_plugin_manager(manager: PluginManager):
+    global _plugin_manager
+    _plugin_manager = manager
+
+def get_plugin_manager():
+    return _plugin_manager

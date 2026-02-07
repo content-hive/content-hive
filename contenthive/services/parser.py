@@ -5,9 +5,9 @@ Parser service for fetching and parsing URL content.
 from typing import Optional
 from pydantic import HttpUrl
 from contenthive.logger import logger
-from contenthive.main import get_plugin_manager
 from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo
 from contenthive.database.ParserDAO import parserDAO
+from contenthive.plugins.manager import get_plugin_manager
 
 class ParserService:
     """
@@ -37,7 +37,8 @@ class ParserService:
                     result = parser.parse(str(url))
                     if result:
                         logger.info(f"Successfully parsed content from URL: {url} using plugin: {plugin_id}")
-                        return parserDAO.save_parse_result(result)
+                        with parserDAO as dao:
+                            return dao.save_parse_result(result)
         except Exception as e:
             logger.error(f"Error fetching content from URL {url}: {e}")
             raise
@@ -48,7 +49,8 @@ class ParserService:
         Fetch contents from the database.
         """
         try:
-            results = parserDAO.list_parse_results(platform_id=platform_id, author_id=author_id)
+            with parserDAO as dao:
+                results = dao.list_parse_results(platform_id=platform_id, author_id=author_id)
             return results
         except Exception as e:
             logger.error(f"Error fetching contents from the database: {e}")
@@ -59,8 +61,9 @@ class ParserService:
         Fetch platforms from the database.
         """
         try:
-            platforms = parserDAO.list_platforms()
-            return platforms
+            with parserDAO as dao:
+                platforms = dao.list_platforms()
+                return platforms
         except Exception as e:
             logger.error(f"Error fetching platforms from the database: {e}")
             raise
@@ -70,8 +73,9 @@ class ParserService:
         Fetch authors from the database.
         """
         try:
-            authors = parserDAO.list_authors(platform_id=platform_id)
-            return authors
+            with parserDAO as dao:
+                authors = dao.list_authors(platform_id=platform_id)
+                return authors
         except Exception as e:
             logger.error(f"Error fetching authors from the database: {e}")
             raise
