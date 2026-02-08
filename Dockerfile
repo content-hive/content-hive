@@ -4,7 +4,6 @@ ARG APP_VERSION=0.1.0
 ARG UID=1000
 ARG GID=1000
 
-# Metadata
 LABEL version="${APP_VERSION}" \
       description="Content Hive - A content parsing service" \
       maintainer="shaoxiaof@hotmail.com"
@@ -20,22 +19,23 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install browsers
-RUN playwright install --with-deps chromium
+# Install browsers and system dependencies (as root)
+RUN playwright install --with-deps chromium && \
+    chmod -R 755 /ms-playwright
 
 # Copy application code
 COPY contenthive ./contenthive
 
-# Create non-root user and directories
+# Create non-root user and set permissions
 RUN groupadd -g ${GID} contenthive && \
     useradd -m -u ${UID} -g contenthive contenthive && \
     mkdir -p /config/data /config/logs /config/plugins && \
-    chown -R contenthive:contenthive /app && \
-    chown -R contenthive:contenthive /config
+    chown -R contenthive:contenthive /app /config
 
 USER contenthive
 
-# Port for the application
 EXPOSE 6123
+
+VOLUME [ "/config" ]
 
 CMD ["uvicorn", "contenthive.main:app", "--host", "0.0.0.0", "--port", "6123"]

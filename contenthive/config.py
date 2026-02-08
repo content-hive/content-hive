@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """
     # Application settings
     app_name: str = "Content Hive"
-    app_version: str = "0.1.0"
+    app_version: str = os.getenv("APP_VERSION", "1.0.0")
     environment: str = os.getenv("ENVIRONMENT", "production")
     debug: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
 
