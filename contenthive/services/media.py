@@ -65,7 +65,7 @@ class MediaService:
         logger.info(f"Downloading {len(result.media)} media files to {media_dir}")
         
         local_media_items = []
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(trust_env=True) as session:
             for i, media in enumerate(result.media):
                 try:
                     local_path = await self._download_single_media(
