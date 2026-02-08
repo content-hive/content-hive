@@ -2,17 +2,18 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "feature/mvp" ]
-  pull_request:
-    branches: [ "feature/mvp" ]
+    tags:
+      - 'v*'
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+    
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      run: docker build . --file Dockerfile --tag contenthive:${{ steps.get_version.outputs.VERSION }} --build-arg APP_VERSION=${{ steps.get_version.outputs.VERSION }}
