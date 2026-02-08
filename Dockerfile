@@ -9,39 +9,26 @@ LABEL version="${APP_VERSION}" \
 ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    APP_VERSION=${APP_VERSION} \
-    PUID=1000 \
-    PGID=1000
+    APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
-
-# Install gosu for step-down from root
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gosu && \
-    rm -rf /var/lib/apt/lists/* && \
-    gosu nobody true
 
 # Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install browsers and system dependencies
+# Install browsers and system dependencies (as root)
 RUN playwright install --with-deps chromium && \
     chmod -R 755 /ms-playwright
 
 # Copy application code
 COPY contenthive ./contenthive
 
-# Copy entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-# Create config directories
-RUN mkdir -p /config/data /config/logs /config/plugins
+RUN useradd -m app
+USER app
 
 EXPOSE 6123
 
-VOLUME [ "/config" ]
+VOLUME /config
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "contenthive.main:app", "--host", "0.0.0.0", "--port", "6123"]
