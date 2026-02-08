@@ -6,6 +6,9 @@ from datetime import datetime
 from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, Any, Dict, Literal
 
+from contenthive.models.media import MediaItem
+
+
 class ErrorDetail(BaseModel):
     """Error detail model"""
     
@@ -23,44 +26,50 @@ class APIResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
 
 
-class ImageItem(BaseModel):
-    """Image item model"""
-    url: HttpUrl = Field(..., description="Image URL")
+class MediaInfo(MediaItem):
+    """Stored media item model (with local paths)"""
+    id: int = Field(..., description="Media ID")
+    url: HttpUrl = Field(..., description="Original media URL")
+    type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
+    title: Optional[str] = Field(None, description="Media title")
+    duration: Optional[int] = Field(None, description="Video duration in seconds")
+    width: Optional[str] = Field(None, description="Media width in pixels")
+    height: Optional[str] = Field(None, description="Media height in pixels")
+    cover: Optional[HttpUrl] = Field(None, description="Original video cover URL")
+    media_path: Optional[str] = Field(None, description="Local media file path")
+    cover_path: Optional[str] = Field(None, description="Local cover file path")
 
-class VideoItem(BaseModel):
-    """Video item model"""
-    url: HttpUrl = Field(..., description="Video URL")
 
 class AuthorInfo(BaseModel):
-    """Author information model"""
-    id: Optional[int] = Field(None, description="Author ID")
+    """Author information model (with database ID)"""
+    id: int = Field(..., description="Author ID")
     uid: str = Field(..., description="User ID")
     name: str = Field(..., description="Author name")
-    userName: str = Field(..., description="Username")
+    username: str = Field(..., description="Username")
     avatar: HttpUrl = Field(..., description="Avatar URL")
     url: HttpUrl = Field(..., description="Author profile URL")
 
 
 class PlatformInfo(BaseModel):
-    """Platform information model"""
-    id: Optional[int] = Field(None, description="Platform ID")
+    """Platform information model (with database ID)"""
+    id: int = Field(..., description="Platform ID")
     name: str = Field(..., description="Platform name")
     code: str = Field(..., description="Platform code")
     url: HttpUrl = Field(..., description="Platform URL")
-    iconUrl: HttpUrl = Field(..., description="Platform icon URL")
+    icon_url: HttpUrl = Field(..., description="Platform icon URL")
 
 
 class URLParserResult(BaseModel):
-    """Response model for fetched URL content"""
-    id: Optional[int] = Field(None, description="Parser result ID")
+    """API response model for stored content (with downloaded media)"""
+    id: int = Field(..., description="Parser result ID")
     pid: str = Field(..., description="Content ID")
     url: HttpUrl = Field(..., description="The URL that was fetched")
     content: str = Field(..., description="Content text")
-    images: list[ImageItem] = Field(default_factory=list, description="List of images")
-    videos: list[VideoItem] = Field(default_factory=list, description="List of videos")
+    media: list[MediaInfo] = Field(default_factory=list, description="List of stored media items")
     author: AuthorInfo = Field(..., description="Author information")
-    createdTime: int = Field(..., description="Creation timestamp in milliseconds")
+    platform: PlatformInfo = Field(..., description="Platform information")
+    created_time: int = Field(..., description="Creation timestamp in milliseconds")
     parser: str = Field(..., description="Parser type used")
     state: Literal["success", "error"] = Field(..., description="Parsing state")
-    platform: PlatformInfo = Field(..., description="Platform information")
-
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")

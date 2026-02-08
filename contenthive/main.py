@@ -1,5 +1,7 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+
 from contenthive.routers import api
 from contenthive.database.db import initialize_db, get_db_connection
 from contenthive.config import settings, ensure_directories
@@ -29,6 +31,7 @@ app = FastAPI(
 )
 
 app.include_router(api.router_v1)
+app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 async def load_plugins_on_startup():
     """

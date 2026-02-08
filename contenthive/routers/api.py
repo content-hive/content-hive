@@ -6,7 +6,7 @@ from contenthive.services.parser import parserService
 
 router_v1 = APIRouter(prefix="/v1")
 
-@router_v1.get("/parser", response_model=APIResponse)
+@router_v1.get("/parser", response_model=APIResponse, tags=["Parser"])
 async def parser_url(url: HttpUrl, plugin_id: Optional[str] = None) -> APIResponse:
     try:
         result = await parserService.parser_content(url, plugin_id=plugin_id)
@@ -18,14 +18,14 @@ async def parser_url(url: HttpUrl, plugin_id: Optional[str] = None) -> APIRespon
         return APIResponse(
             status="error",
             error=ErrorDetail(
-                code="1234",
-                message="Failed to fetch URL content",
-                details=None
+                code="PARSER_ERROR",
+                message="Failed to parse URL content",
+                details=str(e)
             )
         )
     
 
-@router_v1.get("/contents", response_model=APIResponse)
+@router_v1.get("/contents", response_model=APIResponse, tags=["Content"])
 async def list_contents(platform_id: Optional[int] = None, author_id: Optional[int] = None) -> APIResponse:
     try:
         result = await parserService.list_contents(platform_id=platform_id, author_id=author_id)
@@ -37,14 +37,14 @@ async def list_contents(platform_id: Optional[int] = None, author_id: Optional[i
         return APIResponse(
             status="error",
             error=ErrorDetail(
-                code="5678",
+                code="CONTENTS_FETCH_ERROR",
                 message="Failed to fetch contents from the database",
-                details=None
+                details=str(e)
             )
         )
     
 
-@router_v1.get("/platforms", response_model=APIResponse)
+@router_v1.get("/platforms", response_model=APIResponse, tags=["Platform"])
 async def list_platforms() -> APIResponse:
     try:
         platforms = await parserService.list_platforms()
@@ -56,14 +56,14 @@ async def list_platforms() -> APIResponse:
         return APIResponse(
             status="error",
             error=ErrorDetail(
-                code="9101",
+                code="PLATFORMS_FETCH_ERROR",
                 message="Failed to fetch platforms from the database",
-                details=None
+                details=str(e)
             )
         )
     
 
-@router_v1.get("/authors", response_model=APIResponse)
+@router_v1.get("/authors", response_model=APIResponse, tags=["Author"])
 async def list_authors(platform_id: Optional[int] = None) -> APIResponse:
     try:
         authors = await parserService.list_authors(platform_id=platform_id)
@@ -75,8 +75,8 @@ async def list_authors(platform_id: Optional[int] = None) -> APIResponse:
         return APIResponse(
             status="error",
             error=ErrorDetail(
-                code="1121",
+                code="AUTHORS_FETCH_ERROR",
                 message="Failed to fetch authors from the database",
-                details=None
+                details=str(e)
             )
         )

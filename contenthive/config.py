@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/plugins"))
 
     database_path: Path = data_dir / "contenthive.db"
+    media_dir: Path = data_dir / "media"
 
 # Instantiate settings
 settings = Settings()
@@ -34,3 +35,4 @@ def ensure_directories():
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.logs_dir.mkdir(parents=True, exist_ok=True)
     settings.plugins_dir.mkdir(parents=True, exist_ok=True)
+    settings.media_dir.mkdir(parents=True, exist_ok=True)

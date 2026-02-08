@@ -61,8 +61,13 @@ def initialize_db():
             type TEXT NOT NULL,
             title TEXT,
             duration INTEGER,
-            size TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            width TEXT,
+            height TEXT,
+            cover TEXT,
+            media_path TEXT,
+            cover_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     

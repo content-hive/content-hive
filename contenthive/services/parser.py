@@ -6,8 +6,9 @@ from typing import Optional
 from pydantic import HttpUrl
 from contenthive.logger import logger
 from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo
-from contenthive.database.ParserDAO import parserDAO
+from contenthive.database.parserDAO import parserDAO
 from contenthive.plugins.manager import get_plugin_manager
+from contenthive.services.media import mediaService
 
 class ParserService:
     """
@@ -16,15 +17,22 @@ class ParserService:
     def __init__(self):
         """
         Initialize the ParserService.
-
-        Args:
-            context: ServiceContext object providing access to app, data_dir, db, and logger.
         """
         pass
 
-    async def parser_content(self, url: HttpUrl, plugin_id: Optional[str] = None) -> Optional[URLParserResult]:
+    async def parser_content(
+        self, 
+        url: HttpUrl, 
+        plugin_id: Optional[str] = None,
+        download_media: bool = True
+    ) -> Optional[URLParserResult]:
         """
         Fetch and parse content from the given URL.
+        
+        Args:
+            url: URL to parse
+            plugin_id: Optional specific plugin to use
+            download_media: Whether to download media files locally
         """
         try:
             logger.info(f"Fetching content from URL: {url}")
@@ -37,12 +45,22 @@ class ParserService:
                     result = parser.parse(str(url))
                     if result:
                         logger.info(f"Successfully parsed content from URL: {url} using plugin: {plugin_id}")
+                        
                         with parserDAO as dao:
-                            return dao.save_parse_result(result)
+                            parse_result_id = dao.save_parse_result(result)
+
+                        # Download media files if requested
+                        if download_media and result.media:
+                            media_entities = await mediaService.download_media_for_result(result)
+                            with parserDAO as dao:
+                                dao.save_medias(media_entities, commit=True)
+                        
+                        # Return the saved parse result (with or without media)
+                        with parserDAO as dao:
+                            return dao.get_parse_result(parse_result_id)
         except Exception as e:
             logger.error(f"Error fetching content from URL {url}: {e}")
             raise
-        
 
     async def list_contents(self, platform_id: Optional[int] = None, author_id: Optional[int] = None) -> list[URLParserResult]:
         """
@@ -81,5 +99,4 @@ class ParserService:
             raise
 
 parserService = ParserService()
-    
-    
+

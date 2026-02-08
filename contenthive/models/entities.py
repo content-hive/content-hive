@@ -37,7 +37,15 @@ class MediaEntity:
     id: Optional[int] = None
     url: str = ""
     type: str = ""  # 'image' or 'video'
+    title: Optional[str] = None
+    duration: Optional[int] = None
+    width: Optional[str] = None
+    height: Optional[str] = None
+    cover: Optional[str] = None
+    media_path: Optional[str] = None
+    cover_path: Optional[str] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 @dataclass
@@ -59,11 +67,4 @@ class ParseResultEntity:
     # Related entities (for joins) - must not be None
     author: AuthorEntity = field(default_factory=lambda: AuthorEntity())
     platform: PlatformEntity = field(default_factory=lambda: PlatformEntity())
-    images: List[MediaEntity] = field(default_factory=list)
-    videos: List[MediaEntity] = field(default_factory=list)
-    
-    def __post_init__(self):
-        if self.images is None:
-            self.images = []
-        if self.videos is None:
-            self.videos = []
+    media: List[MediaEntity] = field(default_factory=list)

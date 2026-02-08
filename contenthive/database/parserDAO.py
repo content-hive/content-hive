@@ -2,8 +2,9 @@ import sqlite3
 from typing import Optional, List
 from contenthive.database.db import get_db_connection
 from contenthive.models.entities import ParseResultEntity, AuthorEntity, PlatformEntity, MediaEntity
-from contenthive.models.mappers import ContentMapper
+from contenthive.models.mappers import ParserMapper, ContentMapper
 from contenthive.models.content import URLParserResult
+from contenthive.models.parser import ParserResult
 
 
 class ParserDAO:
@@ -68,7 +69,7 @@ class ParserDAO:
                     INSERT INTO platforms (code, name, url, icon_url)
                     VALUES (?, ?, ?, ?)
                 """, (platform.code, platform.name, platform.url, platform.icon_url))
-                platform_id = cursor.lastrowid
+                platform_id = cursor.lastrowid if cursor.lastrowid else 0
 
             if commit:
                 conn.commit()
@@ -117,7 +118,7 @@ class ParserDAO:
                     INSERT INTO authors (platform_id, uid, name, username, avatar, url)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (platform_id, author.uid, author.name, author.username, author.avatar, author.url))
-                author_id = cursor.lastrowid
+                author_id = cursor.lastrowid if cursor.lastrowid else 0
 
             if commit:
                 conn.commit()
@@ -149,15 +150,24 @@ class ParserDAO:
             result = cursor.fetchone()
 
             if result:
+                # Update existing media if paths are provided
+                if media.media_path or media.cover_path:
+                    cursor.execute("""
+                        UPDATE media
+                        SET media_path = COALESCE(?, media_path),
+                            cover_path = COALESCE(?, cover_path)
+                        WHERE id = ?
+                    """, (media.media_path, media.cover_path, result[0]))
                 return result[0]
 
             # Insert new media
             cursor.execute("""
-                INSERT INTO media (url, type)
-                VALUES (?, ?)
-            """, (media.url, media.type))
+                INSERT INTO media (url, type, title, duration, width, height, cover, media_path, cover_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (media.url, media.type, media.title, media.duration, media.width, media.height, 
+                   media.cover, media.media_path, media.cover_path))
 
-            media_id = cursor.lastrowid
+            media_id = cursor.lastrowid if cursor.lastrowid else 0
 
             if commit:
                 conn.commit()
@@ -168,24 +178,58 @@ class ParserDAO:
                 conn.rollback()
             raise Exception(f"Failed to save media: {e}")
 
+    def save_medias(self, medias: List[MediaEntity], commit: bool = False) -> List[int]:
+        """
+        Save multiple media entities.
 
-    def save_parse_result(self, result: URLParserResult, user_id: Optional[int] = None) -> Optional[URLParserResult]:
+        Args:
+            medias: List of MediaEntity objects
+            commit: Whether to commit immediately (default: False)
+
+        Returns list of media_ids.
+        """
+        media_ids = []
+        for media in medias:
+            media_id = self.save_media(media, commit=False)
+            media_ids.append(media_id)
+
+        if commit:
+            self._get_connection().commit()
+
+        return media_ids
+
+    def save_parse_result(self, result: ParserResult, user_id: Optional[int] = None) -> int:
         """
         Save complete parse result including platform, author, and media.
         Uses a single transaction for all operations.
 
+        Args:
+            result: ParserResult from parser
+            user_id: Optional user ID
+
         Returns the saved URLParserResult from database.
         """
-        # Convert model to entity
-        entity = ContentMapper.model_to_entity(result, user_id)
-        
         conn = self._get_connection()
         cursor = conn.cursor()
 
         try:
-            # Save platform and author first
-            platform_id = self.save_platform(entity.platform, commit=False)
-            author_id = self.save_author(entity.author, platform_id, commit=False)
+            # Convert parser models to entities
+            platform_entity = ParserMapper.parser_platform_to_entity(result.platform)
+            author_entity = ParserMapper.parser_author_to_entity(result.author, 0)  # platform_id will be set later
+        
+            # Save platform and get ID
+            platform_id = self.save_platform(platform_entity, commit=False)
+            
+            # Update author entity with correct platform_id
+            author_entity.platform_id = platform_id
+            author_id = self.save_author(author_entity, platform_id, commit=False)
+
+            # Convert ParserResult to ParseResultEntity
+            entity = ParserMapper.parser_result_to_entity(
+                result, platform_entity, author_entity, user_id
+            )
+            entity.platform_id = platform_id
+            entity.author_id = author_id
 
             # Check if parse result already exists using pid and platform code
             cursor.execute("""
@@ -193,7 +237,7 @@ class ParserDAO:
                 FROM parse_results pr
                 JOIN platforms p ON pr.platform_id = p.id
                 WHERE pr.pid = ? AND p.code = ?
-            """, (entity.pid, entity.platform.code))
+            """, (entity.pid, result.platform.code))
             existing_result = cursor.fetchone()
 
             if existing_result:
@@ -218,18 +262,15 @@ class ParserDAO:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (entity.pid, entity.url, entity.content, author_id, platform_id,
                       user_id, entity.created_time, entity.parser, entity.state))
-                parse_result_id = cursor.lastrowid
+                parse_result_id = cursor.lastrowid if cursor.lastrowid else 0
 
             # Save media (common for both insert and update)
-            self._save_media_associations(cursor, parse_result_id, entity.images, entity.videos)
+            self._save_media_associations(cursor, parse_result_id, entity.media)
 
             # Commit all changes
             conn.commit()
 
-            # Get saved entity from database and convert to model
-            saved_entity = self._get_parse_result_entity(parse_result_id)
-            return ContentMapper.entity_to_model(saved_entity)
-
+            return parse_result_id
         except sqlite3.Error as e:
             conn.rollback()
             raise Exception(f"Failed to save parse result (pid: {entity.pid}, platform: {entity.platform.code}): {e}")
@@ -239,27 +280,18 @@ class ParserDAO:
 
 
     def _save_media_associations(self, cursor: sqlite3.Cursor, parse_result_id: int, 
-                                 images: List[MediaEntity], videos: List[MediaEntity]) -> None:
+                                 media: List[MediaEntity]) -> None:
         """
         Helper method to save media associations for a parse result.
         
         Args:
             cursor: Database cursor
             parse_result_id: Parse result ID
-            images: List of image entities
-            videos: List of video entities
+            media: List of media entities
         """
-        # Save images
-        for image in images:
-            media_id = self.save_media(image, commit=False)
-            cursor.execute("""
-                INSERT INTO parse_result_media (parse_result_id, media_id)
-                VALUES (?, ?)
-            """, (parse_result_id, media_id))
-
-        # Save videos
-        for video in videos:
-            media_id = self.save_media(video, commit=False)
+        # Save media
+        media_ids = self.save_medias(media, commit=False)
+        for media_id in media_ids:
             cursor.execute("""
                 INSERT INTO parse_result_media (parse_result_id, media_id)
                 VALUES (?, ?)
@@ -292,26 +324,27 @@ class ParserDAO:
 
         # Get media
         cursor.execute("""
-            SELECT m.id, m.url, m.type, m.created_at
+            SELECT m.id, m.url, m.type, m.title, m.duration, m.width, m.height, m.cover, 
+                   m.media_path, m.cover_path, m.created_at
             FROM media m
             JOIN parse_result_media prm ON m.id = prm.media_id
             WHERE prm.parse_result_id = ?
         """, (parse_result_id,))
 
         media_rows = cursor.fetchall()
-        images = [MediaEntity(
+        media = [MediaEntity(
             id=m["id"],
             url=m["url"],
             type=m["type"],
+            title=m["title"],
+            duration=m["duration"],
+            width=m["width"],
+            height=m["height"],
+            cover=m["cover"],
+            media_path=m["media_path"],
+            cover_path=m["cover_path"],
             created_at=m["created_at"]
-        ) for m in media_rows if m["type"] == "image"]
-        
-        videos = [MediaEntity(
-            id=m["id"],
-            url=m["url"],
-            type=m["type"],
-            created_at=m["created_at"]
-        ) for m in media_rows if m["type"] == "video"]
+        ) for m in media_rows]
 
         # Build entity
         entity = ParseResultEntity(
@@ -347,8 +380,7 @@ class ParserDAO:
                 created_at=row["platform_created_at"],
                 updated_at=row["platform_updated_at"]
             ),
-            images=images,
-            videos=videos
+            media=media
         )
 
         return entity
@@ -361,7 +393,7 @@ class ParserDAO:
         """
         try:
             entity = self._get_parse_result_entity(parse_result_id)
-            return ContentMapper.entity_to_model(entity)
+            return ContentMapper.entity_to_url_parser_result(entity)
         except ValueError:
             return None
 
@@ -431,7 +463,8 @@ class ParserDAO:
 
         # Batch query all media for these results
         cursor.execute(f"""
-            SELECT prm.parse_result_id, m.id, m.url, m.type, m.created_at
+            SELECT prm.parse_result_id, m.id, m.url, m.type, m.title, m.duration, 
+                   m.width, m.height, m.cover, m.media_path, m.cover_path, m.created_at
             FROM media m
             JOIN parse_result_media prm ON m.id = prm.media_id
             WHERE prm.parse_result_id IN ({placeholders})
@@ -442,25 +475,28 @@ class ParserDAO:
         for media_row in cursor.fetchall():
             pr_id = media_row["parse_result_id"]
             if pr_id not in media_dict:
-                media_dict[pr_id] = {"images": [], "videos": []}
+                media_dict[pr_id] = []
 
             media_entity = MediaEntity(
                 id=media_row["id"],
                 url=media_row["url"],
                 type=media_row["type"],
+                title=media_row["title"],
+                duration=media_row["duration"],
+                width=media_row["width"],
+                height=media_row["height"],
+                cover=media_row["cover"],
+                media_path=media_row["media_path"],
+                cover_path=media_row["cover_path"],
                 created_at=media_row["created_at"]
             )
-
-            if media_row["type"] == "image":
-                media_dict[pr_id]["images"].append(media_entity)
-            else:
-                media_dict[pr_id]["videos"].append(media_entity)
+            media_dict[pr_id].append(media_entity)
 
         # Build entities and convert to models
         results = []
         for row in rows:
             pr_id = row["id"]
-            media = media_dict.get(pr_id, {"images": [], "videos": []})
+            media = media_dict.get(pr_id, [])
 
             entity = ParseResultEntity(
                 id=row["id"],
@@ -495,11 +531,10 @@ class ParserDAO:
                     created_at=row["platform_created_at"],
                     updated_at=row["platform_updated_at"]
                 ),
-                images=media["images"],
-                videos=media["videos"]
+                media=media
             )
 
-            results.append(ContentMapper.entity_to_model(entity))
+            results.append(ContentMapper.entity_to_url_parser_result(entity))
 
         return results
 
