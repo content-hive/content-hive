@@ -19,13 +19,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Install browsers and system dependencies (as root)
 RUN playwright install --with-deps chromium && \
-    chmod -R 755 /ms-playwright
+    chmod -R 777 /ms-playwright
 
 # Copy application code
 COPY contenthive ./contenthive
 
-RUN useradd -m app
-USER app
+# Create config directory and make it world-writable
+# so any UID can write to it when volume is not mounted
+RUN mkdir -p /config/data /config/logs /config/plugins && \
+    chmod -R 777 /config
+
+# Create a home directory that any user can use
+ENV HOME=/tmp
 
 EXPOSE 6123
 
