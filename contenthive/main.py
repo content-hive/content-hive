@@ -7,19 +7,23 @@ from contenthive.database.db import initialize_db, get_db_connection
 from contenthive.config import settings, ensure_directories
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginManager, set_plugin_manager
-from contenthive.logger import logger
+from contenthive.logger import logger, setup_file_logging
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure necessary directories exist
+    # 1. Ensure necessary directories exist FIRST
     ensure_directories()
-    
-    # Initialize the database
+
+    # 2. Now that directories exist, setup file logging
+    setup_file_logging()
+
+    # 3. Initialize the database
     initialize_db()
 
-    # Load plugins
+    # 4. Load plugins
     await load_plugins_on_startup()
-    
+
+    logger.info("Application started successfully.")
     yield
     # Application shutdown logic can go here
     logger.info("Shutting down application.")

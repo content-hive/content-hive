@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
+from pydantic import computed_field
 
 class Settings(BaseSettings):
     """
@@ -22,8 +23,15 @@ class Settings(BaseSettings):
     logs_dir: Path = Path(os.getenv("LOGS_DIR", "/config/logs"))
     plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/config/plugins"))
 
-    database_path: Path = data_dir / "contenthive.db"
-    media_dir: Path = data_dir / "media"
+    @computed_field
+    @property
+    def database_path(self) -> Path:
+        return self.data_dir / "contenthive.db"
+
+    @computed_field
+    @property
+    def media_dir(self) -> Path:
+        return self.data_dir / "media"
 
 # Instantiate settings
 settings = Settings()
