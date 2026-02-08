@@ -20,7 +20,10 @@ async def lifespan(app: FastAPI):
     # 3. Initialize the database
     initialize_db()
 
-    # 4. Load plugins
+    # 4. Mount static files AFTER directories are created
+    app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
+
+    # 5. Load plugins
     await load_plugins_on_startup()
 
     logger.info("Application started successfully.")
@@ -35,7 +38,6 @@ app = FastAPI(
 )
 
 app.include_router(api.router_v1)
-app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 async def load_plugins_on_startup():
     """
