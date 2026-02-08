@@ -1,11 +1,16 @@
 services:
   content-hive:
-    build: .
+    build: 
+      context: .
+      args:
+        - APP_VERSION=0.1.0
+        - UID=1000
+        - GID=1000
     container_name: content-hive
     ports:
       - "6123:6123"
     volumes:
-      - ./data:/data
-      - ./logs:/logs
-      - ./plugins:/plugins
+      - ./data:/config/data
+      - ./logs:/config/logs
+      - ./plugins:/config/plugins
     restart: unless-stopped

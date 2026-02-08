@@ -1,6 +1,8 @@
 FROM python:3.12-slim
 
 ARG APP_VERSION=0.1.0
+ARG UID=1000
+ARG GID=1000
 
 # Metadata
 LABEL version="${APP_VERSION}" \
@@ -24,9 +26,12 @@ RUN playwright install --with-deps chromium
 # Copy application code
 COPY contenthive ./contenthive
 
-# Create non-root user
-RUN useradd -m -u 1000 contenthive && \
-    chown -R contenthive:contenthive /app
+# Create non-root user and directories
+RUN groupadd -g ${GID} contenthive && \
+    useradd -m -u ${UID} -g contenthive contenthive && \
+    mkdir -p /config/data /config/logs /config/plugins && \
+    chown -R contenthive:contenthive /app && \
+    chown -R contenthive:contenthive /config
 
 USER contenthive
 

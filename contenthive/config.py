@@ -18,9 +18,9 @@ class Settings(BaseSettings):
 
     # Directory paths
     app_base: Path = Path(os.getenv("APP_BASE", "/app"))
-    data_dir: Path = Path(os.getenv("DATA_DIR", "/data"))
-    logs_dir: Path = Path(os.getenv("LOGS_DIR", "/logs"))
-    plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/plugins"))
+    data_dir: Path = Path(os.getenv("DATA_DIR", "/config/data"))
+    logs_dir: Path = Path(os.getenv("LOGS_DIR", "/config/logs"))
+    plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/config/plugins"))
 
     database_path: Path = data_dir / "contenthive.db"
     media_dir: Path = data_dir / "media"
