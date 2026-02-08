@@ -1,3 +1,6 @@
 [submodule "plugins"]
 	path = plugins
 	url = git@github.com-personal:content-hive/plugins.git
+[submodule "website"]
+	path = website
+	url = git@github.com-personal:content-hive/website.git
