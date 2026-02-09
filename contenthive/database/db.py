@@ -75,7 +75,7 @@ def initialize_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS parse_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pid TEXT UNIQUE NOT NULL,
+            pid TEXT NOT NULL,
             url TEXT NOT NULL,
             content TEXT NOT NULL,
             author_id INTEGER,

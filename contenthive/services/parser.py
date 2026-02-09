@@ -7,6 +7,7 @@ from pydantic import HttpUrl
 from contenthive.logger import logger
 from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo
 from contenthive.database.parserDAO import parserDAO
+from contenthive.models.mappers import ContentMapper
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import mediaService
 
@@ -20,6 +21,40 @@ class ParserService:
         """
         pass
 
+    async def _find_parser_for_url(self, url: str, preferred_domain: Optional[str] = None) -> Optional[str]:
+        """
+        Find parser entity for URL.
+        """
+        manager = get_plugin_manager()
+        if not manager:
+            raise Exception("Plugin manager not initialized")
+        
+        parser_domains = [
+            domain for domain in manager.services.keys()
+            if "can_parse" in manager.services.get(domain, {})
+        ]
+
+        # Try preferred parser first
+        if preferred_domain and preferred_domain in parser_domains:
+            try:
+                if await manager.call_service(preferred_domain, "can_parse", {"url": url}):
+                    return preferred_domain
+            except Exception as e:
+                logger.error(f"Error checking preferred parser {preferred_domain}: {e}")
+        
+        # Try all parsers
+        for domain in parser_domains:
+            if preferred_domain and domain == preferred_domain:
+                continue
+            
+            try:
+                if await manager.call_service(domain, "can_parse", {"url": url}):
+                    return domain
+            except Exception as e:
+                logger.error(f"Error checking {domain}: {e}")
+        
+        return None
+    
     async def parser_content(
         self, 
         url: HttpUrl, 
@@ -38,26 +73,40 @@ class ParserService:
             logger.info(f"Fetching content from URL: {url}")
 
             manager = get_plugin_manager()
-            if manager:
-                plugin_id, parser = manager.find_parser_for_url(str(url), plugin_id=plugin_id)
-                if parser:
-                    logger.info(f"Using parser plugin: {plugin_id} for URL: {url}")
-                    result = parser.parse(str(url))
-                    if result:
-                        logger.info(f"Successfully parsed content from URL: {url} using plugin: {plugin_id}")
-                        
-                        with parserDAO as dao:
-                            parse_result_id = dao.save_parse_result(result)
+            if not manager:
+                raise Exception("Plugin manager not initialized")
+            
+            # Find parser for URL
+            domain = await self._find_parser_for_url(str(url), preferred_domain=plugin_id)
+            
+            if not domain:
+                raise Exception(f"No parser found for URL: {url}")
+            
+            logger.info(f"Using parser plugin: {domain} for URL: {url}")
+            
+            # Parse content
+            result = await manager.call_service(domain, "parse", {"url": str(url)})
+            
+            if not result:
+                raise Exception(f"Parser returned empty result for URL: {url}")
+            
+            logger.info(f"Successfully parsed content from URL: {url} using plugin: {domain}")
+            
+            # Save parse result to database
+            with parserDAO as dao:
+                parse_result_id = dao.save_parse_result(result)
 
-                        # Download media files if requested
-                        if download_media and result.media:
-                            media_entities = await mediaService.download_media_for_result(result)
-                            with parserDAO as dao:
-                                dao.save_medias(media_entities, commit=True)
-                        
-                        # Return the saved parse result (with or without media)
-                        with parserDAO as dao:
-                            return dao.get_parse_result(parse_result_id)
+            # Download media files if requested
+            if download_media and result.media:
+                media_entities = await mediaService.download_media_for_result(result)
+                with parserDAO as dao:
+                    dao.save_medias(media_entities, commit=True)
+            
+            # Return the saved parse result (with or without media)
+            with parserDAO as dao:
+                entity = dao.get_parse_result(parse_result_id)
+                return ContentMapper.entity_to_url_parser_result(entity)
+                
         except Exception as e:
             logger.error(f"Error fetching content from URL {url}: {e}")
             raise
@@ -69,7 +118,7 @@ class ParserService:
         try:
             with parserDAO as dao:
                 results = dao.list_parse_results(platform_id=platform_id, author_id=author_id)
-            return results
+            return [ContentMapper.entity_to_url_parser_result(result) for result in results]
         except Exception as e:
             logger.error(f"Error fetching contents from the database: {e}")
             raise
@@ -81,7 +130,7 @@ class ParserService:
         try:
             with parserDAO as dao:
                 platforms = dao.list_platforms()
-                return platforms
+                return [ContentMapper.platform_entity_to_info(platform) for platform in platforms]
         except Exception as e:
             logger.error(f"Error fetching platforms from the database: {e}")
             raise
@@ -93,7 +142,7 @@ class ParserService:
         try:
             with parserDAO as dao:
                 authors = dao.list_authors(platform_id=platform_id)
-                return authors
+                return [ContentMapper.author_entity_to_info(author) for author in authors]
         except Exception as e:
             logger.error(f"Error fetching authors from the database: {e}")
             raise

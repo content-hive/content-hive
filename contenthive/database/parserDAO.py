@@ -1,5 +1,5 @@
 import sqlite3
-from typing import Optional, List
+from typing import Optional
 from contenthive.database.db import get_db_connection
 from contenthive.models.entities import ParseResultEntity, AuthorEntity, PlatformEntity, MediaEntity
 from contenthive.models.mappers import ParserMapper, ContentMapper
@@ -178,7 +178,7 @@ class ParserDAO:
                 conn.rollback()
             raise Exception(f"Failed to save media: {e}")
 
-    def save_medias(self, medias: List[MediaEntity], commit: bool = False) -> List[int]:
+    def save_medias(self, medias: list[MediaEntity], commit: bool = False) -> list[int]:
         """
         Save multiple media entities.
 
@@ -280,7 +280,7 @@ class ParserDAO:
 
 
     def _save_media_associations(self, cursor: sqlite3.Cursor, parse_result_id: int, 
-                                 media: List[MediaEntity]) -> None:
+                                 media: list[MediaEntity]) -> None:
         """
         Helper method to save media associations for a parse result.
         
@@ -298,7 +298,7 @@ class ParserDAO:
             """, (parse_result_id, media_id))
 
 
-    def _get_parse_result_entity(self, parse_result_id: int) -> ParseResultEntity:
+    def get_parse_result(self, parse_result_id: int) -> ParseResultEntity:
         """
         Get parse result entity by ID (internal method).
         Returns ParseResultEntity object.
@@ -386,22 +386,10 @@ class ParserDAO:
         return entity
 
 
-    def get_parse_result(self, parse_result_id: int) -> Optional[URLParserResult]:
-        """
-        Get parse result by ID.
-        Returns URLParserResult object or None if not found.
-        """
-        try:
-            entity = self._get_parse_result_entity(parse_result_id)
-            return ContentMapper.entity_to_url_parser_result(entity)
-        except ValueError:
-            return None
-
-
     def list_parse_results(self, user_id: Optional[int] = None,
                           platform_id: Optional[int] = None,
                           author_id: Optional[int] = None,
-                          limit: int = 20, offset: int = 0) -> List[URLParserResult]:
+                          limit: int = 20, offset: int = 0) -> list[ParseResultEntity]:
         """
         List parse results with pagination.
 
@@ -534,7 +522,7 @@ class ParserDAO:
                 media=media
             )
 
-            results.append(ContentMapper.entity_to_url_parser_result(entity))
+            results.append(entity)
 
         return results
 
@@ -552,7 +540,7 @@ class ParserDAO:
         return cursor.rowcount > 0
 
 
-    def list_platforms(self) -> List[PlatformEntity]:
+    def list_platforms(self) -> list[PlatformEntity]:
         """
         List all platforms.
         Returns list of PlatformEntity objects.
@@ -578,7 +566,7 @@ class ParserDAO:
         return platforms
 
 
-    def list_authors(self, platform_id: Optional[int] = None) -> List[AuthorEntity]:
+    def list_authors(self, platform_id: Optional[int] = None) -> list[AuthorEntity]:
         """
         List authors, optionally filtered by platform_id.
         Returns list of AuthorEntity objects.

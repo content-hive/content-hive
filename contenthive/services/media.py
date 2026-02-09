@@ -6,7 +6,6 @@ import os
 import aiohttp
 import hashlib
 from pathlib import Path
-from typing import Optional, List
 from contenthive.logger import logger
 from contenthive.models.parser import ParserResult
 from contenthive.models.entities import MediaEntity
@@ -46,7 +45,7 @@ class MediaService:
             logger.error(f"Failed to generate relative media path: {e}")
             return ""
 
-    async def download_media_for_result(self, result: ParserResult) -> List[MediaEntity]:
+    async def download_media_for_result(self, result: ParserResult) -> list[MediaEntity]:
         """
         Download all media files for a parser result.
         
@@ -77,6 +76,15 @@ class MediaService:
                     media_entity = ParserMapper.media_info_to_entity(media)
                     # Store web-accessible path instead of local file system path
                     media_entity.media_path = self.get_relative_media_path(local_path)
+                    if media.cover:
+                        # Download cover image if available
+                        cover_path = await self._download_single_media(
+                            session,
+                            str(media.cover),
+                            media_dir,
+                            index=i
+                        )
+                        media_entity.cover_path = self.get_relative_media_path(cover_path)
 
                     local_media_items.append(media_entity)
                     logger.info(f"Downloaded media {i+1}/{len(result.media)}: {media_entity.media_path}")
