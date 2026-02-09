@@ -39,7 +39,7 @@ class ParserService:
 
             manager = get_plugin_manager()
             if manager:
-                plugin_id, parser = manager.find_parser_for_url(str(url), plugin_id=plugin_id)
+                plugin_id, parser = await manager.async_find_parser_for_url(str(url), preferred_domain=plugin_id)
                 if parser:
                     logger.info(f"Using parser plugin: {plugin_id} for URL: {url}")
                     result = await parser.parse(str(url))
