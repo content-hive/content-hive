@@ -30,6 +30,8 @@ class AuthorEntity:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+    platform: PlatformEntity = field(default_factory=lambda: PlatformEntity())
+
 
 @dataclass
 class MediaEntity:

@@ -569,21 +569,29 @@ class ParserDAO:
     def list_authors(self, platform_id: Optional[int] = None) -> list[AuthorEntity]:
         """
         List authors, optionally filtered by platform_id.
-        Returns list of AuthorEntity objects.
+        Returns list of AuthorEntity objects with platform information.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
 
         if platform_id:
             cursor.execute("""
-                SELECT id, platform_id, uid, name, username, avatar, url, created_at, updated_at
-                FROM authors
-                WHERE platform_id = ?
+                SELECT a.id, a.platform_id, a.uid, a.name, a.username, a.avatar, a.url, 
+                   a.created_at, a.updated_at,
+                   p.id as p_id, p.code, p.name as p_name, p.url as p_url, p.icon_url,
+                   p.created_at as p_created_at, p.updated_at as p_updated_at
+                FROM authors a
+                LEFT JOIN platforms p ON a.platform_id = p.id
+                WHERE a.platform_id = ?
             """, (platform_id,))
         else:
             cursor.execute("""
-                SELECT id, platform_id, uid, name, username, avatar, url, created_at, updated_at
-                FROM authors
+                SELECT a.id, a.platform_id, a.uid, a.name, a.username, a.avatar, a.url, 
+                   a.created_at, a.updated_at,
+                   p.id as p_id, p.code, p.name as p_name, p.url as p_url, p.icon_url,
+                   p.created_at as p_created_at, p.updated_at as p_updated_at
+                FROM authors a
+                LEFT JOIN platforms p ON a.platform_id = p.id
             """)
 
         rows = cursor.fetchall()
@@ -599,7 +607,16 @@ class ParserDAO:
                 avatar=row["avatar"],
                 url=row["url"],
                 created_at=row["created_at"],
-                updated_at=row["updated_at"]
+                updated_at=row["updated_at"],
+                platform=PlatformEntity(
+                    id=row["p_id"],
+                    code=row["code"],
+                    name=row["p_name"],
+                    url=row["p_url"],
+                    icon_url=row["icon_url"],
+                    created_at=row["p_created_at"],
+                    updated_at=row["p_updated_at"]
+                )
             ))
 
         return authors

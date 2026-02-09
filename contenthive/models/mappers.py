@@ -161,6 +161,7 @@ class ContentMapper:
             username=author.username,
             avatar=HttpUrl(author.avatar),
             url=HttpUrl(author.url),
+            platform=ContentMapper.platform_entity_to_info(author.platform),
         )
 
     @staticmethod

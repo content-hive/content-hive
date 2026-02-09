@@ -40,6 +40,15 @@ class MediaInfo(MediaItem):
     cover_path: Optional[str] = Field(None, description="Local cover file path")
 
 
+class PlatformInfo(BaseModel):
+    """Platform information model (with database ID)"""
+    id: int = Field(..., description="Platform ID")
+    name: str = Field(..., description="Platform name")
+    code: str = Field(..., description="Platform code")
+    url: HttpUrl = Field(..., description="Platform URL")
+    icon_url: HttpUrl = Field(..., description="Platform icon URL")
+
+
 class AuthorInfo(BaseModel):
     """Author information model (with database ID)"""
     id: int = Field(..., description="Author ID")
@@ -48,15 +57,7 @@ class AuthorInfo(BaseModel):
     username: str = Field(..., description="Username")
     avatar: HttpUrl = Field(..., description="Avatar URL")
     url: HttpUrl = Field(..., description="Author profile URL")
-
-
-class PlatformInfo(BaseModel):
-    """Platform information model (with database ID)"""
-    id: int = Field(..., description="Platform ID")
-    name: str = Field(..., description="Platform name")
-    code: str = Field(..., description="Platform code")
-    url: HttpUrl = Field(..., description="Platform URL")
-    icon_url: HttpUrl = Field(..., description="Platform icon URL")
+    platform: PlatformInfo = Field(..., description="Platform information")
 
 
 class URLParserResult(BaseModel):
