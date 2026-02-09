@@ -43,8 +43,9 @@ app.include_router(api.router_v1)
 
 async def load_plugins_on_startup():
     """
-    Load and enable plugins on application startup.
+    Load and enable plugins on application startup using HA-style workflow.
     """
+    # 1. Create plugin context
     context = PluginContext(
         app=app,
         data_dir=settings.data_dir,
@@ -52,41 +53,55 @@ async def load_plugins_on_startup():
         logger=logger
     )
 
+    # 2. Create plugin manager with context
     plugin_manager = PluginManager(settings.plugins_dir, context)
     set_plugin_manager(plugin_manager)
 
-    logger.info("Starting plugin discovery and loading.")
-    await plugin_manager.async_discover()
-    logger.info(f"Discovered {len(plugin_manager.plugins)} plugins.")
+    # 3. Inject HA-style methods into context for plugins to use
+    context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
+    context.async_unload_platforms = plugin_manager.async_unload_platforms
+    context.register_service = plugin_manager.register_service
 
+    # 4. Discover plugins
+    logger.info("Starting plugin discovery...")
+    await plugin_manager.async_discover()
+    logger.info(f"Discovered {len(plugin_manager.plugins)} plugins")
+
+    # 5. Setup and enable plugins
     for domain in plugin_manager.plugins:
         logger.info(f"Setting up plugin: {domain}")
 
+        # Get plugin configuration
         config = _get_plugin_config(domain)
+        
+        # Setup plugin (load module, install dependencies)
         success = await plugin_manager.async_setup(domain, config)
 
         if not success:
-            logger.error(f"Failed to set up plugin: {domain}")
+            logger.error(f"Failed to setup plugin: {domain}")
             continue
 
+        # Create config entry
         entry = PluginEntryData(
             entry_id=f"{domain}_default",
             domain=domain,
             data=config or {},
         )
 
+        # Setup entry (enable plugin)
         success = await plugin_manager.async_setup_entry(entry)
 
         if success:
-            logger.info(f"Plugin setup entry successful: {domain}")
+            logger.info(f"✓ Plugin enabled: {domain}")
         else:
-            logger.error(f"Plugin setup entry failed: {domain}")
+            logger.error(f"✗ Failed to enable plugin: {domain}")
 
+    # 6. Log summary
     enabled_count = sum(
         1 for record in plugin_manager.plugins.values()
         if record.state == PluginState.ENABLED
     )
-    logger.info(f"Enabled {enabled_count} plugins.")
+    logger.info(f"Plugin loading complete: {enabled_count}/{len(plugin_manager.plugins)} enabled")
 
 
 def _get_plugin_config(domain: str) -> dict:
@@ -127,10 +142,23 @@ async def shutdown_plugins():
 @app.get("/health", tags=["health"])
 async def health_check():
     """
-    Health check endpoint.
+    Health check endpoint with plugin status information.
     """
+    plugin_manager = get_plugin_manager()
+    
+    plugin_status = {}
+    if plugin_manager:
+        for domain, record in plugin_manager.plugins.items():
+            plugin_status[domain] = {
+                "state": record.state.value,
+                "version": record.version,
+                "name": record.name,
+                "error": record.error if record.state == PluginState.FAILED else None
+            }
+    
     return {
         "status": "ok",
         "app": settings.app_name,
-        "version": settings.app_version  
+        "version": settings.app_version,
+        "plugins": plugin_status
     }

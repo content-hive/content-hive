@@ -3,13 +3,10 @@ import sys
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
-from enum import Enum
 import asyncio
 import subprocess
-from datetime import timedelta
 
 from .registry import PluginRecord, PluginState
-from .base import PluginBase, ContentParserPlugin
 
 
 class PluginEntryData:
@@ -48,7 +45,8 @@ class EventBus:
 
 class PluginManager:
     """
-    Plugin manager for handling plugin lifecycle and events.
+    Home Assistant-style plugin manager.
+    Plugins are loaded as modules, not classes.
     """
     
     def __init__(self, plugins_dir: Path, context):
@@ -63,11 +61,12 @@ class PluginManager:
         
         # Service registry
         self.services: Dict[str, Dict[str, Callable]] = {}
+        
+        # Platform registry (domain -> platform -> entities)
+        self._platforms: Dict[str, Dict[str, List[Any]]] = {}
     
     async def async_discover(self):
-        """
-        Discover plugins asynchronously from the plugins directory.
-        """
+        """Discover plugins asynchronously from the plugins directory."""
         tasks = []
         for plugin_dir in self.plugins_dir.iterdir():
             if not plugin_dir.is_dir():
@@ -91,6 +90,7 @@ class PluginManager:
             manifest = json.loads(manifest_path.read_text())
             domain = manifest['domain']
             
+            # Store module reference instead of instance
             self.plugins[domain] = PluginRecord(manifest, None)
             self.context.logger.info(f"Plugins[Discovered]: {domain}")
             
@@ -103,8 +103,8 @@ class PluginManager:
     
     async def async_setup(self, domain: str, config: Optional[Dict[str, Any]] = None) -> bool:
         """
-        Setup plugin from configuration (similar to async_setup in HA).
-        This is called when plugin is configured via YAML-like config.
+        Setup plugin from configuration (HA-style).
+        Calls the plugin module's async_setup function.
         """
         record = self.plugins.get(domain)
         if not record:
@@ -122,15 +122,15 @@ class PluginManager:
                 return False
             
             # Load module
-            instance = await self._async_load_module(domain)
-            if not instance:
+            module = await self._async_load_module(domain)
+            if not module:
                 return False
             
-            record.instance = instance
+            record.instance = module  # Store module, not class instance
             
-            # Call setup hook
-            if hasattr(instance, "async_setup"):
-                result = await instance.async_setup(self.context, config or {})
+            # Call module-level async_setup function
+            if hasattr(module, "async_setup"):
+                result = await module.async_setup(self.context, config or {})
                 if not result:
                     raise Exception("async_setup returned False")
             
@@ -148,8 +148,8 @@ class PluginManager:
     
     async def async_setup_entry(self, entry: PluginEntryData) -> bool:
         """
-        Setup plugin from config entry (similar to async_setup_entry in HA).
-        This is called when plugin is configured via UI.
+        Setup plugin from config entry (HA-style).
+        Calls the plugin module's async_setup_entry function.
         """
         domain = entry.domain
         record = self.plugins.get(domain)
@@ -164,9 +164,11 @@ class PluginManager:
                 if not await self.async_setup(domain):
                     return False
             
-            # Call setup entry hook
-            if hasattr(record.instance, "async_setup_entry"):
-                result = await record.instance.async_setup_entry(self.context, entry)
+            module = record.instance
+            
+            # Call module-level async_setup_entry function
+            if hasattr(module, "async_setup_entry"):
+                result = await module.async_setup_entry(self.context, entry)
                 if not result:
                     raise Exception("async_setup_entry returned False")
             
@@ -185,10 +187,88 @@ class PluginManager:
             self.context.logger.error(f"Plugins[Setup Entry Failed]: {domain} - {e}")
             return False
     
+    async def async_forward_entry_setup(
+        self, 
+        entry: PluginEntryData, 
+        platform: str
+    ) -> bool:
+        """
+        Forward setup to a platform (HA-style).
+        Similar to: hass.config_entries.async_forward_entry_setup(entry, "parser")
+        
+        This loads the platform module (e.g., parser.py) and calls its async_setup_entry.
+        """
+        domain = entry.domain
+        record = self.plugins.get(domain)
+        
+        if not record:
+            return False
+        
+        try:
+            # Load platform module (e.g., plugins/fxtwitter/parser.py)
+            platform_module = await self._async_load_platform_module(domain, platform)
+            
+            if not platform_module:
+                raise Exception(f"Platform {platform} not found")
+            
+            async def async_add_entities(entities: List[Any]):
+                """Callback to register entities from platform."""
+                if domain not in self._platforms:
+                    self._platforms[domain] = {}
+                if platform not in self._platforms[domain]:
+                    self._platforms[domain][platform] = []
+                
+                self._platforms[domain][platform].extend(entities)
+                self.context.logger.info(
+                    f"Registered {len(entities)} {platform} entities for {domain}"
+                )
+            
+            # Call platform's async_setup_entry
+            if hasattr(platform_module, "async_setup_entry"):
+                await platform_module.async_setup_entry(
+                    self.context, 
+                    entry, 
+                    async_add_entities
+                )
+            
+            return True
+            
+        except Exception as e:
+            self.context.logger.error(f"Failed to setup {platform} platform for {domain}: {e}")
+            import traceback
+            self.context.logger.error(traceback.format_exc())
+            return False
+    
+    async def async_unload_platforms(
+        self, 
+        entry: PluginEntryData, 
+        platforms: List[str]
+    ) -> bool:
+        """
+        Unload platforms for an entry (HA-style).
+        Similar to: hass.config_entries.async_unload_platforms(entry, ["parser"])
+        """
+        domain = entry.domain
+        
+        for platform in platforms:
+            if domain in self._platforms and platform in self._platforms[domain]:
+                entities = self._platforms[domain][platform]
+                
+                # Call async_will_remove on each entity
+                for entity in entities:
+                    if hasattr(entity, "async_will_remove"):
+                        try:
+                            await entity.async_will_remove()
+                        except Exception as e:
+                            self.context.logger.error(f"Error unloading entity: {e}")
+                
+                # Remove platform
+                del self._platforms[domain][platform]
+        
+        return True
+    
     async def async_unload_entry(self, entry_id: str) -> bool:
-        """
-        Unload plugin config entry (similar to async_unload_entry in HA).
-        """
+        """Unload plugin config entry (HA-style)."""
         entry = self.config_entries.get(entry_id)
         if not entry:
             return False
@@ -200,9 +280,11 @@ class PluginManager:
             return False
         
         try:
-            # Call unload hook
-            if hasattr(record.instance, "async_unload_entry"):
-                result = await record.instance.async_unload_entry(self.context, entry)
+            module = record.instance
+            
+            # Call module-level async_unload_entry function
+            if hasattr(module, "async_unload_entry"):
+                result = await module.async_unload_entry(self.context, entry)
                 if not result:
                     raise Exception("async_unload_entry returned False")
             
@@ -227,27 +309,58 @@ class PluginManager:
             self.context.logger.error(f"Plugins[Unload Entry Failed]: {domain} - {e}")
             return False
     
-    async def _async_load_module(self, domain: str) -> Optional[PluginBase]:
-        """Load plugin module and instantiate plugin class"""
+    async def _async_load_module(self, domain: str):
+        """Load plugin module (not a class!)"""
         try:
             module_path = self.plugins_dir / domain / "__init__.py"
             
-            spec = importlib.util.spec_from_file_location(f"plugin_{domain}", module_path)
+            spec = importlib.util.spec_from_file_location(
+                f"plugin_{domain}", 
+                module_path
+            )
             module = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = module
             spec.loader.exec_module(module)
             
-            plugin_cls = getattr(module, "Plugin")
-            
-            # Verify plugin inherits from PluginBase
-            if not issubclass(plugin_cls, PluginBase):
-                raise TypeError(f"Plugin class must inherit from PluginBase")
-            
-            instance = plugin_cls()
-            return instance
+            return module
             
         except Exception as e:
             self.context.logger.error(f"Plugins[Load Module Failed]: {domain} - {e}")
+            return None
+    
+    async def _async_load_platform_module(self, domain: str, platform: str):
+        """Load platform module (e.g., parser.py)"""
+        try:
+            platform_path = self.plugins_dir / domain / f"{platform}.py"
+            
+            if not platform_path.exists():
+                self.context.logger.error(f"Platform file not found: {platform_path}")
+                return None
+            
+            module_name = f"contenthive_plugin_{domain}_{platform}"
+            
+            spec = importlib.util.spec_from_file_location(
+                module_name,
+                platform_path
+            )
+            
+            if spec is None or spec.loader is None:
+                self.context.logger.error(f"Failed to create module spec for {platform_path}")
+                return None
+            
+            module = importlib.util.module_from_spec(spec)
+            
+            sys.modules[module_name] = module
+            
+            spec.loader.exec_module(module)
+            
+            self.context.logger.info(f"Loaded platform module: {module_name}")
+            return module
+            
+        except Exception as e:
+            self.context.logger.error(f"Failed to load {platform} platform for {domain}: {e}")
+            import traceback
+            self.context.logger.error(traceback.format_exc())
             return None
     
     async def _async_install_dependencies(self, domain: str) -> bool:
@@ -263,7 +376,6 @@ class PluginManager:
         try:
             self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installing {len(requirements)} packages")
             
-            # Run pip install in executor to avoid blocking
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
@@ -288,10 +400,7 @@ class PluginManager:
         ])
     
     def register_service(self, domain: str, service: str, callback: Callable):
-        """
-        Register a service that can be called by other plugins or external code.
-        Similar to hass.services.async_register
-        """
+        """Register a service (HA-style)"""
         if domain not in self.services:
             self.services[domain] = {}
         
@@ -299,10 +408,7 @@ class PluginManager:
         self.context.logger.info(f"Plugins[Service Registered]: {domain}.{service}")
     
     async def call_service(self, domain: str, service: str, data: Dict[str, Any]):
-        """
-        Call a registered service.
-        Similar to hass.services.async_call
-        """
+        """Call a registered service (HA-style)"""
         if domain not in self.services or service not in self.services[domain]:
             raise ValueError(f"Service {domain}.{service} not found")
         
@@ -313,13 +419,13 @@ class PluginManager:
         else:
             return callback(data)
     
-    def get_parser_plugins(self) -> List[tuple[str, ContentParserPlugin]]:
-        """Get all enabled content parser plugins"""
+    def get_parser_entities(self) -> List[Any]:
+        """Get all registered parser entities from all plugins."""
         parsers = []
-        for domain, record in self.plugins.items():
-            if (record.state == PluginState.ENABLED and 
-                isinstance(record.instance, ContentParserPlugin)):
-                parsers.append((domain, record.instance))
+        
+        for domain, platforms in self._platforms.items():
+            if "parser" in platforms:
+                parsers.extend(platforms["parser"])
         
         return parsers
     
@@ -327,68 +433,52 @@ class PluginManager:
         self, 
         url: str, 
         preferred_domain: Optional[str] = None
-    ) -> tuple[Optional[str], Optional[ContentParserPlugin]]:
-        """
-        Find parser plugin for URL asynchronously.
-        """
-        parsers = self.get_parser_plugins()
+    ) -> tuple[Optional[str], Optional[Any]]:
+        """Find parser entity for URL."""
+        parsers = self.get_parser_entities()
         
         # Try preferred parser first
         if preferred_domain:
-            for domain, plugin in parsers:
-                if domain == preferred_domain:
+            for parser in parsers:
+                if hasattr(parser, "domain") and parser.domain == preferred_domain:
                     try:
-                        if asyncio.iscoroutinefunction(plugin.can_parse):
-                            can_parse = await plugin.can_parse(url)
-                        else:
-                            can_parse = plugin.can_parse(url)
-                        
+                        can_parse = parser.can_parse(url)
                         if can_parse:
-                            return domain, plugin
+                            return preferred_domain, parser
                     except Exception as e:
-                        self.context.logger.error(f"Error checking {domain}: {e}")
+                        self.context.logger.error(f"Error checking {preferred_domain}: {e}")
         
         # Try all parsers
-        for domain, plugin in parsers:
+        for parser in parsers:
+            domain = getattr(parser, "domain", "unknown")
             if preferred_domain and domain == preferred_domain:
                 continue
             
             try:
-                if asyncio.iscoroutinefunction(plugin.can_parse):
-                    can_parse = await plugin.can_parse(url)
-                else:
-                    can_parse = plugin.can_parse(url)
-                
+                can_parse = parser.can_parse(url)
                 if can_parse:
-                    return domain, plugin
+                    return domain, parser
             except Exception as e:
                 self.context.logger.error(f"Error checking {domain}: {e}")
         
         return None, None
     
     async def async_reload(self, domain: str) -> bool:
-        """
-        Reload a plugin (unload and load again).
-        """
-        # Find all entries for this domain
+        """Reload a plugin."""
         entries = [
             entry for entry in self.config_entries.values()
             if entry.domain == domain
         ]
         
-        # Unload all entries
         for entry in entries:
             await self.async_unload_entry(entry.entry_id)
         
-        # Reload module
         record = self.plugins.get(domain)
         if record:
             record.instance = None
             record.state = PluginState.INSTALLED
         
-        # Setup again
         if await self.async_setup(domain):
-            # Restore entries
             for entry in entries:
                 await self.async_setup_entry(entry)
             return True
