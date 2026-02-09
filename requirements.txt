@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+aiosqlite
+aiohttp
+
+playwright==1.58.0

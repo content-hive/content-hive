@@ -1,0 +1,14 @@
+services:
+  content-hive:
+    build: 
+      context: .
+      args:
+        - APP_VERSION=0.1.2
+    container_name: content-hive
+    ports:
+      - "6123:6123"
+    volumes:
+      - ./data:/config/data
+      - ./logs:/config/logs
+      - ./plugins:/config/plugins
+    restart: unless-stopped
