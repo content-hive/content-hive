@@ -4,7 +4,7 @@ Models for content-related operations.
 
 from datetime import datetime
 from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional, Any, Dict, Literal
+from typing import Optional, Any, Literal
 
 from contenthive.models.media import MediaItem
 
@@ -14,7 +14,7 @@ class ErrorDetail(BaseModel):
     
     code: str = Field(..., description="Error code")
     message: str = Field(..., description="Error message")
-    details: Optional[Dict[str, Any]] = Field(None, description="Detailed error information")
+    details: Optional[dict[str, Any]] = Field(None, description="Detailed error information")
 
 
 class APIResponse(BaseModel):

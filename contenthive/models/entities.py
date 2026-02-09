@@ -3,7 +3,7 @@ Database entity models
 """
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 
 @dataclass
 class PlatformEntity:
@@ -67,4 +67,4 @@ class ParseResultEntity:
     # Related entities (for joins) - must not be None
     author: AuthorEntity = field(default_factory=lambda: AuthorEntity())
     platform: PlatformEntity = field(default_factory=lambda: PlatformEntity())
-    media: List[MediaEntity] = field(default_factory=list)
+    media: list[MediaEntity] = field(default_factory=list)

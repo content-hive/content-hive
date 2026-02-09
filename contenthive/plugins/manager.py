@@ -2,7 +2,7 @@ import importlib.util
 import sys
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, Callable
 import asyncio
 import subprocess
 
@@ -22,7 +22,7 @@ class PluginEntryData:
 class EventBus:
     """Simple event bus for plugin communication"""
     def __init__(self):
-        self._listeners: Dict[str, List[Callable]] = {}
+        self._listeners: Dict[str, list[Callable]] = {}
     
     def listen(self, event_type: str, callback: Callable):
         """Register event listener"""
@@ -63,7 +63,7 @@ class PluginManager:
         self.services: Dict[str, Dict[str, Callable]] = {}
         
         # Platform registry (domain -> platform -> entities)
-        self._platforms: Dict[str, Dict[str, List[Any]]] = {}
+        self._platforms: Dict[str, Dict[str, list[Any]]] = {}
     
     async def async_discover(self):
         """Discover plugins asynchronously from the plugins directory."""
@@ -211,7 +211,7 @@ class PluginManager:
             if not platform_module:
                 raise Exception(f"Platform {platform} not found")
             
-            async def async_add_entities(entities: List[Any]):
+            async def async_add_entities(entities: list[Any]):
                 """Callback to register entities from platform."""
                 if domain not in self._platforms:
                     self._platforms[domain] = {}
@@ -242,7 +242,7 @@ class PluginManager:
     async def async_unload_platforms(
         self, 
         entry: PluginEntryData, 
-        platforms: List[str]
+        platforms: list[str]
     ) -> bool:
         """
         Unload platforms for an entry (HA-style).
@@ -405,7 +405,7 @@ class PluginManager:
             self.context.logger.error(f"Plugins[Dependencies Failed]: {domain} - {e}")
             return False
     
-    def _install_packages(self, requirements: List[str]):
+    def _install_packages(self, requirements: list[str]):
         """Blocking package installation (run in executor)"""
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
@@ -434,7 +434,7 @@ class PluginManager:
         else:
             return callback(data)
     
-    def get_parser_entities(self) -> List[Any]:
+    def get_parser_entities(self) -> list[Any]:
         """Get all registered parser entities from all plugins."""
         parsers = []
         

@@ -7,6 +7,7 @@ from pydantic import HttpUrl
 from contenthive.logger import logger
 from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo
 from contenthive.database.parserDAO import parserDAO
+from contenthive.models.mappers import ContentMapper
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import mediaService
 
@@ -103,7 +104,8 @@ class ParserService:
             
             # Return the saved parse result (with or without media)
             with parserDAO as dao:
-                return dao.get_parse_result(parse_result_id)
+                entity = dao.get_parse_result(parse_result_id)
+                return ContentMapper.entity_to_url_parser_result(entity)
                 
         except Exception as e:
             logger.error(f"Error fetching content from URL {url}: {e}")
@@ -116,7 +118,7 @@ class ParserService:
         try:
             with parserDAO as dao:
                 results = dao.list_parse_results(platform_id=platform_id, author_id=author_id)
-            return results
+            return [ContentMapper.entity_to_url_parser_result(result) for result in results]
         except Exception as e:
             logger.error(f"Error fetching contents from the database: {e}")
             raise
@@ -128,7 +130,7 @@ class ParserService:
         try:
             with parserDAO as dao:
                 platforms = dao.list_platforms()
-                return platforms
+                return [ContentMapper.platform_entity_to_info(platform) for platform in platforms]
         except Exception as e:
             logger.error(f"Error fetching platforms from the database: {e}")
             raise
@@ -140,7 +142,7 @@ class ParserService:
         try:
             with parserDAO as dao:
                 authors = dao.list_authors(platform_id=platform_id)
-                return authors
+                return [ContentMapper.author_entity_to_info(author) for author in authors]
         except Exception as e:
             logger.error(f"Error fetching authors from the database: {e}")
             raise
