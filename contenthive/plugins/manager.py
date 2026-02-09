@@ -329,15 +329,28 @@ class PluginManager:
             return None
     
     async def _async_load_platform_module(self, domain: str, platform: str):
-        """Load platform module (e.g., parser.py)"""
+        """Load platform module (e.g., parser.py) as part of the plugin package."""
         try:
+            parent_module_name = f"contenthive_plugin_{domain}"
+            
+            if parent_module_name not in sys.modules:
+                init_path = self.plugins_dir / domain / "__init__.py"
+                parent_spec = importlib.util.spec_from_file_location(
+                    parent_module_name,
+                    init_path,
+                    submodule_search_locations=[str(self.plugins_dir / domain)]
+                )
+                parent_module = importlib.util.module_from_spec(parent_spec)
+                sys.modules[parent_module_name] = parent_module
+                parent_spec.loader.exec_module(parent_module)
+            
             platform_path = self.plugins_dir / domain / f"{platform}.py"
             
             if not platform_path.exists():
                 self.context.logger.error(f"Platform file not found: {platform_path}")
                 return None
             
-            module_name = f"contenthive_plugin_{domain}_{platform}"
+            module_name = f"{parent_module_name}.{platform}"
             
             spec = importlib.util.spec_from_file_location(
                 module_name,
@@ -349,6 +362,8 @@ class PluginManager:
                 return None
             
             module = importlib.util.module_from_spec(spec)
+            
+            module.__package__ = parent_module_name
             
             sys.modules[module_name] = module
             
