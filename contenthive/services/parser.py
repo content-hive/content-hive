@@ -20,6 +20,40 @@ class ParserService:
         """
         pass
 
+    async def _find_parser_for_url(self, url: str, preferred_domain: Optional[str] = None) -> Optional[str]:
+        """
+        Find parser entity for URL.
+        """
+        manager = get_plugin_manager()
+        if not manager:
+            raise Exception("Plugin manager not initialized")
+        
+        parser_domains = [
+            domain for domain in manager.services.keys()
+            if "can_parse" in manager.services.get(domain, {})
+        ]
+
+        # Try preferred parser first
+        if preferred_domain and preferred_domain in parser_domains:
+            try:
+                if await manager.call_service(preferred_domain, "can_parse", {"url": url}):
+                    return preferred_domain
+            except Exception as e:
+                logger.error(f"Error checking preferred parser {preferred_domain}: {e}")
+        
+        # Try all parsers
+        for domain in parser_domains:
+            if preferred_domain and domain == preferred_domain:
+                continue
+            
+            try:
+                if await manager.call_service(domain, "can_parse", {"url": url}):
+                    return domain
+            except Exception as e:
+                logger.error(f"Error checking {domain}: {e}")
+        
+        return None
+    
     async def parser_content(
         self, 
         url: HttpUrl, 
@@ -42,15 +76,15 @@ class ParserService:
                 raise Exception("Plugin manager not initialized")
             
             # Find parser for URL
-            domain, parser = await manager.async_find_parser_for_url(str(url), preferred_domain=plugin_id)
+            domain = await self._find_parser_for_url(str(url), preferred_domain=plugin_id)
             
-            if not parser:
+            if not domain:
                 raise Exception(f"No parser found for URL: {url}")
             
             logger.info(f"Using parser plugin: {domain} for URL: {url}")
             
             # Parse content
-            result = await parser.parse(str(url))
+            result = await manager.call_service(domain, "parse", {"url": str(url)})
             
             if not result:
                 raise Exception(f"Parser returned empty result for URL: {url}")

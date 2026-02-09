@@ -444,40 +444,6 @@ class PluginManager:
         
         return parsers
     
-    async def async_find_parser_for_url(
-        self, 
-        url: str, 
-        preferred_domain: Optional[str] = None
-    ) -> tuple[Optional[str], Optional[Any]]:
-        """Find parser entity for URL."""
-        parsers = self.get_parser_entities()
-        
-        # Try preferred parser first
-        if preferred_domain:
-            for parser in parsers:
-                if hasattr(parser, "domain") and parser.domain == preferred_domain:
-                    try:
-                        can_parse = parser.can_parse(url)
-                        if can_parse:
-                            return preferred_domain, parser
-                    except Exception as e:
-                        self.context.logger.error(f"Error checking {preferred_domain}: {e}")
-        
-        # Try all parsers
-        for parser in parsers:
-            domain = getattr(parser, "domain", "unknown")
-            if preferred_domain and domain == preferred_domain:
-                continue
-            
-            try:
-                can_parse = parser.can_parse(url)
-                if can_parse:
-                    return domain, parser
-            except Exception as e:
-                self.context.logger.error(f"Error checking {domain}: {e}")
-        
-        return None, None
-    
     async def async_reload(self, domain: str) -> bool:
         """Reload a plugin."""
         entries = [
