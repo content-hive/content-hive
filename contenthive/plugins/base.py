@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from contenthive.models.content import URLParserResult
+from contenthive.models.parser import ParserResult
 from .context import PluginContext
 
 
@@ -67,7 +67,7 @@ class ContentParserPlugin(PluginBase):
         pass
     
     @abstractmethod
-    def parse(self, url: str) -> URLParserResult:
+    async def parse(self, url: str) -> ParserResult:
         """
         Parse the content from the given URL.
         
@@ -75,6 +75,6 @@ class ContentParserPlugin(PluginBase):
             url: The URL being parsed
             
         Returns:
-            URLParserResult containing parsed data
+            ParserResult containing parsed data
         """
         pass

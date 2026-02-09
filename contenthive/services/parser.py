@@ -42,7 +42,7 @@ class ParserService:
                 plugin_id, parser = manager.find_parser_for_url(str(url), plugin_id=plugin_id)
                 if parser:
                     logger.info(f"Using parser plugin: {plugin_id} for URL: {url}")
-                    result = parser.parse(str(url))
+                    result = await parser.parse(str(url))
                     if result:
                         logger.info(f"Successfully parsed content from URL: {url} using plugin: {plugin_id}")
                         
