@@ -1,0 +1,51 @@
+Table,Field,Type,Required,Description,Notes
+users,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
+users,username,TEXT,YES,Username,UNIQUE NOT NULL
+users,email,TEXT,YES,Email,UNIQUE NOT NULL
+users,password_hash,TEXT,YES,Password hash,NOT NULL
+users,is_active,BOOLEAN,YES,Is active,DEFAULT 1
+users,is_admin,BOOLEAN,YES,Is admin,DEFAULT 0
+users,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
+users,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+platforms,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
+platforms,code,TEXT,YES,Platform code,UNIQUE NOT NULL
+platforms,name,TEXT,YES,Name,NOT NULL
+platforms,url,TEXT,YES,Platform homepage,NOT NULL
+platforms,icon_url,TEXT,NO,Icon URL,
+platforms,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
+platforms,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+authors,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
+authors,platform_id,INTEGER,YES,Platform ID,NOT NULL FOREIGN KEY
+authors,uid,TEXT,YES,Platform user ID,NOT NULL
+authors,name,TEXT,NO,Nickname,
+authors,username,TEXT,YES,Username,NOT NULL
+authors,avatar,TEXT,NO,Avatar URL,
+authors,url,TEXT,NO,Profile URL,
+authors,created_at,TIMESTAMP,YES,Added time,DEFAULT CURRENT_TIMESTAMP
+authors,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+media,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
+media,url,TEXT,YES,Media URL,NOT NULL
+media,type,TEXT,YES,Type,NOT NULL
+media,title,TEXT,NO,Title,
+media,duration,INTEGER,NO,Duration,
+media,width,TEXT,NO,Width,
+media,height,TEXT,NO,Height,
+media,cover,TEXT,NO,Video cover,
+media,media_path,TEXT,NO,Local path,
+media,cover_path,TEXT,NO,Cover path,
+media,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
+media,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+parse_results,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
+parse_results,pid,TEXT,YES,Unique identifier,NOT NULL
+parse_results,url,TEXT,YES,Parsed URL,NOT NULL
+parse_results,content,TEXT,YES,Content,NOT NULL
+parse_results,author_id,INTEGER,NO,Author ID,FOREIGN KEY
+parse_results,platform_id,INTEGER,YES,Platform ID,NOT NULL FOREIGN KEY
+parse_results,user_id,INTEGER,NO,User ID,FOREIGN KEY
+parse_results,created_time,INTEGER,NO,Publish time,
+parse_results,parser,TEXT,YES,Parser used,NOT NULL
+parse_results,state,TEXT,YES,Status,NOT NULL
+parse_results,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
+parse_results,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+parse_result_media,parse_result_id,INTEGER,YES,Parse result ID,PRIMARY KEY FOREIGN KEY
+parse_result_media,media_id,INTEGER,YES,Media ID,PRIMARY KEY FOREIGN KEY
