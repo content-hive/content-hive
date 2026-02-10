@@ -221,7 +221,11 @@ __marimo__/
 # vscode
 .vscode/
 
-# Local
-data/
-logs/
-plugins/
+# Local data and logs
+/data/
+/logs/
+/plugins/
+
+# Note: contenthive/plugins/ is part of source code and will be tracked
+!contenthive/plugins/
+!contenthive/plugins/**
