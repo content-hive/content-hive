@@ -389,7 +389,7 @@ plugins/
   "domain": "my_parser",
   "name": "My Parser",
   "version": "1.0.0",
-  "dependencies": ["requests"],
+  "requirements": ["requests"],
   "author": "Your Name"
 }
 ```

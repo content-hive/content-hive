@@ -2,7 +2,6 @@
 Home Assistant style restart mechanism
 """
 import os
-import sys
 import signal
 import asyncio
 from enum import Enum

@@ -236,17 +236,26 @@ class MediaService:
         deleted_count = 0
         failed_count = 0
         
+        media_root = self.media_dir.resolve()
+
         for media_path in file_paths:
             try:
                 # Convert relative path to absolute path
                 if media_path.startswith('/media/'):
                     abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
-                    if abs_path.exists():
-                        abs_path.unlink()
+                    resolved_path = abs_path.resolve()
+                    
+                    if resolved_path != media_root and media_root in resolved_path.parents:
+                        failed_count += 1
+                        logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
+                        continue
+
+                    if resolved_path.exists():
+                        resolved_path.unlink()
                         deleted_count += 1
-                        logger.debug(f"Deleted media file: {abs_path}")
+                        logger.debug(f"Deleted media file: {resolved_path}")
                     else:
-                        logger.debug(f"File does not exist: {abs_path}")
+                        logger.debug(f"File does not exist: {resolved_path}")
             except Exception as e:
                 failed_count += 1
                 logger.warning(f"Failed to delete media file {media_path}: {e}")

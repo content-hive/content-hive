@@ -646,6 +646,10 @@ class ParserDAO:
             # Delete platform
             cursor.execute("DELETE FROM platforms WHERE id = ?", (platform_id,))
             
+            if cursor.rowcount == 0:
+                logger.warning(f"Platform {platform_id} not found for deletion")
+                return False, all_file_paths  # Platform not found
+            
             if commit:
                 conn.commit()
                 logger.info(f"Successfully deleted platform {platform_id} from database")
@@ -694,6 +698,10 @@ class ParserDAO:
 
             # Delete author
             cursor.execute("DELETE FROM authors WHERE id = ?", (author_id,))
+            
+            if cursor.rowcount == 0:
+                logger.warning(f"Author {author_id} not found for deletion")
+                return False, all_file_paths  # Author not found
             
             if commit:
                 conn.commit()
@@ -763,6 +771,10 @@ class ParserDAO:
             cursor.execute("DELETE FROM parse_result_media WHERE parse_result_id = ?", 
                          (parse_result_id,))
 
+            if cursor.rowcount == 0:
+                logger.warning(f"Parse result {parse_result_id} not found for deletion")
+                return False, file_paths  # Parse result not found
+            
             if orphaned_media_ids:
                 placeholders = ",".join("?" * len(orphaned_media_ids))
                 cursor.execute(f"DELETE FROM media WHERE id IN ({placeholders})", 
