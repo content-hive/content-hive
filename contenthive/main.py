@@ -2,11 +2,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
-from contenthive.plugins.registry import PluginState
 from contenthive.routers import api, system
 from contenthive.database.db import initialize_db
 from contenthive.config import settings, ensure_directories
-from contenthive.plugins.manager import get_plugin_manager
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
 from contenthive.logger import logger, setup_file_logging
 from contenthive.core.restart import RestartManager, RestartType, set_restart_manager
