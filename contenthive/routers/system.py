@@ -4,6 +4,8 @@ import os
 
 from contenthive.logger import logger
 from contenthive.core.restart import get_restart_manager, RestartType
+from contenthive.plugins.registry import PluginState
+from contenthive.config import settings
 
 router = APIRouter(prefix="/system", tags=["system"])
 security = HTTPBearer()
@@ -115,4 +117,31 @@ async def check_configuration():
         "errors": errors,
         "warnings": warnings,
         "message": "Configuration is valid" if is_valid else "Configuration has errors"
+    }
+
+
+@router.get("/health")
+async def health_check():
+    """
+    Health check endpoint with plugin status information.
+    """
+    from contenthive.plugins.manager import get_plugin_manager
+    
+    plugin_manager = get_plugin_manager()
+    
+    plugin_status = {}
+    if plugin_manager:
+        for domain, record in plugin_manager.plugins.items():
+            plugin_status[domain] = {
+                "state": record.state.value,
+                "version": record.version,
+                "name": record.name,
+                "error": record.error if record.state == PluginState.FAILED else None
+            }
+    
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "version": settings.app_version,
+        "plugins": plugin_status
     }

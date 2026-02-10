@@ -59,27 +59,3 @@ app = FastAPI(
 
 app.include_router(api.router_v1)
 app.include_router(system.router)
-
-@app.get("/health", tags=["health"])
-async def health_check():
-    """
-    Health check endpoint with plugin status information.
-    """
-    plugin_manager = get_plugin_manager()
-    
-    plugin_status = {}
-    if plugin_manager:
-        for domain, record in plugin_manager.plugins.items():
-            plugin_status[domain] = {
-                "state": record.state.value,
-                "version": record.version,
-                "name": record.name,
-                "error": record.error if record.state == PluginState.FAILED else None
-            }
-    
-    return {
-        "status": "ok",
-        "app": settings.app_name,
-        "version": settings.app_version,
-        "plugins": plugin_status
-    }
