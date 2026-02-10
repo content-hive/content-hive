@@ -6,7 +6,7 @@ from typing import Optional
 from pydantic import HttpUrl
 from contenthive.logger import logger
 from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo
-from contenthive.database.parserDAO import parserDAO
+from contenthive.database.parserDAO import ParserDAO
 from contenthive.models.mappers import ContentMapper
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import mediaService
@@ -93,17 +93,17 @@ class ParserService:
             logger.info(f"Successfully parsed content from URL: {url} using plugin: {domain}")
             
             # Save parse result to database
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 parse_result_id = dao.save_parse_result(result)
 
             # Download media files if requested
             if download_media and result.media:
                 media_entities = await mediaService.download_media_for_result(result)
-                with parserDAO as dao:
+                with ParserDAO() as dao:
                     dao.save_medias(media_entities, commit=True)
             
             # Return the saved parse result (with or without media)
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 entity = dao.get_parse_result(parse_result_id)
                 return ContentMapper.entity_to_url_parser_result(entity)
                 
@@ -116,7 +116,7 @@ class ParserService:
         Fetch contents from the database.
         """
         try:
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 results = dao.list_parse_results(platform_id=platform_id, author_id=author_id)
             return [ContentMapper.entity_to_url_parser_result(result) for result in results]
         except Exception as e:
@@ -128,7 +128,7 @@ class ParserService:
         Fetch platforms from the database.
         """
         try:
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 platforms = dao.list_platforms()
                 return [ContentMapper.platform_entity_to_info(platform) for platform in platforms]
         except Exception as e:
@@ -140,7 +140,7 @@ class ParserService:
         Fetch authors from the database.
         """
         try:
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 authors = dao.list_authors(platform_id=platform_id)
                 return [ContentMapper.author_entity_to_info(author) for author in authors]
         except Exception as e:
@@ -160,7 +160,7 @@ class ParserService:
         try:
             logger.info(f"Deleting platform {platform_id}")
             
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 success, file_paths = dao.delete_platform(platform_id, commit=True)
             
             if success and file_paths:
@@ -185,7 +185,7 @@ class ParserService:
         try:
             logger.info(f"Deleting author {author_id}")
             
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 success, file_paths = dao.delete_author(author_id, commit=True)
             
             if success and file_paths:
@@ -210,7 +210,7 @@ class ParserService:
         try:
             logger.info(f"Deleting parse result {parse_result_id}")
             
-            with parserDAO as dao:
+            with ParserDAO() as dao:
                 success, file_paths = dao.delete_parse_result(parse_result_id, commit=True)
             
             if success and file_paths:

@@ -800,6 +800,3 @@ class ParserDAO:
                 conn.rollback()
             logger.error(f"Unexpected error when deleting parse result {parse_result_id}: {e}")
             raise
-    
-
-parserDAO = ParserDAO()
