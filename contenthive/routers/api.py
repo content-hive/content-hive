@@ -80,3 +80,60 @@ async def list_authors(platform_id: Optional[int] = None) -> APIResponse:
                 details=str(e)
             )
         )
+
+
+@router_v1.delete("/platforms/{platform_id}", response_model=APIResponse, tags=["Platform"])
+async def delete_platform(platform_id: int) -> APIResponse:
+    try:
+        success = await parserService.delete_platform(platform_id)
+        return APIResponse(
+            status="success",
+            data={"deleted": success, "platform_id": platform_id}
+        )
+    except Exception as e:
+        return APIResponse(
+            status="error",
+            error=ErrorDetail(
+                code="PLATFORM_DELETE_ERROR",
+                message="Failed to delete platform",
+                details=str(e)
+            )
+        )
+
+
+@router_v1.delete("/authors/{author_id}", response_model=APIResponse, tags=["Author"])
+async def delete_author(author_id: int) -> APIResponse:
+    try:
+        success = await parserService.delete_author(author_id)
+        return APIResponse(
+            status="success",
+            data={"deleted": success, "author_id": author_id}
+        )
+    except Exception as e:
+        return APIResponse(
+            status="error",
+            error=ErrorDetail(
+                code="AUTHOR_DELETE_ERROR",
+                message="Failed to delete author",
+                details=str(e)
+            )
+        )
+
+
+@router_v1.delete("/contents/{parse_result_id}", response_model=APIResponse, tags=["Content"])
+async def delete_content(parse_result_id: int) -> APIResponse:
+    try:
+        success = await parserService.delete_parse_result(parse_result_id)
+        return APIResponse(
+            status="success",
+            data={"deleted": success, "parse_result_id": parse_result_id}
+        )
+    except Exception as e:
+        return APIResponse(
+            status="error",
+            error=ErrorDetail(
+                code="CONTENT_DELETE_ERROR",
+                message="Failed to delete content",
+                details=str(e)
+            )
+        )

@@ -147,5 +147,80 @@ class ParserService:
             logger.error(f"Error fetching authors from the database: {e}")
             raise
 
+    async def delete_platform(self, platform_id: int) -> bool:
+        """
+        Delete platform and all related data (authors, parse results, media files).
+        
+        Args:
+            platform_id: Platform ID to delete
+            
+        Returns:
+            True if deletion was successful
+        """
+        try:
+            logger.info(f"Deleting platform {platform_id}")
+            
+            with parserDAO as dao:
+                success, file_paths = dao.delete_platform(platform_id, commit=True)
+            
+            if success and file_paths:
+                deleted, failed = mediaService.delete_media_files(file_paths)
+                logger.info(f"Deleted platform {platform_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
+            
+            return success
+        except Exception as e:
+            logger.error(f"Error deleting platform {platform_id}: {e}")
+            raise
+
+    async def delete_author(self, author_id: int) -> bool:
+        """
+        Delete author and all related data (parse results, media files).
+        
+        Args:
+            author_id: Author ID to delete
+            
+        Returns:
+            True if deletion was successful
+        """
+        try:
+            logger.info(f"Deleting author {author_id}")
+            
+            with parserDAO as dao:
+                success, file_paths = dao.delete_author(author_id, commit=True)
+            
+            if success and file_paths:
+                deleted, failed = mediaService.delete_media_files(file_paths)
+                logger.info(f"Deleted author {author_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
+            
+            return success
+        except Exception as e:
+            logger.error(f"Error deleting author {author_id}: {e}")
+            raise
+
+    async def delete_parse_result(self, parse_result_id: int) -> bool:
+        """
+        Delete parse result and associated media files.
+        
+        Args:
+            parse_result_id: Parse result ID to delete
+            
+        Returns:
+            True if deletion was successful
+        """
+        try:
+            logger.info(f"Deleting parse result {parse_result_id}")
+            
+            with parserDAO as dao:
+                success, file_paths = dao.delete_parse_result(parse_result_id, commit=True)
+            
+            if success and file_paths:
+                deleted, failed = mediaService.delete_media_files(file_paths)
+                logger.info(f"Deleted parse result {parse_result_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
+            
+            return success
+        except Exception as e:
+            logger.error(f"Error deleting parse result {parse_result_id}: {e}")
+            raise
+
 parserService = ParserService()
 

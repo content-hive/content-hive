@@ -2,10 +2,9 @@ import sqlite3
 from typing import Optional
 from contenthive.database.db import get_db_connection
 from contenthive.models.entities import ParseResultEntity, AuthorEntity, PlatformEntity, MediaEntity
-from contenthive.models.mappers import ParserMapper, ContentMapper
-from contenthive.models.content import URLParserResult
+from contenthive.models.mappers import ParserMapper
 from contenthive.models.parser import ParserResult
-
+from contenthive.logger import logger
 
 class ParserDAO:
     """
@@ -346,6 +345,29 @@ class ParserDAO:
             created_at=m["created_at"]
         ) for m in media_rows]
 
+        platform = PlatformEntity(
+                id=row["platform_id"],
+                code=row["code"],
+                name=row["platform_name"],
+                url=row["platform_url"],
+                icon_url=row["icon_url"],
+                created_at=row["platform_created_at"],
+                updated_at=row["platform_updated_at"]
+        )
+
+        author = AuthorEntity(
+                id=row["author_id"],
+                platform_id=row["platform_id"],
+                uid=row["uid"],
+                name=row["author_name"],
+                username=row["username"],
+                avatar=row["avatar"],
+                url=row["author_url"],
+                created_at=row["author_created_at"],
+                updated_at=row["author_updated_at"],
+                platform=platform
+        )
+
         # Build entity
         entity = ParseResultEntity(
             id=row["id"],
@@ -360,26 +382,8 @@ class ParserDAO:
             state=row["state"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
-            author=AuthorEntity(
-                id=row["author_id"],
-                platform_id=row["platform_id"],
-                uid=row["uid"],
-                name=row["author_name"],
-                username=row["username"],
-                avatar=row["avatar"],
-                url=row["author_url"],
-                created_at=row["author_created_at"],
-                updated_at=row["author_updated_at"]
-            ),
-            platform=PlatformEntity(
-                id=row["platform_id"],
-                code=row["code"],
-                name=row["platform_name"],
-                url=row["platform_url"],
-                icon_url=row["icon_url"],
-                created_at=row["platform_created_at"],
-                updated_at=row["platform_updated_at"]
-            ),
+            author=author,
+            platform=platform,
             media=media
         )
 
@@ -485,7 +489,27 @@ class ParserDAO:
         for row in rows:
             pr_id = row["id"]
             media = media_dict.get(pr_id, [])
-
+            platform = PlatformEntity(
+                id=row["platform_id"],
+                code=row["code"],
+                name=row["platform_name"],
+                url=row["platform_url"],
+                icon_url=row["icon_url"],
+                created_at=row["platform_created_at"],
+                updated_at=row["platform_updated_at"]
+            )
+            author = AuthorEntity(
+                id=row["author_id"],
+                platform_id=row["platform_id"],
+                uid=row["uid"],
+                name=row["author_name"],
+                username=row["username"],
+                avatar=row["avatar"],
+                url=row["author_url"],
+                created_at=row["author_created_at"],
+                updated_at=row["author_updated_at"],
+                platform=platform
+            )
             entity = ParseResultEntity(
                 id=row["id"],
                 pid=row["pid"],
@@ -499,45 +523,14 @@ class ParserDAO:
                 state=row["state"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
-                author=AuthorEntity(
-                    id=row["author_id"],
-                    platform_id=row["platform_id"],
-                    uid=row["uid"],
-                    name=row["author_name"],
-                    username=row["username"],
-                    avatar=row["avatar"],
-                    url=row["author_url"],
-                    created_at=row["author_created_at"],
-                    updated_at=row["author_updated_at"]
-                ),
-                platform=PlatformEntity(
-                    id=row["platform_id"],
-                    code=row["code"],
-                    name=row["platform_name"],
-                    url=row["platform_url"],
-                    icon_url=row["icon_url"],
-                    created_at=row["platform_created_at"],
-                    updated_at=row["platform_updated_at"]
-                ),
+                author=author,
+                platform=platform,
                 media=media
             )
 
             results.append(entity)
 
         return results
-
-
-    def delete_parse_result(self, parse_result_id: int) -> bool:
-        """
-        Delete parse result by ID.
-        """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("DELETE FROM parse_results WHERE id = ?", (parse_result_id,))
-        conn.commit()
-
-        return cursor.rowcount > 0
 
 
     def list_platforms(self) -> list[PlatformEntity]:
@@ -621,5 +614,180 @@ class ParserDAO:
 
         return authors
 
+
+    def delete_platform(self, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+        """
+        Delete platform by ID and cascade delete related authors and parse results.
+        
+        Args:
+            platform_id: Platform ID to delete
+            commit: Whether to commit immediately (default: False)
+            
+        Returns:
+            Tuple of (success, list of media file paths to delete)
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        all_file_paths = []
+        
+        try:
+            # Get all authors belonging to this platform
+            cursor.execute("SELECT id FROM authors WHERE platform_id = ?", (platform_id,))
+            author_ids = [row[0] for row in cursor.fetchall()]
+            
+            logger.info(f"Deleting platform {platform_id} with {len(author_ids)} authors")
+            
+            # Delete each author (which will collect file paths)
+            for author_id in author_ids:
+                success, file_paths = self.delete_author(author_id, commit=False)
+                all_file_paths.extend(file_paths)
+            
+            # Delete platform
+            cursor.execute("DELETE FROM platforms WHERE id = ?", (platform_id,))
+            
+            if commit:
+                conn.commit()
+                logger.info(f"Successfully deleted platform {platform_id} from database")
+            
+            return True, all_file_paths
+            
+        except sqlite3.Error as e:
+            if commit:
+                conn.rollback()
+            logger.error(f"Database error when deleting platform {platform_id}: {e}")
+            raise Exception(f"Failed to delete platform: {e}")
+        except Exception as e:
+            if commit:
+                conn.rollback()
+            logger.error(f"Unexpected error when deleting platform {platform_id}: {e}")
+            raise
+
+
+    def delete_author(self, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+        """
+        Delete author by ID and cascade delete related parse results.
+        
+        Args:
+            author_id: Author ID to delete
+            commit: Whether to commit immediately (default: False)
+            
+        Returns:
+            Tuple of (success, list of media file paths to delete)
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        all_file_paths = []
+        
+        try:
+            # Get all parse result IDs for this author
+            cursor.execute("SELECT id FROM parse_results WHERE author_id = ?", (author_id,))
+            parse_result_ids = [row[0] for row in cursor.fetchall()]
+            
+            logger.info(f"Deleting author {author_id} with {len(parse_result_ids)} parse results")
+
+            # Delete each parse result (which will collect file paths)
+            for pr_id in parse_result_ids:
+                success, file_paths = self.delete_parse_result(pr_id, commit=False)
+                all_file_paths.extend(file_paths)
+
+            # Delete author
+            cursor.execute("DELETE FROM authors WHERE id = ?", (author_id,))
+            
+            if commit:
+                conn.commit()
+                logger.info(f"Successfully deleted author {author_id} from database")
+            
+            return True, all_file_paths
+            
+        except sqlite3.Error as e:
+            if commit:
+                conn.rollback()
+            logger.error(f"Database error when deleting author {author_id}: {e}")
+            raise Exception(f"Failed to delete author: {e}")
+        except Exception as e:
+            if commit:
+                conn.rollback()
+            logger.error(f"Unexpected error when deleting author {author_id}: {e}")
+            raise
+
+
+    def delete_parse_result(self, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+        """
+        Delete parse result by ID and return list of associated media file paths.
+
+        Args:
+            parse_result_id: Parse result ID to delete
+            commit: Whether to commit immediately (default: False)
+
+        Returns:
+            Tuple of (success, list of media file paths to delete)
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        file_paths = []
+
+        try:
+            # 1. Collect media paths BEFORE deletion
+            cursor.execute("""
+                SELECT m.media_path, m.cover_path
+                FROM media m
+                JOIN parse_result_media prm ON m.id = prm.media_id
+                WHERE prm.parse_result_id = ?
+            """, (parse_result_id,))
+            
+            for row in cursor.fetchall():
+                if row[0]:  # media_path
+                    file_paths.append(row[0])
+                if row[1]:  # cover_path
+                    file_paths.append(row[1])
+
+            # 2. Get orphaned media IDs (only used by this parse result)
+            cursor.execute("""
+                SELECT media_id 
+                FROM parse_result_media 
+                WHERE media_id IN (
+                    SELECT media_id 
+                    FROM parse_result_media 
+                    WHERE parse_result_id = ?
+                )
+                GROUP BY media_id
+                HAVING COUNT(DISTINCT parse_result_id) = 1
+            """, (parse_result_id,))
+            
+            orphaned_media_ids = [row[0] for row in cursor.fetchall()]
+
+            # 3. Delete database records
+            cursor.execute("DELETE FROM parse_result_media WHERE parse_result_id = ?", 
+                         (parse_result_id,))
+
+            if orphaned_media_ids:
+                placeholders = ",".join("?" * len(orphaned_media_ids))
+                cursor.execute(f"DELETE FROM media WHERE id IN ({placeholders})", 
+                             orphaned_media_ids)
+                logger.debug(f"Deleted {len(orphaned_media_ids)} orphaned media records")
+
+            cursor.execute("DELETE FROM parse_results WHERE id = ?", (parse_result_id,))
+
+            # 4. Commit if requested
+            if commit:
+                conn.commit()
+                logger.info(f"Deleted parse result {parse_result_id} from database")
+
+            return True, file_paths
+
+        except sqlite3.Error as e:
+            if commit:
+                conn.rollback()
+            logger.error(f"Database error when deleting parse result {parse_result_id}: {e}")
+            raise Exception(f"Failed to delete parse result: {e}")
+        except Exception as e:
+            if commit:
+                conn.rollback()
+            logger.error(f"Unexpected error when deleting parse result {parse_result_id}: {e}")
+            raise
+    
 
 parserDAO = ParserDAO()

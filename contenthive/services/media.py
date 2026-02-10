@@ -220,4 +220,40 @@ class MediaService:
         }
         return type_map.get(content_type.split(';')[0].strip(), '')
 
+    def delete_media_files(self, file_paths: list[str]) -> tuple[int, int]:
+        """
+        Delete media files from disk given their relative paths.
+        
+        Args:
+            file_paths: List of media file paths (relative paths starting with /media/)
+            
+        Returns:
+            Tuple of (deleted_count, failed_count)
+        """
+        if not file_paths:
+            return 0, 0
+        
+        deleted_count = 0
+        failed_count = 0
+        
+        for media_path in file_paths:
+            try:
+                # Convert relative path to absolute path
+                if media_path.startswith('/media/'):
+                    abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
+                    if abs_path.exists():
+                        abs_path.unlink()
+                        deleted_count += 1
+                        logger.debug(f"Deleted media file: {abs_path}")
+                    else:
+                        logger.debug(f"File does not exist: {abs_path}")
+            except Exception as e:
+                failed_count += 1
+                logger.warning(f"Failed to delete media file {media_path}: {e}")
+        
+        if deleted_count > 0 or failed_count > 0:
+            logger.info(f"Media file cleanup: {deleted_count} deleted, {failed_count} failed")
+        
+        return deleted_count, failed_count
+
 mediaService = MediaService()
