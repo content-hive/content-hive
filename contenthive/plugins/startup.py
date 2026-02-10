@@ -3,6 +3,7 @@ from contenthive.database.db import get_db_connection
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
+from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.logger import logger
 
 
@@ -18,21 +19,49 @@ async def load_plugins_on_startup(app, data_dir):
         logger=logger
     )
 
-    # 2. Create plugin manager with context
+    # 2. Download official plugins from repository
+    logger.info(f"Downloading plugins from official repository: {settings.plugins_repo_url}")
+    downloader = GitHubPluginDownloader()
+    
+    try:
+        results = await downloader.download_plugins(
+            repo_url=settings.plugins_repo_url,
+            branch=settings.plugins_repo_branch,
+            force_reinstall=False  # Only download if not already installed
+        )
+        
+        if results:
+            success_count = sum(1 for v in results.values() if v)
+            total_count = len(results)
+            logger.info(f"Plugin download complete: {success_count}/{total_count} plugins installed")
+            
+            if success_count < total_count:
+                failed = [k for k, v in results.items() if not v]
+                logger.warning(f"Failed to install plugins: {', '.join(failed)}")
+        else:
+            logger.info("No plugins found in official repository")
+    except Exception as e:
+        logger.error(f"Failed to download plugins from repository: {e}")
+        logger.info("Continuing with existing plugins...")
+    finally:
+        # Cleanup temporary files
+        downloader.cleanup_temp()
+
+    # 3. Create plugin manager with context
     plugin_manager = PluginManager(settings.plugins_dir, context)
     set_plugin_manager(plugin_manager)
 
-    # 3. Inject HA-style methods into context for plugins to use
+    # 4. Inject HA-style methods into context for plugins to use
     context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
     context.async_unload_platforms = plugin_manager.async_unload_platforms
     context.register_service = plugin_manager.register_service
 
-    # 4. Discover plugins
+    # 5. Discover plugins
     logger.info("Starting plugin discovery...")
     await plugin_manager.async_discover()
     logger.info(f"Discovered {len(plugin_manager.plugins)} plugins")
 
-    # 5. Setup and enable plugins
+    # 6. Setup and enable plugins
     for domain in plugin_manager.plugins:
         logger.info(f"Setting up plugin: {domain}")
 
@@ -61,7 +90,7 @@ async def load_plugins_on_startup(app, data_dir):
         else:
             logger.error(f"✗ Failed to enable plugin: {domain}")
 
-    # 6. Log summary
+    # 7. Log summary
     enabled_count = sum(
         1 for record in plugin_manager.plugins.values()
         if record.state == PluginState.ENABLED

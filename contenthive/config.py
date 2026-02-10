@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     logs_dir: Path = Path(os.getenv("LOGS_DIR", "/config/logs"))
     plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/config/plugins"))
 
+    plugins_repo_url: str = "https://github.com/content-hive/plugins.git"
+    plugins_repo_branch: str = "develop" if environment in ["development", "staging"] else "main"
+    
     @computed_field
     @property
     def database_path(self) -> Path:
