@@ -17,10 +17,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install browsers and system dependencies (as root)
-RUN playwright install --with-deps chromium && \
-    chmod -R 777 /ms-playwright
-
 # Copy application code
 COPY contenthive ./contenthive
 

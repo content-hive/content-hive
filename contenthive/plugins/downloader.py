@@ -8,6 +8,7 @@ import shutil
 import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from urllib.parse import quote
 from contenthive.logger import logger
 from contenthive.config import settings
 
@@ -25,7 +26,8 @@ class GitHubPluginDownloader:
     async def download_plugins(
         self, 
         repo_url: str,
-        branch: str = "main",
+        ref: str = "main",
+        ref_type: str = "branch",
         selected_plugins: Optional[List[str]] = None,
         force_reinstall: bool = False
     ) -> Dict[str, bool]:
@@ -39,7 +41,8 @@ class GitHubPluginDownloader:
         
         Args:
             repo_url: GitHub repository URL (e.g., "github.com/user/repo")
-            branch: Git branch to download from
+            ref: Git reference (branch name, tag, or commit SHA)
+            ref_type: Type of reference: "branch", "tag", or "commit"
             selected_plugins: List of plugin IDs to install (None = all enabled)
             force_reinstall: If True, reinstall even if plugin exists
         
@@ -51,14 +54,15 @@ class GitHubPluginDownloader:
         archive_path = None
         
         try:
-            logger.info(f"Downloading plugins from {repo_url} (branch: {branch})...")
+            logger.info(f"Downloading plugins from {repo_url} (ref: {ref})...")
             
             # Parse GitHub URL and download
             owner, repo = self._parse_github_url(repo_url)
-            archive_path = await self._download_archive(owner, repo, branch)
+            archive_path = await self._download_archive(owner, repo, ref, ref_type)
             
-            # Extract archive
-            extract_dir = self.temp_dir / f"extract_{repo}"
+            # Extract archive (use safe ref name for directory)
+            safe_ref = ref.replace('/', '_').replace('\\', '_')
+            extract_dir = self.temp_dir / f"extract_{repo}_{ref_type}_{safe_ref}"
             if extract_dir.exists():
                 shutil.rmtree(extract_dir)
             extract_dir.mkdir(parents=True)
@@ -215,7 +219,8 @@ class GitHubPluginDownloader:
         self, 
         owner: str, 
         repo: str, 
-        branch: str
+        ref: str,
+        ref_type: str = "branch"
     ) -> Path:
         """
         Download repository as zip archive from GitHub.
@@ -223,13 +228,30 @@ class GitHubPluginDownloader:
         Args:
             owner: GitHub repository owner
             repo: Repository name
-            branch: Branch to download
+            ref: Git reference (branch name, tag, or commit SHA)
+            ref_type: Type of reference: "branch", "tag", or "commit"
         
         Returns:
             Path to downloaded archive file
         """
-        url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
-        archive_path = self.temp_dir / f"{repo}-{branch}.zip"
+        # Build URL based on reference type
+        if ref_type == "branch":
+            # Branch: refs/heads/branch-name
+            encoded_ref = quote(ref, safe='')
+            url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{encoded_ref}.zip"
+        elif ref_type == "tag":
+            # Tag: refs/tags/tag-name
+            encoded_ref = quote(ref, safe='')
+            url = f"https://github.com/{owner}/{repo}/archive/refs/tags/{encoded_ref}.zip"
+        elif ref_type == "commit":
+            # Commit SHA: directly use the SHA
+            url = f"https://github.com/{owner}/{repo}/archive/{ref}.zip"
+        else:
+            raise ValueError(f"Invalid ref_type: {ref_type}. Must be 'branch', 'tag', or 'commit'")
+        
+        # Create a safe filename for the archive
+        safe_ref = ref.replace('/', '_').replace('\\', '_')
+        archive_path = self.temp_dir / f"{repo}-{ref_type}-{safe_ref}.zip"
         
         logger.debug(f"Downloading from {url}...")
         

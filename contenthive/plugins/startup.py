@@ -26,7 +26,8 @@ async def load_plugins_on_startup(app, data_dir):
     try:
         results = await downloader.download_plugins(
             repo_url=settings.plugins_repo_url,
-            branch=settings.plugins_repo_branch,
+            ref=settings.plugins_repo_ref,
+            ref_type=settings.plugins_repo_ref_type,
             force_reinstall=False  # Only download if not already installed
         )
         

@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/config/plugins"))
 
     plugins_repo_url: str = "https://github.com/content-hive/plugins.git"
-    plugins_repo_branch: str = "develop" if environment in ["development", "staging"] else "main"
+    plugins_repo_ref_type: str = os.getenv("PLUGINS_REPO_REF_TYPE", "branch")  # branch, tag, commit
+    plugins_repo_ref: str = os.getenv("PLUGINS_REPO_REF", "main")
+
     
     @computed_field
     @property
