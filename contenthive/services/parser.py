@@ -5,7 +5,7 @@ Parser service for fetching and parsing URL content.
 from typing import Optional
 from pydantic import HttpUrl
 from contenthive.logger import logger
-from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo
+from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo, PaginatedResponse, PaginationInfo
 from contenthive.database.parserDAO import ParserDAO
 from contenthive.models.mappers import ContentMapper
 from contenthive.plugins.manager import get_plugin_manager
@@ -111,38 +111,130 @@ class ParserService:
             logger.error(f"Error fetching content from URL {url}: {e}")
             raise
 
-    async def list_contents(self, platform_id: Optional[int] = None, author_id: Optional[int] = None) -> list[URLParserResult]:
+    async def list_contents(self, platform_id: Optional[int] = None, author_id: Optional[int] = None,
+                           page: int = 1, page_size: int = 10,
+                           sort_by: str = "created_at", order: str = "desc") -> PaginatedResponse[URLParserResult]:
         """
-        Fetch contents from the database.
+        Fetch contents from the database with pagination and sorting.
+        
+        Args:
+            platform_id: Filter by platform ID
+            author_id: Filter by author ID
+            page: Page number (starting from 1)
+            page_size: Number of items per page
+            sort_by: Field to sort by
+            order: Sort order (asc/desc)
+            
+        Returns:
+            PaginatedResponse containing list of URLParserResult and pagination info
         """
         try:
+            offset = (page - 1) * page_size
             with ParserDAO() as dao:
-                results = dao.list_parse_results(platform_id=platform_id, author_id=author_id)
-            return [ContentMapper.entity_to_url_parser_result(result) for result in results]
+                results, total = dao.list_parse_results(
+                    platform_id=platform_id, 
+                    author_id=author_id,
+                    limit=page_size,
+                    offset=offset,
+                    sort_by=sort_by,
+                    order=order
+                )
+            
+            items = [ContentMapper.entity_to_url_parser_result(result) for result in results]
+            total_pages = (total + page_size - 1) // page_size  # Ceiling division
+            
+            return PaginatedResponse(
+                items=items,
+                pagination=PaginationInfo(
+                    page=page,
+                    page_size=page_size,
+                    total=total,
+                    total_pages=total_pages
+                )
+            )
         except Exception as e:
             logger.error(f"Error fetching contents from the database: {e}")
             raise
     
-    async def list_platforms(self) -> list[PlatformInfo]:
+    async def list_platforms(self, page: int = 1, page_size: int = 10,
+                            sort_by: str = "id", order: str = "asc") -> PaginatedResponse[PlatformInfo]:
         """
-        Fetch platforms from the database.
+        Fetch platforms from the database with pagination and sorting.
+        
+        Args:
+            page: Page number (starting from 1)
+            page_size: Number of items per page
+            sort_by: Field to sort by
+            order: Sort order (asc/desc)
+            
+        Returns:
+            PaginatedResponse containing list of PlatformInfo and pagination info
         """
         try:
+            offset = (page - 1) * page_size
             with ParserDAO() as dao:
-                platforms = dao.list_platforms()
-                return [ContentMapper.platform_entity_to_info(platform) for platform in platforms]
+                platforms, total = dao.list_platforms(
+                    limit=page_size,
+                    offset=offset,
+                    sort_by=sort_by,
+                    order=order
+                )
+            
+            items = [ContentMapper.platform_entity_to_info(platform) for platform in platforms]
+            total_pages = (total + page_size - 1) // page_size
+            
+            return PaginatedResponse(
+                items=items,
+                pagination=PaginationInfo(
+                    page=page,
+                    page_size=page_size,
+                    total=total,
+                    total_pages=total_pages
+                )
+            )
         except Exception as e:
             logger.error(f"Error fetching platforms from the database: {e}")
             raise
 
-    async def list_authors(self, platform_id: Optional[int] = None) -> list[AuthorInfo]:
+    async def list_authors(self, platform_id: Optional[int] = None,
+                          page: int = 1, page_size: int = 10,
+                          sort_by: str = "id", order: str = "asc") -> PaginatedResponse[AuthorInfo]:
         """
-        Fetch authors from the database.
+        Fetch authors from the database with pagination and sorting.
+        
+        Args:
+            platform_id: Filter by platform ID
+            page: Page number (starting from 1)
+            page_size: Number of items per page
+            sort_by: Field to sort by
+            order: Sort order (asc/desc)
+            
+        Returns:
+            PaginatedResponse containing list of AuthorInfo and pagination info
         """
         try:
+            offset = (page - 1) * page_size
             with ParserDAO() as dao:
-                authors = dao.list_authors(platform_id=platform_id)
-                return [ContentMapper.author_entity_to_info(author) for author in authors]
+                authors, total = dao.list_authors(
+                    platform_id=platform_id,
+                    limit=page_size,
+                    offset=offset,
+                    sort_by=sort_by,
+                    order=order
+                )
+            
+            items = [ContentMapper.author_entity_to_info(author) for author in authors]
+            total_pages = (total + page_size - 1) // page_size
+            
+            return PaginatedResponse(
+                items=items,
+                pagination=PaginationInfo(
+                    page=page,
+                    page_size=page_size,
+                    total=total,
+                    total_pages=total_pages
+                )
+            )
         except Exception as e:
             logger.error(f"Error fetching authors from the database: {e}")
             raise
