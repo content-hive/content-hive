@@ -8,9 +8,8 @@ import hashlib
 from pathlib import Path
 from contenthive.logger import logger
 from contenthive.models.parser import ParserResult
-from contenthive.models.entities import MediaEntity
+from contenthive.models.content import MediaEntity, ParserMapper
 from contenthive.config import settings
-from contenthive.models.mappers import ParserMapper
 from urllib.parse import quote
 
 class MediaService:
