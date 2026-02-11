@@ -43,7 +43,7 @@ class AuthorEntity:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    platform: PlatformEntity = field(default_factory=lambda: PlatformEntity())
+    platform: PlatformEntity = field(default_factory=PlatformEntity)
 
 
 @dataclass
@@ -80,8 +80,8 @@ class ParseResultEntity:
     updated_at: Optional[datetime] = None
     
     # Related entities (for joins) - must not be None
-    author: AuthorEntity = field(default_factory=lambda: AuthorEntity())
-    platform: PlatformEntity = field(default_factory=lambda: PlatformEntity())
+    author: AuthorEntity = field(default_factory=AuthorEntity)
+    platform: PlatformEntity = field(default_factory=PlatformEntity)
     media: list[MediaEntity] = field(default_factory=list)
 
 # API Response Models
@@ -234,7 +234,7 @@ class ContentMapper:
         return URLParserResult(
             id=entity.id if entity.id else 0,
             pid=entity.pid,
-            url=HttpUrl(entity.url),
+            url=entity.url,  # type: ignore
             content=entity.content,
             author=ContentMapper.author_entity_to_info(entity.author),
             platform=ContentMapper.platform_entity_to_info(entity.platform),
@@ -254,13 +254,13 @@ class ContentMapper:
         """Convert MediaEntity to MediaInfo (with local paths)"""
         return MediaInfo(
             id=media.id if media.id else 0,
-            url=HttpUrl(media.url),
+            url=media.url, # type: ignore
             type=media.type,  # type: ignore
             title=media.title,
             duration=media.duration,
             width=media.width,
             height=media.height,
-            cover=HttpUrl(media.cover) if media.cover else None,
+            cover=media.cover, # type: ignore
             media_path=media.media_path,
             cover_path=media.cover_path
         )
@@ -273,8 +273,8 @@ class ContentMapper:
             uid=author.uid,
             name=author.name,
             username=author.username,
-            avatar=HttpUrl(author.avatar),
-            url=HttpUrl(author.url),
+            avatar=author.avatar, # type: ignore
+            url=author.url, # type: ignore
             platform=ContentMapper.platform_entity_to_info(author.platform),
         )
 
@@ -285,6 +285,6 @@ class ContentMapper:
             id=platform.id if platform.id else 0,
             code=platform.code,
             name=platform.name,
-            url=HttpUrl(platform.url),
-            icon_url=HttpUrl(platform.icon_url),
+            url=platform.url, # type: ignore
+            icon_url=platform.icon_url, # type: ignore
         )
