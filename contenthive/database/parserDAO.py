@@ -436,7 +436,12 @@ class ParserDAO:
         total = cursor.fetchone()[0]
 
         # Validate and sanitize sort parameters
-        allowed_sort_fields = {"id": "pr.id", "created_at": "pr.created_at", "updated_at": "pr.updated_at"}
+        allowed_sort_fields = {
+            "id": "pr.id",
+            "created_time": "pr.created_time",
+            "created_at": "pr.created_at",
+            "updated_at": "pr.updated_at"
+        }
         sort_field = allowed_sort_fields.get(sort_by, "pr.created_at")
         sort_order = "ASC" if order.lower() == "asc" else "DESC"
 

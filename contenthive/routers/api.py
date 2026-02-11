@@ -20,7 +20,7 @@ async def parser_url(url: HttpUrl, plugin_id: Optional[str] = None) -> APIRespon
             error=ErrorDetail(
                 code="PARSER_ERROR",
                 message="Failed to parse URL content",
-                details=str(e)
+                details={"error": str(e)}
             )
         )
     
@@ -53,7 +53,7 @@ async def list_contents(
             error=ErrorDetail(
                 code="CONTENTS_FETCH_ERROR",
                 message="Failed to fetch contents from the database",
-                details=str(e)
+                details={"error": str(e)}
             )
         )
     
@@ -82,7 +82,7 @@ async def list_platforms(
             error=ErrorDetail(
                 code="PLATFORMS_FETCH_ERROR",
                 message="Failed to fetch platforms from the database",
-                details=str(e)
+                details={"error": str(e)}
             )
         )
     
@@ -113,7 +113,7 @@ async def list_authors(
             error=ErrorDetail(
                 code="AUTHORS_FETCH_ERROR",
                 message="Failed to fetch authors from the database",
-                details=str(e)
+                details={"error": str(e)}
             )
         )
 
@@ -132,7 +132,7 @@ async def delete_platform(platform_id: int) -> APIResponse:
             error=ErrorDetail(
                 code="PLATFORM_DELETE_ERROR",
                 message="Failed to delete platform",
-                details=str(e)
+                details={"error": str(e)}
             )
         )
 
@@ -151,7 +151,7 @@ async def delete_author(author_id: int) -> APIResponse:
             error=ErrorDetail(
                 code="AUTHOR_DELETE_ERROR",
                 message="Failed to delete author",
-                details=str(e)
+                details={"error": str(e)}
             )
         )
 
@@ -170,6 +170,6 @@ async def delete_content(parse_result_id: int) -> APIResponse:
             error=ErrorDetail(
                 code="CONTENT_DELETE_ERROR",
                 message="Failed to delete content",
-                details=str(e)
+                details={"error": str(e)}
             )
         )
