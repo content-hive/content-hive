@@ -11,4 +11,7 @@ services:
       - ./data:/config/data
       - ./logs:/config/logs
       - ./plugins:/config/plugins
+    environment:
+      - TZ=Asia/Shanghai
+      - ENVIRONMENT=development
     restart: unless-stopped
