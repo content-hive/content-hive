@@ -1,8 +1,13 @@
 import sqlite3
 from typing import Optional
-from contenthive.database.db import get_db_connection
-from contenthive.models.entities import ParseResultEntity, AuthorEntity, PlatformEntity, MediaEntity
-from contenthive.models.mappers import ParserMapper
+from contenthive.database.database import get_db_connection
+from contenthive.models.content import (
+    ParseResultEntity, 
+    AuthorEntity,
+    PlatformEntity, 
+    MediaEntity,
+    ParserMapper,     
+)
 from contenthive.models.parser import ParserResult
 from contenthive.logger import logger
 

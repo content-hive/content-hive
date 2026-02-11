@@ -7,7 +7,7 @@ from contenthive.core.restart import get_restart_manager, RestartType
 from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
 
-router = APIRouter(prefix="/system", tags=["system"])
+router_v1 = APIRouter(prefix="/v1/system", tags=["system"])
 security = HTTPBearer()
 
 
@@ -22,7 +22,7 @@ security = HTTPBearer()
 #     return credentials.credentials
 
 
-@router.post("/restart")
+@router_v1.post("/restart")
 async def restart_application(
     background_tasks: BackgroundTasks,
     safe_mode: bool = False
@@ -50,7 +50,7 @@ async def restart_application(
     }
 
 
-@router.post("/reload")
+@router_v1.post("/reload")
 async def reload_configuration():
     """
     Reload configuration (HA's reload core config)
@@ -78,7 +78,7 @@ async def reload_configuration():
     }
 
 
-@router.post("/check-config")
+@router_v1.post("/check-config")
 async def check_configuration():
     """
     Check configuration validity (HA's config check)
@@ -120,7 +120,7 @@ async def check_configuration():
     }
 
 
-@router.get("/health")
+@router_v1.get("/health")
 async def health_check():
     """
     Health check endpoint with plugin status information.

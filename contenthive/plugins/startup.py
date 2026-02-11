@@ -1,5 +1,5 @@
 from contenthive.plugins.registry import PluginState
-from contenthive.database.db import get_db_connection
+from contenthive.database.database import get_db_connection
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager

@@ -1,12 +1,12 @@
 from typing import Optional
 from fastapi import APIRouter, Query
 from pydantic import HttpUrl
-from contenthive.models.content import APIResponse, ErrorDetail
-from contenthive.services.parser import parserService
+from contenthive.models.api import APIResponse, ErrorDetail
+from contenthive.services.content import parserService
 
-router_v1 = APIRouter(prefix="/v1")
+router_v1 = APIRouter(prefix="/v1/content", tags=["content"])
 
-@router_v1.get("/parser", response_model=APIResponse, tags=["Parser"])
+@router_v1.get("/parser", response_model=APIResponse)
 async def parser_url(url: HttpUrl, plugin_id: Optional[str] = None) -> APIResponse:
     try:
         result = await parserService.parser_content(url, plugin_id=plugin_id)
@@ -25,7 +25,7 @@ async def parser_url(url: HttpUrl, plugin_id: Optional[str] = None) -> APIRespon
         )
     
 
-@router_v1.get("/contents", response_model=APIResponse, tags=["Content"])
+@router_v1.get("/contents", response_model=APIResponse)
 async def list_contents(
     platform_id: Optional[int] = Query(None, description="Filter by platform ID"),
     author_id: Optional[int] = Query(None, description="Filter by author ID"),
@@ -58,7 +58,7 @@ async def list_contents(
         )
     
 
-@router_v1.get("/platforms", response_model=APIResponse, tags=["Platform"])
+@router_v1.get("/platforms", response_model=APIResponse)
 async def list_platforms(
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)"),
@@ -87,7 +87,7 @@ async def list_platforms(
         )
     
 
-@router_v1.get("/authors", response_model=APIResponse, tags=["Author"])
+@router_v1.get("/authors", response_model=APIResponse)
 async def list_authors(
     platform_id: Optional[int] = Query(None, description="Filter by platform ID"),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
@@ -118,7 +118,7 @@ async def list_authors(
         )
 
 
-@router_v1.delete("/platforms/{platform_id}", response_model=APIResponse, tags=["Platform"])
+@router_v1.delete("/platforms/{platform_id}", response_model=APIResponse)
 async def delete_platform(platform_id: int) -> APIResponse:
     try:
         success = await parserService.delete_platform(platform_id)
@@ -137,7 +137,7 @@ async def delete_platform(platform_id: int) -> APIResponse:
         )
 
 
-@router_v1.delete("/authors/{author_id}", response_model=APIResponse, tags=["Author"])
+@router_v1.delete("/authors/{author_id}", response_model=APIResponse)
 async def delete_author(author_id: int) -> APIResponse:
     try:
         success = await parserService.delete_author(author_id)
@@ -156,7 +156,7 @@ async def delete_author(author_id: int) -> APIResponse:
         )
 
 
-@router_v1.delete("/contents/{parse_result_id}", response_model=APIResponse, tags=["Content"])
+@router_v1.delete("/contents/{parse_result_id}", response_model=APIResponse)
 async def delete_content(parse_result_id: int) -> APIResponse:
     try:
         success = await parserService.delete_parse_result(parse_result_id)

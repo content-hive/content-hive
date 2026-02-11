@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
-from contenthive.routers import api, system
-from contenthive.database.db import initialize_db
+from contenthive.routers import content, system
+from contenthive.database.database import initialize_db
 from contenthive.config import settings, ensure_directories
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
 from contenthive.logger import logger, setup_file_logging
@@ -55,5 +55,5 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.include_router(api.router_v1)
-app.include_router(system.router)
+app.include_router(content.router_v1)
+app.include_router(system.router_v1)

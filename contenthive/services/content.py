@@ -5,9 +5,15 @@ Parser service for fetching and parsing URL content.
 from typing import Optional
 from pydantic import HttpUrl
 from contenthive.logger import logger
-from contenthive.models.content import URLParserResult, PlatformInfo, AuthorInfo, PaginatedResponse, PaginationInfo
-from contenthive.database.parserDAO import ParserDAO
-from contenthive.models.mappers import ContentMapper
+from contenthive.models.content import (
+    URLParserResult, 
+    PlatformInfo, 
+    AuthorInfo, 
+    PaginatedResponse, 
+    PaginationInfo,
+    ContentMapper,
+)
+from contenthive.database.contentDAO import ParserDAO
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import mediaService
 
