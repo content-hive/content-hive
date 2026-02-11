@@ -323,7 +323,19 @@ class GitHubPluginDownloader:
         """Install plugins from plugins-manifest.json"""
         results = {}
         
-        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        except FileNotFoundError:
+            logger.error(f"Plugins manifest not found: {manifest_path}")
+            return results
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in plugins manifest {manifest_path}: {e}")
+            return results
+        
+        if not isinstance(manifest, dict):
+            logger.error(f"Invalid plugins manifest format: expected dict at root")
+            return results
+        
         logger.info(f"Found {len(manifest.get('plugins', []))} plugins in manifest")
         
         for plugin_info in manifest.get("plugins", []):
