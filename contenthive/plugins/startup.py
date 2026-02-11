@@ -41,8 +41,8 @@ async def load_plugins_on_startup(app, data_dir):
                 logger.warning(f"Failed to install plugins: {', '.join(failed)}")
         else:
             logger.info("No plugins found in official repository")
-    except Exception as e:
-        logger.error(f"Failed to download plugins from repository: {e}")
+    except Exception:
+        logger.exception("Failed to download plugins from repository")
         logger.info("Continuing with existing plugins...")
     finally:
         # Cleanup temporary files

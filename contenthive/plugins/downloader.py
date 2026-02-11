@@ -11,9 +11,13 @@ from typing import Optional, List, Dict
 from urllib.parse import quote
 from contenthive.logger import logger
 from contenthive.config import settings
+import re
 
 class GitHubPluginDownloader:
     """Download and install plugins from GitHub repositories"""
+    
+    # Valid plugin domain pattern: lowercase letters, numbers, hyphens, underscores
+    VALID_DOMAIN_PATTERN = re.compile(r'^[a-z0-9_-]+$')
     
     def __init__(self):
         """
@@ -22,6 +26,150 @@ class GitHubPluginDownloader:
         self.plugins_dir = settings.plugins_dir
         self.temp_dir = self.plugins_dir / ".temp"
         self.temp_dir.mkdir(exist_ok=True)
+    
+    def _validate_domain(self, domain: str) -> bool:
+        """
+        Validate plugin domain to prevent path traversal attacks.
+        
+        Domain must:
+        - Be non-empty
+        - Contain only lowercase letters, numbers, hyphens, and underscores
+        - Not contain path separators (/, \\)
+        - Not contain special path components (., ..)
+        - Be between 1 and 100 characters
+        
+        Args:
+            domain: Plugin domain/ID to validate
+            
+        Returns:
+            True if domain is valid, False otherwise
+        """
+        if not domain or not isinstance(domain, str):
+            logger.error("Domain is empty or not a string")
+            return False
+        
+        # Check length
+        if len(domain) < 1 or len(domain) > 100:
+            logger.error(f"Domain length invalid: {len(domain)} (must be 1-100)")
+            return False
+        
+        # Check for path separators
+        if '/' in domain or '\\' in domain:
+            logger.error(f"Domain contains path separators: {domain}")
+            return False
+        
+        # Check for special path components
+        if domain in ('.', '..') or domain.startswith('.'):
+            logger.error(f"Domain is a special path component: {domain}")
+            return False
+        
+        # Check against allowed pattern
+        if not self.VALID_DOMAIN_PATTERN.match(domain):
+            logger.error(f"Domain contains invalid characters: {domain} (allowed: a-z, 0-9, -, _)")
+            return False
+        
+        return True
+    
+    def _sanitize_ref(self, ref: str) -> str:
+        """
+        Sanitize git reference for safe use in file paths.
+        
+        Args:
+            ref: Git reference (branch name, tag, or commit SHA)
+            
+        Returns:
+            Sanitized reference string safe for file paths
+        """
+        return ref.replace('/', '_').replace('\\', '_')
+    
+    def _load_and_validate_manifest(self, manifest_path: Path) -> Optional[Dict]:
+        """
+        Load and validate a plugin manifest file.
+        
+        Args:
+            manifest_path: Path to manifest.json file
+            
+        Returns:
+            Manifest dict if valid, None otherwise
+        """
+        if not manifest_path.exists():
+            logger.error(f"Manifest not found: {manifest_path}")
+            return None
+        
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+            domain = manifest.get("domain")
+            
+            if not domain:
+                logger.error(f"Manifest missing 'domain' field: {manifest_path}")
+                return None
+            
+            if not self._validate_domain(domain):
+                logger.error(f"Invalid domain in manifest: {domain}")
+                return None
+            
+            return manifest
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in manifest {manifest_path}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to load manifest {manifest_path}: {e}")
+            return None
+    
+    def _validate_path_safety(self, target_path: Path, base_path: Path, entity_name: str = "Path") -> bool:
+        """
+        Validate that a target path is safely within a base path.
+        
+        Args:
+            target_path: The path to validate
+            base_path: The base/root path that target must be within
+            entity_name: Name of the entity for error messages
+            
+        Returns:
+            True if path is safe, False otherwise
+        """
+        try:
+            target_path.resolve().relative_to(base_path.resolve())
+            return True
+        except ValueError:
+            logger.error(f"{entity_name} escapes base directory: {target_path} (base: {base_path})")
+            return False
+    
+    def _safe_extract(self, zip_file: zipfile.ZipFile, extract_dir: Path) -> None:
+        """
+        Safely extract zip file, preventing Zip Slip attacks.
+        
+        Args:
+            zip_file: ZipFile object to extract
+            extract_dir: Target extraction directory
+            
+        Raises:
+            ValueError: If any member path is unsafe (absolute or escapes extract_dir)
+        """
+        extract_dir = extract_dir.resolve()
+        
+        for member in zip_file.namelist():
+            # Get the member path
+            member_path = Path(member)
+            
+            # Reject absolute paths
+            if member_path.is_absolute():
+                raise ValueError(f"Unsafe zip entry: absolute path '{member}'")
+            
+            # Resolve the full target path
+            target_path = (extract_dir / member_path).resolve()
+            
+            # Verify the resolved path is within extract_dir
+            try:
+                target_path.relative_to(extract_dir)
+            except ValueError:
+                raise ValueError(f"Unsafe zip entry: '{member}' would extract to '{target_path}' (outside of '{extract_dir}')")
+            
+            # Extract the member
+            zip_file.extract(member, extract_dir)
+        
+        logger.debug(f"Safely extracted {len(zip_file.namelist())} files to {extract_dir}")
     
     async def download_plugins(
         self, 
@@ -61,14 +209,14 @@ class GitHubPluginDownloader:
             archive_path = await self._download_archive(owner, repo, ref, ref_type)
             
             # Extract archive (use safe ref name for directory)
-            safe_ref = ref.replace('/', '_').replace('\\', '_')
+            safe_ref = self._sanitize_ref(ref)
             extract_dir = self.temp_dir / f"extract_{repo}_{ref_type}_{safe_ref}"
             if extract_dir.exists():
                 shutil.rmtree(extract_dir)
             extract_dir.mkdir(parents=True)
             
             with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
+                self._safe_extract(zip_ref, extract_dir)
             
             # Find repo root (GitHub adds prefix like "repo-branch")
             root_dirs = [d for d in extract_dir.iterdir() if d.is_dir()]
@@ -93,11 +241,11 @@ class GitHubPluginDownloader:
             # 2. Check for manifest.json (single plugin)
             single_manifest = repo_root / "manifest.json"
             if single_manifest.exists():
-                manifest = json.loads(single_manifest.read_text(encoding='utf-8'))
-                domain = manifest.get("domain")
+                manifest = self._load_and_validate_manifest(single_manifest)
+                if not manifest:
+                    raise Exception("Invalid or missing plugin manifest")
                 
-                if not domain:
-                    raise Exception("Plugin manifest missing 'domain' field")
+                domain = manifest["domain"]
                 
                 # Skip if not in selected list
                 if selected_plugins and domain not in selected_plugins:
@@ -124,8 +272,11 @@ class GitHubPluginDownloader:
                     if not manifest_file.exists():
                         continue
                     
-                    manifest = json.loads(manifest_file.read_text(encoding='utf-8'))
-                    domain = manifest.get("domain", plugin_path.name)
+                    manifest = self._load_and_validate_manifest(manifest_file)
+                    if not manifest:
+                        continue
+                    
+                    domain = manifest["domain"]
                     
                     # Skip if not in selected list
                     if selected_plugins and domain not in selected_plugins:
@@ -182,6 +333,12 @@ class GitHubPluginDownloader:
                 logger.error("Plugin missing 'domain' field, skipping...")
                 continue
             
+            # Validate domain
+            if not self._validate_domain(domain):
+                logger.error(f"Invalid plugin domain: {domain}, skipping...")
+                results[domain] = False
+                continue
+            
             # Skip if not in selected list
             if selected_plugins and domain not in selected_plugins:
                 logger.info(f"Plugin {domain} not in selected list, skipping...")
@@ -193,7 +350,24 @@ class GitHubPluginDownloader:
                 continue
             
             # Install plugin
-            plugin_path = repo_root / plugin_info["path"]
+            plugin_rel_path = plugin_info.get("path")
+            if not plugin_rel_path:
+                logger.error(f"Plugin {domain} missing 'path' in manifest, skipping...")
+                results[domain] = False
+                continue
+            
+            plugin_rel_path = Path(plugin_rel_path)
+            if plugin_rel_path.is_absolute():
+                logger.error(f"Plugin {domain} has absolute path in manifest, skipping...")
+                results[domain] = False
+                continue
+            
+            plugin_path = (repo_root / plugin_rel_path).resolve()
+            
+            if not self._validate_path_safety(plugin_path, repo_root, f"Plugin {domain} path"):
+                results[domain] = False
+                continue
+
             if not plugin_path.exists():
                 logger.error(f"Plugin path not found: {plugin_path}")
                 results[domain] = False
@@ -250,7 +424,7 @@ class GitHubPluginDownloader:
             raise ValueError(f"Invalid ref_type: {ref_type}. Must be 'branch', 'tag', or 'commit'")
         
         # Create a safe filename for the archive
-        safe_ref = ref.replace('/', '_').replace('\\', '_')
+        safe_ref = self._sanitize_ref(ref)
         archive_path = self.temp_dir / f"{repo}-{ref_type}-{safe_ref}.zip"
         
         logger.debug(f"Downloading from {url}...")
@@ -264,16 +438,20 @@ class GitHubPluginDownloader:
                 
                 total_size = int(response.headers.get('content-length', 0))
                 downloaded = 0
+                last_logged_mb = -1
                 
                 with open(archive_path, 'wb') as f:
                     async for chunk in response.content.iter_chunked(8192):
                         f.write(chunk)
                         downloaded += len(chunk)
                         
+                        # Log progress every MB
                         if total_size > 0:
-                            percent = (downloaded / total_size) * 100
-                            if downloaded % (512 * 1024) == 0:  # Log every 512KB
-                                logger.debug(f"Downloaded {percent:.1f}%")
+                            current_mb = downloaded // (1024 * 1024)
+                            if current_mb > last_logged_mb:
+                                percent = (downloaded / total_size) * 100
+                                logger.debug(f"Downloaded {percent:.1f}% ({current_mb}MB)")
+                                last_logged_mb = current_mb
         
         logger.debug(f"Archive downloaded to {archive_path}")
         return archive_path
@@ -289,18 +467,27 @@ class GitHubPluginDownloader:
         
         Args:
             source_dir: Source directory containing plugin files
-            domain: Plugin domain/ID
+            domain: Plugin domain/ID (must be pre-validated)
             force_reinstall: If True, overwrite existing plugin
         
         Returns:
             True if installation successful
         """
         try:
+            # Re-validate domain for safety (defense in depth)
+            if not self._validate_domain(domain):
+                logger.error(f"Invalid plugin domain: {domain}")
+                return False
+            
             if not source_dir.exists():
                 logger.error(f"Source directory does not exist: {source_dir}")
                 return False
             
             target_dir = self.plugins_dir / domain
+            
+            # Validate target path safety
+            if not self._validate_path_safety(target_dir, self.plugins_dir, "Target directory"):
+                return False
             
             # Check if plugin already exists
             if target_dir.exists():
@@ -311,20 +498,16 @@ class GitHubPluginDownloader:
                 logger.warning(f"Plugin {domain} already exists, overwriting...")
                 shutil.rmtree(target_dir)
             
-            # Verify manifest.json exists
+            # Verify and validate manifest
             manifest_path = source_dir / "manifest.json"
-            if not manifest_path.exists():
-                logger.error(f"manifest.json not found in {source_dir}")
+            manifest = self._load_and_validate_manifest(manifest_path)
+            if not manifest:
                 return False
             
-            # Validate manifest
-            try:
-                manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-                if not manifest.get("domain"):
-                    logger.error(f"Invalid manifest: missing 'domain' field")
-                    return False
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid manifest.json: {e}")
+            # Ensure manifest domain matches expected domain
+            manifest_domain = manifest.get("domain")
+            if manifest_domain != domain:
+                logger.error(f"Manifest domain mismatch: expected '{domain}', got '{manifest_domain}'")
                 return False
             
             # Copy plugin files
@@ -379,3 +562,6 @@ class GitHubPluginDownloader:
                 logger.debug("Cleaned up temporary download directory")
             except Exception as e:
                 logger.warning(f"Failed to clean up temp directory: {e}")
+        
+        # Recreate the temp directory for future use
+        self.temp_dir.mkdir(exist_ok=True)
