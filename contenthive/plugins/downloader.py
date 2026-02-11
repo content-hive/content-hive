@@ -7,7 +7,7 @@ import zipfile
 import shutil
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from urllib.parse import quote
 from contenthive.logger import logger
 from contenthive.config import settings
