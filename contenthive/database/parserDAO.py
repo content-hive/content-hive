@@ -393,9 +393,10 @@ class ParserDAO:
     def list_parse_results(self, user_id: Optional[int] = None,
                           platform_id: Optional[int] = None,
                           author_id: Optional[int] = None,
-                          limit: int = 20, offset: int = 0) -> list[ParseResultEntity]:
+                          limit: int = 20, offset: int = 0,
+                          sort_by: str = "created_at", order: str = "desc") -> tuple[list[ParseResultEntity], int]:
         """
-        List parse results with pagination.
+        List parse results with pagination and sorting.
 
         Args:
             user_id: Filter by user ID
@@ -403,23 +404,13 @@ class ParserDAO:
             author_id: Filter by author ID
             limit: Maximum number of results to return
             offset: Number of results to skip
+            sort_by: Field to sort by (id, created_at, updated_at)
+            order: Sort order (asc, desc)
 
-        Returns list of URLParserResult objects.
+        Returns tuple of (list of ParseResultEntity objects, total count).
         """
         conn = self._get_connection()
         cursor = conn.cursor()
-
-        # Build query with all necessary JOINs
-        query = """
-            SELECT pr.*, 
-                   a.id as author_id, a.uid, a.name as author_name, a.username, a.avatar, a.url as author_url,
-                   a.created_at as author_created_at, a.updated_at as author_updated_at,
-                   p.id as platform_id, p.code, p.name as platform_name, p.url as platform_url, p.icon_url,
-                   p.created_at as platform_created_at, p.updated_at as platform_updated_at
-            FROM parse_results pr
-            LEFT JOIN authors a ON pr.author_id = a.id
-            LEFT JOIN platforms p ON pr.platform_id = p.id
-        """
 
         # Build WHERE clause
         where_clauses = []
@@ -437,17 +428,44 @@ class ParserDAO:
             where_clauses.append("pr.author_id = ?")
             params.append(author_id)
 
-        if where_clauses:
-            query += " WHERE " + " AND ".join(where_clauses)
+        where_clause = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
-        query += " ORDER BY pr.created_at DESC LIMIT ? OFFSET ?"
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM parse_results pr{where_clause}"
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()[0]
+
+        # Validate and sanitize sort parameters
+        allowed_sort_fields = {
+            "id": "pr.id",
+            "created_time": "pr.created_time",
+            "created_at": "pr.created_at",
+            "updated_at": "pr.updated_at"
+        }
+        sort_field = allowed_sort_fields.get(sort_by, "pr.created_at")
+        sort_order = "ASC" if order.lower() == "asc" else "DESC"
+
+        # Build query with all necessary JOINs
+        query = f"""
+            SELECT pr.*, 
+                   a.id as author_id, a.uid, a.name as author_name, a.username, a.avatar, a.url as author_url,
+                   a.created_at as author_created_at, a.updated_at as author_updated_at,
+                   p.id as platform_id, p.code, p.name as platform_name, p.url as platform_url, p.icon_url,
+                   p.created_at as platform_created_at, p.updated_at as platform_updated_at
+            FROM parse_results pr
+            LEFT JOIN authors a ON pr.author_id = a.id
+            LEFT JOIN platforms p ON pr.platform_id = p.id
+            {where_clause}
+            ORDER BY {sort_field} {sort_order}
+            LIMIT ? OFFSET ?
+        """
         params.extend([limit, offset])
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
 
         if not rows:
-            return []
+            return [], total
 
         # Get all parse_result_ids
         parse_result_ids = [row["id"] for row in rows]
@@ -530,18 +548,41 @@ class ParserDAO:
 
             results.append(entity)
 
-        return results
+        return results, total
 
 
-    def list_platforms(self) -> list[PlatformEntity]:
+    def list_platforms(self, limit: int = 100, offset: int = 0,
+                       sort_by: str = "id", order: str = "asc") -> tuple[list[PlatformEntity], int]:
         """
-        List all platforms.
-        Returns list of PlatformEntity objects.
+        List all platforms with pagination and sorting.
+        
+        Args:
+            limit: Maximum number of results to return
+            offset: Number of results to skip
+            sort_by: Field to sort by (id, name, created_at, updated_at)
+            order: Sort order (asc, desc)
+            
+        Returns tuple of (list of PlatformEntity objects, total count).
         """
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, code, name, url, icon_url, created_at, updated_at FROM platforms")
+        # Get total count
+        cursor.execute("SELECT COUNT(*) FROM platforms")
+        total = cursor.fetchone()[0]
+
+        # Validate and sanitize sort parameters
+        allowed_sort_fields = {"id": "id", "name": "name", "created_at": "created_at", "updated_at": "updated_at"}
+        sort_field = allowed_sort_fields.get(sort_by, "id")
+        sort_order = "ASC" if order.lower() == "asc" else "DESC"
+
+        query = f"""
+            SELECT id, code, name, url, icon_url, created_at, updated_at 
+            FROM platforms 
+            ORDER BY {sort_field} {sort_order}
+            LIMIT ? OFFSET ?
+        """
+        cursor.execute(query, [limit, offset])
         rows = cursor.fetchall()
 
         platforms = []
@@ -556,37 +597,54 @@ class ParserDAO:
                 updated_at=row["updated_at"]
             ))
 
-        return platforms
+        return platforms, total
 
 
-    def list_authors(self, platform_id: Optional[int] = None) -> list[AuthorEntity]:
+    def list_authors(self, platform_id: Optional[int] = None,
+                    limit: int = 100, offset: int = 0,
+                    sort_by: str = "id", order: str = "asc") -> tuple[list[AuthorEntity], int]:
         """
-        List authors, optionally filtered by platform_id.
-        Returns list of AuthorEntity objects with platform information.
+        List authors with pagination and sorting, optionally filtered by platform_id.
+        
+        Args:
+            platform_id: Optional filter by platform ID
+            limit: Maximum number of results to return
+            offset: Number of results to skip
+            sort_by: Field to sort by (id, name, created_at, updated_at)
+            order: Sort order (asc, desc)
+            
+        Returns tuple of (list of AuthorEntity objects with platform information, total count).
         """
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        if platform_id:
-            cursor.execute("""
-                SELECT a.id, a.platform_id, a.uid, a.name, a.username, a.avatar, a.url, 
-                   a.created_at, a.updated_at,
-                   p.id as p_id, p.code, p.name as p_name, p.url as p_url, p.icon_url,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at
-                FROM authors a
-                LEFT JOIN platforms p ON a.platform_id = p.id
-                WHERE a.platform_id = ?
-            """, (platform_id,))
-        else:
-            cursor.execute("""
-                SELECT a.id, a.platform_id, a.uid, a.name, a.username, a.avatar, a.url, 
-                   a.created_at, a.updated_at,
-                   p.id as p_id, p.code, p.name as p_name, p.url as p_url, p.icon_url,
-                   p.created_at as p_created_at, p.updated_at as p_updated_at
-                FROM authors a
-                LEFT JOIN platforms p ON a.platform_id = p.id
-            """)
+        # Build WHERE clause
+        where_clause = "WHERE a.platform_id = ?" if platform_id else ""
+        params = [platform_id] if platform_id else []
 
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM authors a {where_clause}"
+        cursor.execute(count_query, params if platform_id else [])
+        total = cursor.fetchone()[0]
+
+        # Validate and sanitize sort parameters
+        allowed_sort_fields = {"id": "a.id", "name": "a.name", "created_at": "a.created_at", "updated_at": "a.updated_at"}
+        sort_field = allowed_sort_fields.get(sort_by, "a.id")
+        sort_order = "ASC" if order.lower() == "asc" else "DESC"
+
+        query = f"""
+            SELECT a.id, a.platform_id, a.uid, a.name, a.username, a.avatar, a.url, 
+                   a.created_at, a.updated_at,
+                   p.id as p_id, p.code, p.name as p_name, p.url as p_url, p.icon_url,
+                   p.created_at as p_created_at, p.updated_at as p_updated_at
+            FROM authors a
+            LEFT JOIN platforms p ON a.platform_id = p.id
+            {where_clause}
+            ORDER BY {sort_field} {sort_order}
+            LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        cursor.execute(query, params)
         rows = cursor.fetchall()
 
         authors = []
@@ -612,7 +670,7 @@ class ParserDAO:
                 )
             ))
 
-        return authors
+        return authors, total
 
 
     def delete_platform(self, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:

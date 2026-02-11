@@ -4,9 +4,11 @@ Models for content-related operations.
 
 from datetime import datetime
 from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional, Any, Literal
+from typing import Optional, Any, Literal, Generic, TypeVar
 
 from contenthive.models.media import MediaItem
+
+T = TypeVar('T')
 
 
 class ErrorDetail(BaseModel):
@@ -24,6 +26,22 @@ class APIResponse(BaseModel):
     data: Optional[Any] = Field(default=None, description="Response data")
     error: Optional[ErrorDetail] = Field(default=None, description="Error information")
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+
+
+class PaginationInfo(BaseModel):
+    """Pagination metadata"""
+    
+    page: int = Field(..., description="Current page number", ge=1)
+    page_size: int = Field(..., description="Items per page", ge=1)
+    total: int = Field(..., description="Total number of items", ge=0)
+    total_pages: int = Field(..., description="Total number of pages", ge=0)
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Paginated response model"""
+    
+    items: list[T] = Field(..., description="List of items")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
 
 
 class MediaInfo(MediaItem):
