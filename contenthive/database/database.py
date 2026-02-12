@@ -14,12 +14,45 @@ def initialize_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE,
             password_hash TEXT NOT NULL,
-            is_active BOOLEAN DEFAULT 1,
+            status INTEGER DEFAULT 0,
+            force_password_change BOOLEAN DEFAULT 1,
             is_admin BOOLEAN DEFAULT 0,
+            token_version INTEGER DEFAULT 0,
+            last_login_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Profile table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS profiles (
+            user_id INTEGER PRIMARY KEY,
+            full_name TEXT,
+            bio TEXT,
+            avatar_url TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    
+    # Session table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            device_id TEXT UNIQUE NOT NULL,
+            revoked BOOLEAN DEFAULT 0,
+            token_jti TEXT UNIQUE NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
     
@@ -106,3 +139,10 @@ def initialize_db():
     conn.commit()
     conn.close()
 
+    # Create admin user if not exists
+    from contenthive.services.user import user_service
+    try:
+        username, password = user_service.create_admin_user()
+        print(f"Admin user created. Username: {username}, Password: {password}, please change it after first login.")
+    except ValueError:
+        pass  # Admin user already exists

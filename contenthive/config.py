@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import computed_field
@@ -16,6 +17,12 @@ class Settings(BaseSettings):
     # Server settings
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "6123"))
+
+    # Security settings
+    secret_key: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
+    algorithm: str = os.getenv("ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
     # Directory paths
     app_base: Path = Path(os.getenv("APP_BASE", "/app"))

@@ -1,12 +1,31 @@
 Table,Field,Type,Required,Description,Notes
 users,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 users,username,TEXT,YES,Username,UNIQUE NOT NULL
-users,email,TEXT,YES,Email,UNIQUE NOT NULL
+users,email,TEXT,YES,Email,UNIQUE
 users,password_hash,TEXT,YES,Password hash,NOT NULL
-users,is_active,BOOLEAN,YES,Is active,DEFAULT 1
+users,status,INTEGER,YES,Status enum: inactive(0)/active(1)/disabled(2),DEFAULT 0
+users,force_password_change,BOOLEAN,YES,Force password change on next login,DEFAULT 1
 users,is_admin,BOOLEAN,YES,Is admin,DEFAULT 0
+users,token_version,INTEGER,YES,Token version for invalidation,DEFAULT 0
+users,last_login_at,TIMESTAMP,YES,Last login time,
 users,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
 users,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+profiles,user_id,INTEGER,YES,User ID,PRIMARY KEY FOREIGN KEY
+profiles,full_name,TEXT,NO,Full name,
+profiles,bio,TEXT,NO,Biography,
+profiles,avatar_url,TEXT,NO,Avatar URL,
+profiles,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
+profiles,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+sessions,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
+sessions,user_id,INTEGER,YES,User ID,NOT NULL FOREIGN KEY
+sessions,device_id,TEXT,YES,Session device ID,UNIQUE NOT NULL
+sessions,token_jti,TEXT,YES,JWT ID for token invalidation,UNIQUE NOT NULL
+sessions,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
+sessions,last_accessed_at,TIMESTAMP,YES,Last accessed time,DEFAULT CURRENT_TIMESTAMP
+sessions,expires_at,TIMESTAMP,YES,Expiration time,NOT NULL
+sessions,ip_address,TEXT,NO,IP address,
+sessions,user_agent,TEXT,NO,User agent,
+sessions,revoked,BOOLEAN,YES,Is revoked,DEFAULT 0
 platforms,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 platforms,code,TEXT,YES,Platform code,UNIQUE NOT NULL
 platforms,name,TEXT,YES,Name,NOT NULL

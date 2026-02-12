@@ -1,0 +1,132 @@
+from datetime import datetime, timedelta, timezone
+import hashlib
+from typing import Annotated, Optional
+import uuid
+
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer
+from contenthive.config import settings
+from contenthive.models.user import DeviceInfoModel, LoginResponseModel, UserModel, AuthTokenModel
+from contenthive.database.userDAO import UserDAO
+from contenthive.utils.user import UserUtils
+
+class TokenService:
+    
+    def __init__(self):
+        self.secret_key = settings.secret_key
+        self.algorithm = settings.algorithm
+        self.access_token_expire_minutes = settings.access_token_expire_minutes
+        self.refresh_token_expire_days = settings.refresh_token_expire_days
+
+    def authenticate_user(self, username: str, password: str, request: Request) -> LoginResponseModel:
+        """Authenticate user and return token data"""
+        with UserDAO() as dao:
+            user = dao.get_user_by_username(username)
+            if not user or not UserUtils.verify_password(password, user.password_hash):
+                raise ValueError("Invalid username or password")
+            
+            if user.status == 2:  # disabled
+                raise ValueError("User account is disabled")
+            
+            # Update last login time
+            dao.update_last_login(user.id)
+            
+            user_response = UserModel.from_entity(user)
+            
+            access_token = UserUtils.create_access_token(
+                data={"sub": user.username, "user_id": user.id, "token_version": user.token_version},
+                expires_delta=timedelta(minutes=self.access_token_expire_minutes),
+                secret_key=self.secret_key,
+                algorithm=self.algorithm
+            )
+
+            # Generate unique JTI
+            token_jti = str(uuid.uuid4())
+            refresh_token = UserUtils.create_refresh_token(
+                data={"sub": user.username, "user_id": user.id, "jti": token_jti},
+                expires_delta=timedelta(days=self.refresh_token_expire_days),
+                secret_key=self.secret_key,
+                algorithm=self.algorithm
+            )
+            refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days)).isoformat()
+
+            device_info = self._extract_device_info(request)
+
+            # Store session in database
+            dao.create_session(
+                user_id=user.id,
+                device_id=device_info.device_id or "",
+                token_jti=token_jti,
+                expires_at=refresh_token_expires_at,
+                ip_address=device_info.ip_address or "",
+                user_agent=device_info.user_agent or ""
+            )
+
+            return LoginResponseModel(
+                user=user_response,
+                tokens=AuthTokenModel(
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    token_type="bearer",
+                    expires_in=self.access_token_expire_minutes * 60
+                )
+            )
+    
+    @staticmethod
+    def _extract_device_info(request: Request) -> DeviceInfoModel:
+        """Extract device ID and user agent from request headers"""
+        client_device_id = request.headers.get("X-Device-ID")
+        if not client_device_id:
+            client_device_id = TokenService._generate_device_fingerprint(request)
+
+        user_agent = request.headers.get("User-Agent", "unknown-agent")
+
+        device_name = "unknown-device"
+        if "Mobile" in user_agent:
+            device_name = "mobile-device"
+        elif "Android" in user_agent:
+            device_name = "android-device"
+        elif "iPhone" in user_agent:
+            device_name = "iphone-device"
+        elif "Chrome" in user_agent:
+            device_name = "chrome-browser"
+        elif "Firefox" in user_agent:
+            device_name = "firefox-browser"
+        elif "Safari" in user_agent:
+            device_name = "safari-browser"
+        elif "Edge" in user_agent:
+            device_name = "edge-browser"
+
+        return DeviceInfoModel(
+            device_id=client_device_id,
+            device_name=device_name,
+            ip_address=TokenService._extract_device_ip(request),
+            user_agent=user_agent
+        )
+
+
+    @staticmethod
+    def _generate_device_fingerprint(request: Request) -> str:
+        """Generate a simple device fingerprint from request headers"""
+        user_agent = request.headers.get("User-Agent", "")
+        accept_language = request.headers.get("Accept-Language", "")
+        accept_encoding = request.headers.get("Accept-Encoding", "")
+
+        client_ip = TokenService._extract_device_ip(request)
+        
+        fingerprint_data = f"{user_agent}|{accept_language}|{accept_encoding}|{client_ip}"
+        device_fingerprint = hashlib.sha256(fingerprint_data.encode()).hexdigest()
+        return f"fp_{device_fingerprint[:16]}"
+
+
+    @staticmethod
+    def _extract_device_ip(request: Request) -> str:
+        """Extract client IP address from request headers"""
+        client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        if not client_ip:
+            client_ip = request.headers.get("X-Real-IP", "").strip()
+        if not client_ip:
+            client_ip = request.client.host if request.client else ""
+        return client_ip
+
+token_service = TokenService()
