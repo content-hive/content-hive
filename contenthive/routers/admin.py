@@ -86,7 +86,7 @@ async def reset_user_password(
 @router_v1.patch("/users/{user_id}/status")
 async def change_user_status(
     user_id: int,
-    user_status: int,
+    user_status: UserStatusUpdateRequest,
     current_user: Annotated[UserModel, Depends(get_current_admin_user)]
 ) -> APIResponse:
     """
@@ -101,7 +101,7 @@ async def change_user_status(
             )
         )
     try:
-        result = user_service.change_user_status(user_id, user_status)
+        result = user_service.change_user_status(user_id, user_status.status)
         return APIResponse(
             status="success",
             data={"status_changed": result}
