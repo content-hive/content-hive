@@ -13,5 +13,7 @@ services:
       - ./plugins:/config/plugins
     environment:
       - TZ=Asia/Shanghai
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${ENVIRONMENT}
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     restart: unless-stopped
