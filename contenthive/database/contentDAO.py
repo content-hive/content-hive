@@ -40,12 +40,13 @@ class ParserDAO:
             self.conn.close()
             self.conn = None
 
-    def save_platform(self, platform: PlatformEntity, commit: bool = False) -> int:
+    def save_platform(self, platform: PlatformEntity, user_id: int, commit: bool = False) -> int:
         """
         Save or update platform information.
 
         Args:
             platform: Platform entity
+            user_id: User ID
             commit: Whether to commit immediately (default: False)
 
         Returns platform_id.
@@ -56,7 +57,7 @@ class ParserDAO:
             cursor = conn.cursor()
 
             # Check if platform exists
-            cursor.execute("SELECT id FROM platforms WHERE code = ?", (platform.code,))
+            cursor.execute("SELECT id FROM platforms WHERE user_id = ? AND code = ?", (user_id, platform.code))
             result = cursor.fetchone()
 
             if result:
@@ -64,15 +65,15 @@ class ParserDAO:
                 cursor.execute("""
                     UPDATE platforms
                     SET name = ?, url = ?, icon_url = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE code = ?
-                """, (platform.name, platform.url, platform.icon_url, platform.code))
+                    WHERE user_id = ? AND code = ?
+                """, (platform.name, platform.url, platform.icon_url, user_id, platform.code))
                 platform_id = result[0]
             else:
                 # Insert new platform
                 cursor.execute("""
-                    INSERT INTO platforms (code, name, url, icon_url)
-                    VALUES (?, ?, ?, ?)
-                """, (platform.code, platform.name, platform.url, platform.icon_url))
+                    INSERT INTO platforms (user_id, code, name, url, icon_url)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (user_id, platform.code, platform.name, platform.url, platform.icon_url))
                 platform_id = cursor.lastrowid if cursor.lastrowid else 0
 
             if commit:
@@ -85,13 +86,14 @@ class ParserDAO:
             raise Exception(f"Failed to save platform: {e}")
 
 
-    def save_author(self, author: AuthorEntity, platform_id: int, commit: bool = False) -> int:
+    def save_author(self, author: AuthorEntity, platform_id: int, user_id: int, commit: bool = False) -> int:
         """
         Save or update author information.
 
         Args:
             author: Author entity
             platform_id: Platform ID
+            user_id: User ID
             commit: Whether to commit immediately (default: False)
 
         Returns author_id.
@@ -103,8 +105,8 @@ class ParserDAO:
 
             # Check if author exists
             cursor.execute(
-                "SELECT id FROM authors WHERE platform_id = ? AND uid = ?",
-                (platform_id, author.uid)
+                "SELECT id FROM authors WHERE user_id = ? AND platform_id = ? AND uid = ?",
+                (user_id, platform_id, author.uid)
             )
             result = cursor.fetchone()
 
@@ -113,15 +115,15 @@ class ParserDAO:
                 cursor.execute("""
                     UPDATE authors
                     SET name = ?, username = ?, avatar = ?, url = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE platform_id = ? AND uid = ?
-                """, (author.name, author.username, author.avatar, author.url, platform_id, author.uid))
+                    WHERE user_id = ? AND platform_id = ? AND uid = ?
+                """, (author.name, author.username, author.avatar, author.url, user_id, platform_id, author.uid))
                 author_id = result[0]
             else:
                 # Insert new author
                 cursor.execute("""
-                    INSERT INTO authors (platform_id, uid, name, username, avatar, url)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (platform_id, author.uid, author.name, author.username, author.avatar, author.url))
+                    INSERT INTO authors (user_id, platform_id, uid, name, username, avatar, url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, platform_id, author.uid, author.name, author.username, author.avatar, author.url))
                 author_id = cursor.lastrowid if cursor.lastrowid else 0
 
             if commit:
@@ -202,14 +204,14 @@ class ParserDAO:
 
         return media_ids
 
-    def save_parse_result(self, result: ParserResult, user_id: Optional[int] = None) -> int:
+    def save_parse_result(self, result: ParserResult, user_id: int) -> int:
         """
         Save complete parse result including platform, author, and media.
         Uses a single transaction for all operations.
 
         Args:
             result: ParserResult from parser
-            user_id: Optional user ID
+            user_id: User ID
 
         Returns the saved URLParserResult from database.
         """
@@ -222,11 +224,11 @@ class ParserDAO:
             author_entity = ParserMapper.parser_author_to_entity(result.author, 0)  # platform_id will be set later
         
             # Save platform and get ID
-            platform_id = self.save_platform(platform_entity, commit=False)
+            platform_id = self.save_platform(platform_entity, user_id, commit=False)
             
             # Update author entity with correct platform_id
             author_entity.platform_id = platform_id
-            author_id = self.save_author(author_entity, platform_id, commit=False)
+            author_id = self.save_author(author_entity, user_id, platform_id, commit=False)
 
             # Convert ParserResult to ParseResultEntity
             entity = ParserMapper.parser_result_to_entity(
@@ -240,8 +242,8 @@ class ParserDAO:
                 SELECT pr.id 
                 FROM parse_results pr
                 JOIN platforms p ON pr.platform_id = p.id
-                WHERE pr.pid = ? AND p.code = ?
-            """, (entity.pid, result.platform.code))
+                WHERE pr.user_id = ? AND pr.pid = ? AND p.code = ?
+            """, (user_id, entity.pid, result.platform.code))
             existing_result = cursor.fetchone()
 
             if existing_result:
@@ -395,14 +397,14 @@ class ParserDAO:
         return entity
 
 
-    def list_parse_results(self, user_id: Optional[int] = None,
+    def list_parse_results(self, user_id: int,
                           platform_id: Optional[int] = None,
                           author_id: Optional[int] = None,
                           limit: int = 20, offset: int = 0,
                           sort_by: str = "created_at", order: str = "desc") -> tuple[list[ParseResultEntity], int]:
         """
         List parse results with pagination and sorting.
-
+    
         Args:
             user_id: Filter by user ID
             platform_id: Filter by platform ID
@@ -421,9 +423,8 @@ class ParserDAO:
         where_clauses = []
         params = []
 
-        if user_id is not None:
-            where_clauses.append("pr.user_id = ?")
-            params.append(user_id)
+        where_clauses.append("pr.user_id = ?")
+        params.append(user_id)
 
         if platform_id is not None:
             where_clauses.append("pr.platform_id = ?")
@@ -556,7 +557,7 @@ class ParserDAO:
         return results, total
 
 
-    def list_platforms(self, limit: int = 100, offset: int = 0,
+    def list_platforms(self, user_id: int, limit: int = 100, offset: int = 0,
                        sort_by: str = "id", order: str = "asc") -> tuple[list[PlatformEntity], int]:
         """
         List all platforms with pagination and sorting.
@@ -573,7 +574,7 @@ class ParserDAO:
         cursor = conn.cursor()
 
         # Get total count
-        cursor.execute("SELECT COUNT(*) FROM platforms")
+        cursor.execute("SELECT COUNT(*) FROM platforms WHERE user_id = ?", (user_id,))
         total = cursor.fetchone()[0]
 
         # Validate and sanitize sort parameters
@@ -584,10 +585,11 @@ class ParserDAO:
         query = f"""
             SELECT id, code, name, url, icon_url, created_at, updated_at 
             FROM platforms 
+            WHERE user_id = ?
             ORDER BY {sort_field} {sort_order}
             LIMIT ? OFFSET ?
         """
-        cursor.execute(query, [limit, offset])
+        cursor.execute(query, [user_id, limit, offset])
         rows = cursor.fetchall()
 
         platforms = []
@@ -605,13 +607,14 @@ class ParserDAO:
         return platforms, total
 
 
-    def list_authors(self, platform_id: Optional[int] = None,
+    def list_authors(self, user_id: int, platform_id: Optional[int] = None,
                     limit: int = 100, offset: int = 0,
                     sort_by: str = "id", order: str = "asc") -> tuple[list[AuthorEntity], int]:
         """
         List authors with pagination and sorting, optionally filtered by platform_id.
         
         Args:
+            user_id: Filter by user ID
             platform_id: Optional filter by platform ID
             limit: Maximum number of results to return
             offset: Number of results to skip
@@ -624,12 +627,21 @@ class ParserDAO:
         cursor = conn.cursor()
 
         # Build WHERE clause
-        where_clause = "WHERE a.platform_id = ?" if platform_id else ""
-        params = [platform_id] if platform_id else []
+        where_clauses = []
+        params = [] 
+
+        where_clauses.append("a.user_id = ?")
+        params.append(user_id)
+
+        if platform_id is not None:
+            where_clauses.append("a.platform_id = ?")
+            params.append(platform_id)
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
         # Get total count
         count_query = f"SELECT COUNT(*) FROM authors a {where_clause}"
-        cursor.execute(count_query, params if platform_id else [])
+        cursor.execute(count_query, params)
         total = cursor.fetchone()[0]
 
         # Validate and sanitize sort parameters
@@ -678,11 +690,12 @@ class ParserDAO:
         return authors, total
 
 
-    def delete_platform(self, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_platform(self, user_id: int, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
         Delete platform by ID and cascade delete related authors and parse results.
         
         Args:
+            user_id: User ID performing the deletion
             platform_id: Platform ID to delete
             commit: Whether to commit immediately (default: False)
             
@@ -696,18 +709,18 @@ class ParserDAO:
         
         try:
             # Get all authors belonging to this platform
-            cursor.execute("SELECT id FROM authors WHERE platform_id = ?", (platform_id,))
+            cursor.execute("SELECT id FROM authors WHERE user_id = ? AND platform_id = ?", (user_id, platform_id))
             author_ids = [row[0] for row in cursor.fetchall()]
             
             logger.info(f"Deleting platform {platform_id} with {len(author_ids)} authors")
             
             # Delete each author (which will collect file paths)
             for author_id in author_ids:
-                success, file_paths = self.delete_author(author_id, commit=False)
+                success, file_paths = self.delete_author(user_id, author_id, commit=False)
                 all_file_paths.extend(file_paths)
             
             # Delete platform
-            cursor.execute("DELETE FROM platforms WHERE id = ?", (platform_id,))
+            cursor.execute("DELETE FROM platforms WHERE user_id = ? AND id = ?", (user_id, platform_id))
             
             if cursor.rowcount == 0:
                 logger.warning(f"Platform {platform_id} not found for deletion")
@@ -731,11 +744,12 @@ class ParserDAO:
             raise
 
 
-    def delete_author(self, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
         Delete author by ID and cascade delete related parse results.
         
         Args:
+            user_id: User ID performing the deletion
             author_id: Author ID to delete
             commit: Whether to commit immediately (default: False)
             
@@ -749,18 +763,18 @@ class ParserDAO:
         
         try:
             # Get all parse result IDs for this author
-            cursor.execute("SELECT id FROM parse_results WHERE author_id = ?", (author_id,))
+            cursor.execute("SELECT id FROM parse_results WHERE user_id = ? AND author_id = ?", (user_id, author_id))
             parse_result_ids = [row[0] for row in cursor.fetchall()]
             
             logger.info(f"Deleting author {author_id} with {len(parse_result_ids)} parse results")
 
             # Delete each parse result (which will collect file paths)
             for pr_id in parse_result_ids:
-                success, file_paths = self.delete_parse_result(pr_id, commit=False)
+                success, file_paths = self.delete_parse_result(user_id, pr_id, commit=False)
                 all_file_paths.extend(file_paths)
 
             # Delete author
-            cursor.execute("DELETE FROM authors WHERE id = ?", (author_id,))
+            cursor.execute("DELETE FROM authors WHERE user_id = ? AND id = ?", (user_id, author_id))
             
             if cursor.rowcount == 0:
                 logger.warning(f"Author {author_id} not found for deletion")
@@ -784,11 +798,12 @@ class ParserDAO:
             raise
 
 
-    def delete_parse_result(self, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_parse_result(self, user_id: int, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
         Delete parse result by ID and return list of associated media file paths.
 
         Args:
+            user_id: User ID performing the deletion
             parse_result_id: Parse result ID to delete
             commit: Whether to commit immediately (default: False)
 
@@ -806,8 +821,8 @@ class ParserDAO:
                 SELECT m.media_path, m.cover_path
                 FROM media m
                 JOIN parse_result_media prm ON m.id = prm.media_id
-                WHERE prm.parse_result_id = ?
-            """, (parse_result_id,))
+                WHERE user_id = ? AND prm.parse_result_id = ?
+            """, (user_id, parse_result_id))
             
             for row in cursor.fetchall():
                 if row[0]:  # media_path
@@ -844,7 +859,7 @@ class ParserDAO:
                              orphaned_media_ids)
                 logger.debug(f"Deleted {len(orphaned_media_ids)} orphaned media records")
 
-            cursor.execute("DELETE FROM parse_results WHERE id = ?", (parse_result_id,))
+            cursor.execute("DELETE FROM parse_results WHERE user_id = ? AND id = ?", (user_id, parse_result_id))
 
             # 4. Commit if requested
             if commit:

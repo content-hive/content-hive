@@ -64,8 +64,10 @@ def initialize_db():
             name TEXT NOT NULL,
             url TEXT NOT NULL,
             icon_url TEXT,
+            user_id INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
     
@@ -79,10 +81,12 @@ def initialize_db():
             username TEXT NOT NULL,
             avatar TEXT,
             url TEXT,
+            user_id INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(platform_id, uid),
-            FOREIGN KEY (platform_id) REFERENCES platforms(id)
+            FOREIGN KEY (platform_id) REFERENCES platforms(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
     
@@ -113,10 +117,10 @@ def initialize_db():
             content TEXT NOT NULL,
             author_id INTEGER,
             platform_id INTEGER NOT NULL,
-            user_id INTEGER,
             created_time INTEGER,
             parser TEXT NOT NULL,
             state TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (author_id) REFERENCES authors(id),
