@@ -26,14 +26,14 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     )
 
     try:
-        playload = UserUtils.decode_token(
+        payload = UserUtils.decode_token(
             token=token,
             secret_key=settings.secret_key,
             algorithms=[settings.algorithm]
         )
-        username: Optional[str] = playload.get("sub")
-        user_id: Optional[int] = playload.get("user_id")
-        token_version: Optional[int] = playload.get("token_version")
+        username: Optional[str] = payload.get("sub")
+        user_id: Optional[int] = payload.get("user_id")
+        token_version: Optional[int] = payload.get("token_version")
     
         if username is None or user_id is None or token_version is None:
             raise credentials_exception
