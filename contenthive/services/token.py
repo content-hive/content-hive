@@ -6,7 +6,7 @@ import uuid
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from contenthive.config import settings
-from contenthive.models.user import DeviceInfoModel, LoginResponseModel, UserModel, AuthTokenModel
+from contenthive.models.user import DeviceInfoModel, LoginResponse, RefreshTokenResponse, UserModel, AuthTokenModel
 from contenthive.database.userDAO import UserDAO
 from contenthive.utils.user import UserUtils
 
@@ -18,7 +18,7 @@ class TokenService:
         self.access_token_expire_minutes = settings.access_token_expire_minutes
         self.refresh_token_expire_days = settings.refresh_token_expire_days
 
-    def authenticate_user(self, username: str, password: str, request: Request) -> LoginResponseModel:
+    def authenticate_user(self, username: str, password: str, request: Request) -> LoginResponse:
         """Authenticate user and return token data"""
         with UserDAO() as dao:
             user = dao.get_user_by_username(username)
@@ -53,7 +53,7 @@ class TokenService:
             device_info = self._extract_device_info(request)
 
             # Store session in database
-            dao.create_session(
+            dao.upsert_session(
                 user_id=user.id,
                 device_id=device_info.device_id or "",
                 token_jti=token_jti,
@@ -62,7 +62,7 @@ class TokenService:
                 user_agent=device_info.user_agent or ""
             )
 
-            return LoginResponseModel(
+            return LoginResponse(
                 user=user_response,
                 tokens=AuthTokenModel(
                     access_token=access_token,
@@ -72,6 +72,73 @@ class TokenService:
                 )
             )
     
+
+    def refresh_access_token(self, refresh_token: str, request: Request) -> RefreshTokenResponse:
+        """Refresh access token using a valid refresh token"""
+        try:
+            payload = UserUtils.decode_token(
+                token=refresh_token,
+                secret_key=self.secret_key,
+                algorithms=[self.algorithm]
+            )
+            username: Optional[str] = payload.get("sub")
+            user_id: Optional[int] = payload.get("user_id")
+            jti: Optional[str] = payload.get("jti")
+
+            if username is None or user_id is None or jti is None:
+                raise ValueError("Invalid token payload")
+
+            with UserDAO() as dao:
+                user = dao.get_user_by_id(user_id)
+                if not user or user.username != username:
+                    raise ValueError("User not found")
+
+                session = dao.get_session_by_jti(user_id=user.id, jti=jti)
+                if not session:
+                    raise ValueError("Session not found or invalidated")
+
+                # Generate new access token
+                access_token = UserUtils.create_access_token(
+                    data={"sub": user.username, "user_id": user.id, "token_version": user.token_version},
+                    expires_delta=timedelta(minutes=self.access_token_expire_minutes),
+                    secret_key=self.secret_key,
+                    algorithm=self.algorithm
+                )
+
+                # Generate new refresh token with new JTI
+                new_jti = str(uuid.uuid4())
+                refresh_token = UserUtils.create_refresh_token(
+                    data={"sub": user.username, "user_id": user.id, "jti": new_jti},
+                    expires_delta=timedelta(days=self.refresh_token_expire_days),
+                    secret_key=self.secret_key,
+                    algorithm=self.algorithm
+                )
+                refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days)).isoformat()
+
+                device_info = self._extract_device_info(request)
+
+                # Update session in database
+                dao.upsert_session(
+                    user_id=user.id,
+                    device_id=device_info.device_id or "",
+                    token_jti=new_jti,
+                    expires_at=refresh_token_expires_at,
+                    ip_address=device_info.ip_address or "",
+                    user_agent=device_info.user_agent or ""
+                )
+
+                return RefreshTokenResponse(
+                    tokens=AuthTokenModel(
+                        access_token=access_token,
+                        refresh_token=refresh_token,
+                        token_type="bearer",
+                        expires_in=self.access_token_expire_minutes * 60
+                    )
+                )
+        except Exception as e:
+            raise ValueError("Could not refresh access token") from e
+
+
     @staticmethod
     def _extract_device_info(request: Request) -> DeviceInfoModel:
         """Extract device ID and user agent from request headers"""
@@ -128,5 +195,6 @@ class TokenService:
         if not client_ip:
             client_ip = request.client.host if request.client else ""
         return client_ip
+
 
 token_service = TokenService()

@@ -53,20 +53,20 @@ class DeviceInfoModel(BaseModel):
 
 # API request/response Models
 
-class LoginRequestModel(BaseModel):
+class LoginRequest(BaseModel):
     username: str
     password: str
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
 
-class UserCreateModel(BaseModel):
+class UserCreateResponse(BaseModel):
     username: str
     password: str
     email: Optional[str] = None
     is_admin: bool = False
 
     @classmethod
-    def from_entity(cls, user: UserEntity) -> 'UserCreateModel':
+    def from_entity(cls, user: UserEntity) -> 'UserCreateResponse':
         return cls(
             username=user.username,
             password="",  # Password is not included for security reasons
@@ -105,11 +105,17 @@ class AuthTokenModel(BaseModel):
     token_type: str = "bearer"
     expires_in: int  # in seconds
 
-class LoginResponseModel(BaseModel):
+class LoginResponse(BaseModel):
     user: UserModel
     tokens: AuthTokenModel
 
-class UserProfileModel(BaseModel):
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class RefreshTokenResponse(BaseModel):
+    tokens: AuthTokenModel
+
+class UserProfileResponse(BaseModel):
     user_id: int
     username: str
     email: Optional[str] = None
@@ -122,7 +128,7 @@ class UserProfileModel(BaseModel):
     created_at: Optional[datetime] = None
 
     @classmethod
-    def from_entities(cls, user: UserEntity, profile: Optional[ProfileEntity]) -> 'UserProfileModel':
+    def from_entities(cls, user: UserEntity, profile: Optional[ProfileEntity]) -> 'UserProfileResponse':
         return cls(
             user_id=user.id,
             username=user.username,

@@ -3,7 +3,7 @@ import sqlite3
 from typing import Optional
 
 from contenthive.database.database import get_db_connection
-from contenthive.models.user import ProfileEntity, UserEntity
+from contenthive.models.user import ProfileEntity, SessionEntity, UserEntity
 
 
 class UserDAO:
@@ -223,7 +223,7 @@ class UserDAO:
             raise ValueError("Database error occurred")
 
 
-    def create_session(
+    def upsert_session(
             self,
             user_id: int,
             device_id: str,
@@ -276,4 +276,33 @@ class UserDAO:
             raise ValueError("Session with given device ID or token JTI already exists") from e
         except sqlite3.Error:
             conn.rollback()
+            raise ValueError("Database error occurred")
+        
+
+    def get_session_by_jti(self, user_id: int, jti: str) -> Optional[SessionEntity]:
+        """Retrieve a session by user ID and token JTI"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM sessions WHERE user_id = ? AND token_jti = ?
+                """,
+                (user_id, jti),
+            )
+            row = cursor.fetchone()
+            if row:
+                return SessionEntity(
+                    id=row["id"],
+                    user_id=row["user_id"],
+                    device_id=row["device_id"],
+                    token_jti=row["token_jti"],
+                    expires_at=row["expires_at"],
+                    ip_address=row["ip_address"],
+                    user_agent=row["user_agent"],
+                    created_at=row["created_at"],
+                    last_accessed_at=row["last_accessed_at"],
+                )
+            return None
+        except sqlite3.Error:
             raise ValueError("Database error occurred")

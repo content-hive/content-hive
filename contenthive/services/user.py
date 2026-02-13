@@ -3,7 +3,7 @@ from typing import Optional
 
 from contenthive.database.userDAO import UserDAO
 from contenthive.utils.user import UserUtils
-from contenthive.models.user import UserCreateModel, UserModel, UserProfileModel
+from contenthive.models.user import UserProfileResponse
 
 class UserService:
     def __init__(self, ):
@@ -70,7 +70,7 @@ class UserService:
                 raise ValueError("Failed to update user password")
             return new_password
     
-    def get_user_profile(self, user_id: int) -> UserProfileModel:
+    def get_user_profile(self, user_id: int) -> UserProfileResponse:
         """Retrieve user profile by user ID"""
         with UserDAO() as dao:
             user = dao.get_user_by_id(user_id)
@@ -78,6 +78,6 @@ class UserService:
             if not user or not profile:
                 raise ValueError("User not found")
             
-            return UserProfileModel.from_entities(user, profile)
+            return UserProfileResponse.from_entities(user, profile)
 
 user_service = UserService()

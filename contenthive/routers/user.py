@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from contenthive.config import settings
 from contenthive.database.userDAO import UserDAO
 from contenthive.models.api import APIResponse, ErrorDetail, DetailedHTTPException
-from contenthive.models.user import LoginRequestModel, LoginResponseModel, UserModel
+from contenthive.models.user import LoginRequest, LoginResponse, RefreshTokenRequest, UserModel
 from contenthive.services.token import token_service
 from contenthive.services.user import user_service
 from contenthive.utils.user import UserUtils
@@ -58,19 +58,31 @@ async def get_current_active_user(current_user: Annotated[UserModel, Depends(get
         )
     return current_user
 
+async def get_current_admin_user(current_user: Annotated[UserModel, Depends(get_current_active_user)]):
+    if not current_user.is_admin:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorDetail(
+                code="ADMIN_PRIVILEGES_REQUIRED",
+                message="Admin privileges are required to access this resource"
+            )
+        )
+    return current_user
+
+
 @router_v1.post("/token")
 async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """"""
     response = await login(
         request,
-        LoginRequestModel(
+        LoginRequest(
             username=form_data.username,
             password=form_data.password,
             client_id=form_data.client_id,
             client_secret=form_data.client_secret
         )
     )
-    if isinstance(response.data, LoginResponseModel):
+    if isinstance(response.data, LoginResponse):
         return {
             "access_token": response.data.tokens.access_token,
             "token_type": response.data.tokens.token_type
@@ -86,7 +98,7 @@ async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 
 
 @router_v1.post("/login")
-async def login(request: Request, data: LoginRequestModel) -> APIResponse:
+async def login(request: Request, data: LoginRequest) -> APIResponse:
     """"""
     try:
         result = token_service.authenticate_user(
@@ -103,6 +115,28 @@ async def login(request: Request, data: LoginRequestModel) -> APIResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ErrorDetail(
                 code="AUTHENTICATION_FAILED",
+                message=str(e)
+            )
+        )
+    
+
+@router_v1.post("/refresh-token")
+async def refresh_token(request: Request, data: RefreshTokenRequest) -> APIResponse:
+    """"""
+    try:
+        result = token_service.refresh_access_token(
+            refresh_token=data.refresh_token,
+            request=request
+        )
+        return APIResponse(
+            status="success",
+            data=result
+        )
+    except Exception as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ErrorDetail(
+                code="TOKEN_REFRESH_FAILED",
                 message=str(e)
             )
         )
