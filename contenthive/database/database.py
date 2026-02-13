@@ -116,7 +116,7 @@ def initialize_db():
             pid TEXT NOT NULL,
             url TEXT NOT NULL,
             content TEXT NOT NULL,
-            author_id INTEGER,
+            author_id INTEGER NOT NULL,
             platform_id INTEGER NOT NULL,
             created_time INTEGER,
             parser TEXT NOT NULL,
