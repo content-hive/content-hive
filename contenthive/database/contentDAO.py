@@ -708,6 +708,16 @@ class ParserDAO:
         all_file_paths = []
         
         try:
+            # First verify ownership/existence of platform
+            cursor.execute("""
+                SELECT id FROM platforms 
+                WHERE id = ? AND user_id = ?
+            """, (platform_id, user_id))
+            
+            if not cursor.fetchone():
+                logger.warning(f"Platform {platform_id} not found or access denied for user {user_id}")
+                return False, all_file_paths
+            
             # Get all authors belonging to this platform
             cursor.execute("SELECT id FROM authors WHERE user_id = ? AND platform_id = ?", (user_id, platform_id))
             author_ids = [row[0] for row in cursor.fetchall()]
@@ -762,6 +772,16 @@ class ParserDAO:
         all_file_paths = []
         
         try:
+            # First verify ownership/existence of author
+            cursor.execute("""
+                SELECT id FROM authors 
+                WHERE id = ? AND user_id = ?
+            """, (author_id, user_id))
+            
+            if not cursor.fetchone():
+                logger.warning(f"Author {author_id} not found or access denied for user {user_id}")
+                return False, all_file_paths
+            
             # Get all parse result IDs for this author
             cursor.execute("SELECT id FROM parse_results WHERE user_id = ? AND author_id = ?", (user_id, author_id))
             parse_result_ids = [row[0] for row in cursor.fetchall()]
@@ -816,7 +836,17 @@ class ParserDAO:
         file_paths = []
 
         try:
-            # 1. Get orphaned media IDs FIRST (only used by this parse result)
+            # 1. FIRST verify ownership/existence of parse result
+            cursor.execute("""
+                SELECT id FROM parse_results 
+                WHERE id = ? AND user_id = ?
+            """, (parse_result_id, user_id))
+            
+            if not cursor.fetchone():
+                logger.warning(f"Parse result {parse_result_id} not found or access denied for user {user_id}")
+                raise ValueError(f"Parse result {parse_result_id} not found or access denied")
+            
+            # 2. Get orphaned media IDs (only used by this parse result)
             cursor.execute("""
                 SELECT media_id 
                 FROM parse_result_media 
@@ -831,7 +861,7 @@ class ParserDAO:
             
             orphaned_media_ids = [row["media_id"] for row in cursor.fetchall()]
 
-            # 2. Collect media paths ONLY for orphaned media
+            # 3. Collect media paths ONLY for orphaned media
             if orphaned_media_ids:
                 placeholders = ",".join("?" * len(orphaned_media_ids))
                 cursor.execute(f"""
@@ -846,7 +876,7 @@ class ParserDAO:
                     if row["cover_path"]:
                         file_paths.append(row["cover_path"])
 
-            # 3. Delete database records
+            # 4. Delete database records
             cursor.execute("DELETE FROM parse_result_media WHERE parse_result_id = ?", 
                          (parse_result_id,))
 
@@ -857,11 +887,13 @@ class ParserDAO:
                 logger.debug(f"Deleted {len(orphaned_media_ids)} orphaned media records")
 
             cursor.execute("DELETE FROM parse_results WHERE user_id = ? AND id = ?", (user_id, parse_result_id))
-            if cursor.rowcount == 0:
-                logger.warning(f"Parse result {parse_result_id} not found for deletion")
-                raise ValueError(f"Parse result {parse_result_id} not found for deletion")
             
-            # 4. Commit if requested
+            # This should never fail now since we verified ownership above
+            if cursor.rowcount == 0:
+                logger.error(f"Unexpected: Parse result {parse_result_id} vanished during deletion")
+                raise ValueError(f"Parse result {parse_result_id} unexpectedly not found")
+            
+            # 5. Commit if requested
             if commit:
                 conn.commit()
                 logger.info(f"Deleted parse result {parse_result_id} from database")
