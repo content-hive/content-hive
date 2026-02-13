@@ -12,7 +12,7 @@ class UserService:
 
     def create_user(
             self,
-            user_id: int,
+            created_by: int,
             username: str,
             password: str,
             email: Optional[str] = None, 
@@ -24,7 +24,7 @@ class UserService:
                 raise ValueError("User with given username or email already exists")
 
             password_hash = UserUtils.hash_password(password)
-            user_id = dao.create_user(username, password_hash, email, is_admin, user_id)
+            user_id = dao.create_user(username, password_hash, email, is_admin, created_by)
             user = dao.get_user_by_id(user_id)
             
             if not user:

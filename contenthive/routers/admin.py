@@ -19,7 +19,7 @@ async def create_user(
     """
     try:
         user = user_service.create_user(
-            user_id=current_user.id,
+            created_by=current_user.id,
             username=user_request.username,
             password=user_request.password,
             email=user_request.email,
