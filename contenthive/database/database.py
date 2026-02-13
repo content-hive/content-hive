@@ -1,6 +1,4 @@
 import sqlite3
-import os
-from pathlib import Path
 from contenthive.config import settings
 
 def get_db_connection():

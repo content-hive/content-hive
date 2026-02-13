@@ -35,7 +35,7 @@ class UserService:
     def create_admin_user(self) -> Optional[tuple[str, str]]:
         """
         Create initial admin user. Returns (username, password) only on creation,
-        None if admin already exists.
+        None if admin already exists or password was set via environment variable.
         
         Password can be set via ADMIN_PASSWORD environment variable for automated setups,
         otherwise a secure random password is generated.
