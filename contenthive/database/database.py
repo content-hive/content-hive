@@ -68,6 +68,7 @@ def initialize_db():
             user_id INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, code),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
@@ -85,7 +86,7 @@ def initialize_db():
             user_id INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(platform_id, uid),
+            UNIQUE(user_id, platform_id, uid),
             FOREIGN KEY (platform_id) REFERENCES platforms(id),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
@@ -124,6 +125,7 @@ def initialize_db():
             user_id INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, platform_id, pid),
             FOREIGN KEY (author_id) REFERENCES authors(id),
             FOREIGN KEY (platform_id) REFERENCES platforms(id),
             FOREIGN KEY (user_id) REFERENCES users(id)
