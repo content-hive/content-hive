@@ -40,7 +40,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         
         with UserDAO() as dao:
             user = dao.get_user_by_username(username)
-            if not user or user.username != username or user.token_version > token_version:
+            if not user or user.username != username or user.token_version != token_version:
                 raise credentials_exception
             
             return UserModel.from_entity(user)

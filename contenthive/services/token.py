@@ -43,7 +43,7 @@ class TokenService:
             # Generate unique JTI
             token_jti = str(uuid.uuid4())
             refresh_token = UserUtils.create_refresh_token(
-                data={"sub": user.username, "user_id": user.id, "jti": token_jti},
+                data={"sub": user.username, "user_id": user.id, "jti": token_jti, "token_version": user.token_version},
                 expires_delta=timedelta(days=self.refresh_token_expire_days),
                 secret_key=self.secret_key,
                 algorithm=self.algorithm
@@ -81,17 +81,32 @@ class TokenService:
                 secret_key=self.secret_key,
                 algorithms=[self.algorithm]
             )
+            
+            # Validate token type
+            token_type: Optional[str] = payload.get("type")
+            if token_type != "refresh":
+                raise ValueError("Invalid token type - expected refresh token")
+            
             username: Optional[str] = payload.get("sub")
             user_id: Optional[int] = payload.get("user_id")
             jti: Optional[str] = payload.get("jti")
+            token_version: Optional[int] = payload.get("token_version")
 
-            if username is None or user_id is None or jti is None:
+            if username is None or user_id is None or jti is None or token_version is None:
                 raise ValueError("Invalid token payload")
 
             with UserDAO() as dao:
                 user = dao.get_user_by_id(user_id)
                 if not user or user.username != username:
                     raise ValueError("User not found")
+                
+                # Validate token_version to ensure token hasn't been invalidated
+                if user.token_version != token_version:
+                    raise ValueError("Token has been invalidated due to account changes")
+                
+                # Check if user account is disabled
+                if user.status == 2:
+                    raise ValueError("User account is disabled")
 
                 session = dao.get_session_by_jti(user_id=user.id, jti=jti)
                 if not session:
@@ -108,7 +123,7 @@ class TokenService:
                 # Generate new refresh token with new JTI
                 new_jti = str(uuid.uuid4())
                 refresh_token = UserUtils.create_refresh_token(
-                    data={"sub": user.username, "user_id": user.id, "jti": new_jti},
+                    data={"sub": user.username, "user_id": user.id, "jti": new_jti, "token_version": user.token_version},
                     expires_delta=timedelta(days=self.refresh_token_expire_days),
                     secret_key=self.secret_key,
                     algorithm=self.algorithm
