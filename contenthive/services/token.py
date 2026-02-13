@@ -110,6 +110,10 @@ class TokenService:
                 session = dao.get_session_by_jti(user_id=user.id, jti=jti)
                 if not session:
                     raise ValueError("Session not found or invalidated")
+                
+                # Check if session is revoked
+                if session.revoked:
+                    raise ValueError("Session has been revoked")
 
                 # Generate new access token
                 access_token = UserUtils.create_access_token(
@@ -188,14 +192,19 @@ class TokenService:
 
     @staticmethod
     def _generate_device_fingerprint(request: Request) -> str:
-        """Generate a simple device fingerprint from request headers"""
+        """
+        Generate a stable device fingerprint from request headers.
+        
+        Note: IP address is intentionally excluded to prevent fingerprint changes
+        when users switch networks (e.g., WiFi to mobile data, VPN usage).
+        IP is still logged in the session for security/audit purposes.
+        """
         user_agent = request.headers.get("User-Agent", "")
         accept_language = request.headers.get("Accept-Language", "")
         accept_encoding = request.headers.get("Accept-Encoding", "")
-
-        client_ip = TokenService._extract_device_ip(request)
         
-        fingerprint_data = f"{user_agent}|{accept_language}|{accept_encoding}|{client_ip}"
+        # Note: IP is NOT included in fingerprint for stability
+        fingerprint_data = f"{user_agent}|{accept_language}|{accept_encoding}"
         device_fingerprint = hashlib.sha256(fingerprint_data.encode()).hexdigest()
         return f"fp_{device_fingerprint[:16]}"
 

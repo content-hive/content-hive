@@ -302,6 +302,7 @@ class UserDAO:
                     expires_at=row["expires_at"],
                     ip_address=row["ip_address"],
                     user_agent=row["user_agent"],
+                    revoked=bool(row["revoked"]),
                     created_at=row["created_at"],
                     last_accessed_at=row["last_accessed_at"],
                 )
@@ -367,6 +368,71 @@ class UserDAO:
             )
             conn.commit()
             return cursor.rowcount > 0
+        except sqlite3.Error:
+            conn.rollback()
+            raise ValueError("Database error occurred")
+
+    def cleanup_expired_sessions(self) -> int:
+        """
+        Delete all expired sessions from the database.
+        Returns the number of sessions deleted.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                DELETE FROM sessions
+                WHERE datetime(expires_at) < datetime('now')
+                """
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
+        except sqlite3.Error:
+            conn.rollback()
+            raise ValueError("Database error occurred")
+
+    def revoke_all_user_sessions(self, user_id: int) -> int:
+        """
+        Revoke all sessions for a specific user.
+        Returns the number of sessions revoked.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sessions
+                SET revoked = 1
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+            revoked_count = cursor.rowcount
+            conn.commit()
+            return revoked_count
+        except sqlite3.Error:
+            conn.rollback()
+            raise ValueError("Database error occurred")
+
+    def delete_revoked_sessions(self) -> int:
+        """
+        Delete all revoked sessions from the database.
+        Returns the number of sessions deleted.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                DELETE FROM sessions
+                WHERE revoked = 1
+                """
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
         except sqlite3.Error:
             conn.rollback()
             raise ValueError("Database error occurred")
