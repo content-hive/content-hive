@@ -21,6 +21,7 @@ def initialize_db():
             is_admin BOOLEAN DEFAULT 0,
             token_version INTEGER DEFAULT 0,
             last_login_at TIMESTAMP,
+            created_by INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -44,7 +45,7 @@ def initialize_db():
         CREATE TABLE IF NOT EXISTS sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            device_id TEXT UNIQUE NOT NULL,
+            device_id TEXT NOT NULL,
             revoked BOOLEAN DEFAULT 0,
             token_jti TEXT UNIQUE NOT NULL,
             expires_at TIMESTAMP NOT NULL,

@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from contenthive.config import settings
 from contenthive.database.userDAO import UserDAO
 from contenthive.models.api import APIResponse, ErrorDetail, DetailedHTTPException
-from contenthive.models.user import LoginRequest, LoginResponse, RefreshTokenRequest, UserModel
+from contenthive.models.user import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, UserModel
 from contenthive.services.token import token_service
 from contenthive.services.user import user_service
 from contenthive.utils.user import UserUtils
@@ -162,10 +162,10 @@ async def read_users_me(current_user: Annotated[UserModel, Depends(get_current_a
         )
     
 @router_v1.post("/change-password")
-async def change_password(current_user: Annotated[UserModel, Depends(get_current_active_user)], new_password: str) -> APIResponse:
+async def change_password(current_user: Annotated[UserModel, Depends(get_current_active_user)], data: ChangePasswordRequest) -> APIResponse:
     """"""
     try:
-        user_service.change_user_password(current_user.id, new_password)
+        user_service.change_user_password(current_user.id, data.new_password)
         return APIResponse(
             status="success",
             data={"message": "Password changed successfully"}

@@ -43,7 +43,9 @@ async def restart_application(
 
 
 @router_v1.post("/reload")
-async def reload_configuration():
+async def reload_configuration(
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)]
+):
     """
     Reload configuration (HA's reload core config)
     """
@@ -71,7 +73,9 @@ async def reload_configuration():
 
 
 @router_v1.post("/check-config")
-async def check_configuration():
+async def check_configuration(
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)]
+):
     """
     Check configuration validity (HA's config check)
     Validate configuration before restart

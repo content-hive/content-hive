@@ -18,6 +18,7 @@ class UserEntity:
     is_admin: bool = field(default=False)
     token_version: int = field(default=0)
     last_login_at: Optional[datetime] = field(default=None)
+    created_by: int = field(default=0)
     created_at: Optional[datetime] = field(default=None)
     updated_at: Optional[datetime] = field(default=None)
 
@@ -53,17 +54,18 @@ class DeviceInfoModel(BaseModel):
 
 # API request/response Models
 
-class LoginRequest(BaseModel):
+class CreateUserRequest(BaseModel):
     username: str
     password: str
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
+    email: Optional[str] = None
+    is_admin: bool = False
 
 class UserCreateResponse(BaseModel):
     username: str
     password: str
     email: Optional[str] = None
     is_admin: bool = False
+    created_by: int
 
     @classmethod
     def from_entity(cls, user: UserEntity) -> 'UserCreateResponse':
@@ -71,8 +73,15 @@ class UserCreateResponse(BaseModel):
             username=user.username,
             password="",  # Password is not included for security reasons
             email=user.email,
-            is_admin=user.is_admin
+            is_admin=user.is_admin,
+            created_by=user.created_by
         )
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
 
 class UserModel(BaseModel):
     id: int
@@ -82,6 +91,7 @@ class UserModel(BaseModel):
     status: int
     force_password_change: bool
     last_login_at: Optional[datetime] = None
+    created_by: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -95,6 +105,7 @@ class UserModel(BaseModel):
             status=user.status,
             force_password_change=user.force_password_change,
             last_login_at=user.last_login_at,
+            created_by=user.created_by,
             created_at=user.created_at,
             updated_at=user.updated_at
         )
@@ -115,6 +126,12 @@ class RefreshTokenRequest(BaseModel):
 class RefreshTokenResponse(BaseModel):
     tokens: AuthTokenModel
 
+class ChangePasswordRequest(BaseModel):
+    new_password: str
+
+class UserStatusUpdateRequest(BaseModel):
+    status: int  # e.g., 0 = inactive, 1 = active, 2 = disabled
+
 class UserProfileResponse(BaseModel):
     user_id: int
     username: str
@@ -125,6 +142,7 @@ class UserProfileResponse(BaseModel):
     full_name: Optional[str] = None
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
+    created_by: int
     created_at: Optional[datetime] = None
 
     @classmethod
@@ -139,5 +157,6 @@ class UserProfileResponse(BaseModel):
             full_name=profile.full_name if profile else None,
             bio=profile.bio if profile else None,
             avatar_url=profile.avatar_url if profile else None,
+            created_by=user.created_by,
             created_at=profile.created_at if profile else None
         )

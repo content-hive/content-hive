@@ -1,4 +1,3 @@
-
 import sqlite3
 from typing import Optional
 
@@ -65,7 +64,8 @@ class UserDAO:
             username: str,
             password_hash: str,
             email: Optional[str] = None,
-            is_admin: bool = False
+            is_admin: bool = False,
+            created_by: int = 0
         ) -> int:
         """Create a new user and return its ID"""
         conn = self._get_connection()
@@ -73,10 +73,10 @@ class UserDAO:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO users (username, email, password_hash, status, is_admin)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users (username, email, password_hash, status, is_admin, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (username, email, password_hash, 1, is_admin),
+                (username, email, password_hash, 1, is_admin, created_by),
             )
             user_id = cursor.lastrowid if cursor.lastrowid else 0
             self._create_profile(user_id, commit=False)
@@ -126,6 +126,7 @@ class UserDAO:
                     is_admin=bool(row["is_admin"]),
                     token_version=row["token_version"],
                     last_login_at=row["last_login_at"],
+                    created_by=row["created_by"],
                     created_at=row["created_at"],
                     updated_at=row["updated_at"],
                 )
@@ -154,6 +155,7 @@ class UserDAO:
                     is_admin=bool(row["is_admin"]),
                     token_version=row["token_version"],
                     last_login_at=row["last_login_at"],
+                    created_by=row["created_by"],
                     created_at=row["created_at"],
                     updated_at=row["updated_at"],
                 )
@@ -305,4 +307,66 @@ class UserDAO:
                 )
             return None
         except sqlite3.Error:
+            raise ValueError("Database error occurred")
+        
+    def list_all_users(self) -> list[tuple[UserEntity, ProfileEntity]]:
+        """List all users in the database"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT u.*, 
+                       p.user_id, p.full_name, p.bio, p.avatar_url, p.created_at AS profile_created_at, p.updated_at AS profile_updated_at
+                FROM users u
+                INNER JOIN profiles p ON u.id = p.user_id
+                """
+            )
+            rows = cursor.fetchall()
+            users = []
+            for row in rows:
+                user = UserEntity(
+                    id=row["id"],
+                    username=row["username"],
+                    email=row["email"],
+                    password_hash=row["password_hash"],
+                    status=row["status"],
+                    force_password_change=bool(row["force_password_change"]),
+                    is_admin=bool(row["is_admin"]),
+                    token_version=row["token_version"],
+                    last_login_at=row["last_login_at"],
+                    created_by=row["created_by"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                profile = ProfileEntity(
+                    user_id=row["user_id"],
+                    full_name=row["full_name"],
+                    bio=row["bio"],
+                    avatar_url=row["avatar_url"],
+                    created_at=row["profile_created_at"],
+                    updated_at=row["profile_updated_at"],
+                )
+                users.append((user, profile))
+            return users
+        except sqlite3.Error:
+            raise ValueError("Database error occurred")
+        
+    def update_user_status(self, user_id: int, status: int) -> bool:
+        """Update the active status of a user"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE users
+                SET status = ?, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (status, user_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error:
+            conn.rollback()
             raise ValueError("Database error occurred")

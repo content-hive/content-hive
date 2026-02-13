@@ -3,26 +3,33 @@ from typing import Optional
 
 from contenthive.database.userDAO import UserDAO
 from contenthive.utils.user import UserUtils
-from contenthive.models.user import UserProfileResponse
+from contenthive.models.user import UserCreateResponse, UserProfileResponse
 
 class UserService:
     def __init__(self, ):
         pass
 
-    def _create_user(
+    def create_user(
             self,
+            user_id: int,
             username: str,
             password: str,
             email: Optional[str] = None, 
             is_admin: bool = False
-        ) -> int:
+        ) -> UserCreateResponse:
         """Create a new user and return the user ID"""
         with UserDAO() as dao:
             if dao.user_exists(username=username, email=email):
                 raise ValueError("User with given username or email already exists")
 
-            user_id = dao.create_user(username, password, email, is_admin)
-            return user_id
+            password_hash = UserUtils.hash_password(password)
+            user_id = dao.create_user(username, password_hash, email, is_admin, user_id)
+            user = dao.get_user_by_id(user_id)
+            
+            if not user:
+                raise ValueError("Failed to create user")
+            
+            return UserCreateResponse.from_entity(user)
         
     def create_admin_user(self) -> tuple[str, str]:
         """Public method to create a new user"""
@@ -37,7 +44,8 @@ class UserService:
             dao.create_user(
                 username=username,
                 password_hash=password_hash,
-                is_admin=True
+                is_admin=True,
+                created_by=0
             )
             
             return username, password
@@ -79,5 +87,21 @@ class UserService:
                 raise ValueError("User not found")
             
             return UserProfileResponse.from_entities(user, profile)
+
+    def list_users(self) -> list[UserProfileResponse]:
+        """List all users"""
+        with UserDAO() as dao:
+            users = dao.list_all_users()
+            return [UserProfileResponse.from_entities(user, profile) for user, profile in users]
+
+    def change_user_status(self, user_id: int, status: int) -> bool:
+        """Change the active status of a user"""
+        with UserDAO() as dao:
+            user = dao.get_user_by_id(user_id)
+            if not user:
+                raise ValueError("User not found")
+            
+            result = dao.update_user_status(user.id, status)
+            return result
 
 user_service = UserService()
