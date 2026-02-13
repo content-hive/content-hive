@@ -1,9 +1,9 @@
-import random
+import secrets
 import string
 from pwdlib import PasswordHash
 from jose import jwt, JWTError
 from datetime import datetime, timedelta, timezone
-from contenthive.config import settings
+
 
 password_hash = PasswordHash.recommended()
 
@@ -22,24 +22,24 @@ class UserUtils:
 
     @staticmethod
     def generate_random_password(length: int = 12) -> str:
-        """Generate a random password of given length"""
+        """Generate a cryptographically secure random password of given length"""
         if length < 8:
             length = 8
         
         # Ensure password contains at least one of each required character type
         password_chars = [
-            random.choice(string.ascii_lowercase),  # At least one lowercase
-            random.choice(string.ascii_uppercase),  # At least one uppercase
-            random.choice(string.digits),           # At least one digit
-            random.choice("!@#$%^&*")              # At least one special char
+            secrets.choice(string.ascii_lowercase),  # At least one lowercase
+            secrets.choice(string.ascii_uppercase),  # At least one uppercase
+            secrets.choice(string.digits),           # At least one digit
+            secrets.choice("!@#$%^&*")              # At least one special char
         ]
         
         # Fill the rest with random characters
         all_characters = string.ascii_letters + string.digits + "!@#$%^&*"
-        password_chars += [random.choice(all_characters) for _ in range(length - 4)]
+        password_chars += [secrets.choice(all_characters) for _ in range(length - 4)]
         
-        # Shuffle to avoid predictable pattern
-        random.shuffle(password_chars)
+        # Shuffle to avoid predictable pattern using secrets
+        secrets.SystemRandom().shuffle(password_chars)
         
         return ''.join(password_chars)
     
