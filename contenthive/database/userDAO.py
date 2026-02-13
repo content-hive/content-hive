@@ -197,7 +197,7 @@ class UserDAO:
                 SET password_hash = ?, force_password_change = ?, updated_at = CURRENT_TIMESTAMP, token_version = token_version + 1
                 WHERE id = ?
                 """,
-                (new_password_hash, 0 if force_password_change else 1, user_id),
+                (new_password_hash, int(force_password_change), user_id),
             )
             conn.commit()
             return cursor.rowcount > 0

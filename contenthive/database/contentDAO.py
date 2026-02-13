@@ -228,7 +228,7 @@ class ParserDAO:
             
             # Update author entity with correct platform_id
             author_entity.platform_id = platform_id
-            author_id = self.save_author(author_entity, user_id, platform_id, commit=False)
+            author_id = self.save_author(author_entity, platform_id, user_id, commit=False)
 
             # Convert ParserResult to ParseResultEntity
             entity = ParserMapper.parser_result_to_entity(
