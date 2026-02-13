@@ -11,7 +11,7 @@ from contenthive.services.token import token_service
 from contenthive.services.user import user_service
 from contenthive.utils.user import UserUtils
 
-router_v1 = APIRouter(prefix="/v1/user", tags=["User"])
+router_v1 = APIRouter(prefix="/v1/user", tags=["user"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="v1/user/token")
 
