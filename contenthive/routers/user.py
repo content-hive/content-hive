@@ -1,6 +1,6 @@
 
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from contenthive.config import settings

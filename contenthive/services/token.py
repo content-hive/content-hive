@@ -1,10 +1,9 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
-from typing import Annotated, Optional
+from typing import Optional
 import uuid
 
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Request
 from contenthive.config import settings
 from contenthive.models.user import DeviceInfoModel, LoginResponse, RefreshTokenResponse, UserModel, AuthTokenModel
 from contenthive.database.userDAO import UserDAO
