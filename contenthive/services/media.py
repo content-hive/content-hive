@@ -5,6 +5,7 @@ Media service for downloading and managing media files.
 import os
 import aiohttp
 import hashlib
+import shutil
 from pathlib import Path
 from contenthive.logger import logger
 from contenthive.models.parser import ParserResult
@@ -165,7 +166,6 @@ class MediaService:
         try:
             media_dir = self._get_media_directory(result)
             if media_dir.exists():
-                import shutil
                 shutil.rmtree(media_dir)
                 logger.info(f"Deleted media directory: {media_dir}")
                 return True
@@ -244,7 +244,8 @@ class MediaService:
                     abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
                     resolved_path = abs_path.resolve()
                     
-                    if resolved_path != media_root and media_root in resolved_path.parents:
+                    # Check if path is within media directory
+                    if resolved_path == media_root or media_root not in resolved_path.parents:
                         failed_count += 1
                         logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
                         continue

@@ -61,7 +61,7 @@ def initialize_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS platforms (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE NOT NULL,
+            code TEXT NOT NULL,
             name TEXT NOT NULL,
             url TEXT NOT NULL,
             icon_url TEXT,

@@ -816,21 +816,7 @@ class ParserDAO:
         file_paths = []
 
         try:
-            # 1. Collect media paths BEFORE deletion
-            cursor.execute("""
-                SELECT m.media_path, m.cover_path
-                FROM media m
-                JOIN parse_result_media prm ON m.id = prm.media_id
-                WHERE user_id = ? AND prm.parse_result_id = ?
-            """, (user_id, parse_result_id))
-            
-            for row in cursor.fetchall():
-                if row[0]:  # media_path
-                    file_paths.append(row[0])
-                if row[1]:  # cover_path
-                    file_paths.append(row[1])
-
-            # 2. Get orphaned media IDs (only used by this parse result)
+            # 1. Get orphaned media IDs FIRST (only used by this parse result)
             cursor.execute("""
                 SELECT media_id 
                 FROM parse_result_media 
@@ -843,16 +829,27 @@ class ParserDAO:
                 HAVING COUNT(DISTINCT parse_result_id) = 1
             """, (parse_result_id,))
             
-            orphaned_media_ids = [row[0] for row in cursor.fetchall()]
+            orphaned_media_ids = [row["media_id"] for row in cursor.fetchall()]
+
+            # 2. Collect media paths ONLY for orphaned media
+            if orphaned_media_ids:
+                placeholders = ",".join("?" * len(orphaned_media_ids))
+                cursor.execute(f"""
+                    SELECT media_path, cover_path
+                    FROM media
+                    WHERE id IN ({placeholders})
+                """, orphaned_media_ids)
+                
+                for row in cursor.fetchall():
+                    if row["media_path"]:
+                        file_paths.append(row["media_path"])
+                    if row["cover_path"]:
+                        file_paths.append(row["cover_path"])
 
             # 3. Delete database records
             cursor.execute("DELETE FROM parse_result_media WHERE parse_result_id = ?", 
                          (parse_result_id,))
 
-            if cursor.rowcount == 0:
-                logger.warning(f"Parse result {parse_result_id} not found for deletion")
-                return False, file_paths  # Parse result not found
-            
             if orphaned_media_ids:
                 placeholders = ",".join("?" * len(orphaned_media_ids))
                 cursor.execute(f"DELETE FROM media WHERE id IN ({placeholders})", 
@@ -860,7 +857,10 @@ class ParserDAO:
                 logger.debug(f"Deleted {len(orphaned_media_ids)} orphaned media records")
 
             cursor.execute("DELETE FROM parse_results WHERE user_id = ? AND id = ?", (user_id, parse_result_id))
-
+            if cursor.rowcount == 0:
+                logger.warning(f"Parse result {parse_result_id} not found for deletion")
+                raise ValueError(f"Parse result {parse_result_id} not found for deletion")
+            
             # 4. Commit if requested
             if commit:
                 conn.commit()

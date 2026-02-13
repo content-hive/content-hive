@@ -28,7 +28,7 @@ sessions,ip_address,TEXT,NO,IP address,
 sessions,user_agent,TEXT,NO,User agent,
 sessions,revoked,BOOLEAN,YES,Is revoked,DEFAULT 0
 platforms,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
-platforms,code,TEXT,YES,Platform code,UNIQUE NOT NULL
+platforms,code,TEXT,YES,Platform code,NOT NULL
 platforms,name,TEXT,YES,Name,NOT NULL
 platforms,url,TEXT,YES,Platform homepage,NOT NULL
 platforms,icon_url,TEXT,NO,Icon URL,
