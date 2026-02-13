@@ -250,11 +250,11 @@ class UserDAO:
             existing_session = cursor.fetchone()
 
             if existing_session:
-                # Update existing session
+                # Update existing session and reset revoked flag
                 cursor.execute(
                     """
                     UPDATE sessions
-                    SET token_jti = ?, expires_at = ?, ip_address = ?, user_agent = ?, last_accessed_at = CURRENT_TIMESTAMP
+                    SET token_jti = ?, expires_at = ?, ip_address = ?, user_agent = ?, revoked = 0, last_accessed_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
                     (token_jti, expires_at, ip_address, user_agent, existing_session["id"]),
@@ -389,6 +389,28 @@ class UserDAO:
             deleted_count = cursor.rowcount
             conn.commit()
             return deleted_count
+        except sqlite3.Error:
+            conn.rollback()
+            raise ValueError("Database error occurred")
+
+    def revoke_session_by_jti(self, user_id: int, jti: str) -> bool:
+        """
+        Revoke a specific session by JTI.
+        Returns True if the session was revoked, False if not found.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sessions
+                SET revoked = 1
+                WHERE user_id = ? AND token_jti = ?
+                """,
+                (user_id, jti)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
         except sqlite3.Error:
             conn.rollback()
             raise ValueError("Database error occurred")

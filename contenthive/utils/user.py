@@ -45,7 +45,7 @@ class UserUtils:
     
     @staticmethod
     def hash_password(password: str) -> str:
-        """Hash a password using bcrypt"""
+        """Hash a password using the recommended password hashing algorithm (e.g., Argon2)"""
         return password_hash.hash(password)
 
     @staticmethod

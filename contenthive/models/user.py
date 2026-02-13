@@ -1,9 +1,11 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from contenthive.utils.user import UserUtils
 
 # Database Models
 
@@ -59,6 +61,18 @@ class CreateUserRequest(BaseModel):
     password: str
     email: Optional[str] = None
     is_admin: bool = False
+
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        """Validate password meets strength requirements"""
+        if not UserUtils.password_strength(v):
+            raise ValueError(
+                'Password must be at least 8 characters long and contain '
+                'at least one lowercase letter, one uppercase letter, '
+                'one digit, and one special character (!@#$%^&*)'
+            )
+        return v
 
 class UserCreateResponse(BaseModel):
     username: str
@@ -129,8 +143,20 @@ class RefreshTokenResponse(BaseModel):
 class ChangePasswordRequest(BaseModel):
     new_password: str
 
+    @field_validator('new_password')
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        """Validate password meets strength requirements"""
+        if not UserUtils.password_strength(v):
+            raise ValueError(
+                'Password must be at least 8 characters long and contain '
+                'at least one lowercase letter, one uppercase letter, '
+                'one digit, and one special character (!@#$%^&*)'
+            )
+        return v
+
 class UserStatusUpdateRequest(BaseModel):
-    status: int  # e.g., 0 = inactive, 1 = active, 2 = disabled
+    status: Literal[0, 1, 2]  # 0 = inactive, 1 = active, 2 = disabled
 
 class UserProfileResponse(BaseModel):
     user_id: int

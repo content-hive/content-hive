@@ -115,6 +115,9 @@ class TokenService:
                 if session.revoked:
                     raise ValueError("Session has been revoked")
 
+                # Revoke the old session to prevent replay attacks
+                dao.revoke_session_by_jti(user.id, jti)
+
                 # Generate new access token
                 access_token = UserUtils.create_access_token(
                     data={"sub": user.username, "user_id": user.id, "token_version": user.token_version},
@@ -135,7 +138,7 @@ class TokenService:
 
                 device_info = self._extract_device_info(request)
 
-                # Update session in database
+                # Create new session in database
                 dao.upsert_session(
                     user_id=user.id,
                     device_id=device_info.device_id or "",

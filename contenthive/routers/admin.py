@@ -68,6 +68,14 @@ async def reset_user_password(
     """
     Reset a user's password (Admin only)
     """
+    if user_id == current_user.id:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(
+                code="CANNOT_RESET_OWN_PASSWORD",
+                message="Admins cannot reset their own password via this endpoint"
+            )
+        )
     try:
         new_password = user_service.reset_user_password(user_id)
         return APIResponse(
