@@ -87,6 +87,7 @@ class UserService:
             
             new_password_hash = UserUtils.hash_password(new_password)
             result = dao.update_user_password(user.id, new_password_hash, force_password_change=False)
+            dao.revoke_all_user_sessions(user.id)
             return result
     
     def reset_user_password(self, user_id: int) -> str:
@@ -99,6 +100,7 @@ class UserService:
             new_password = UserUtils.generate_random_password()
             new_password_hash = UserUtils.hash_password(new_password)
             result = dao.update_user_password(user.id, new_password_hash, force_password_change=True)
+            dao.revoke_all_user_sessions(user.id)
             if not result:
                 raise ValueError("Failed to update user password")
             return new_password
