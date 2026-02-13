@@ -1,13 +1,13 @@
 Table,Field,Type,Required,Description,Notes
 users,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 users,username,TEXT,YES,Username,UNIQUE NOT NULL
-users,email,TEXT,YES,Email,UNIQUE
+users,email,TEXT,NO,Email,UNIQUE
 users,password_hash,TEXT,YES,Password hash,NOT NULL
 users,status,INTEGER,YES,Status enum: inactive(0)/active(1)/disabled(2),DEFAULT 0
 users,force_password_change,BOOLEAN,YES,Force password change on next login,DEFAULT 1
 users,is_admin,BOOLEAN,YES,Is admin,DEFAULT 0
 users,token_version,INTEGER,YES,Token version for invalidation,DEFAULT 0
-users,last_login_at,TIMESTAMP,YES,Last login time,
+users,last_login_at,TIMESTAMP,NO,Last login time,
 users,created_by,INTEGER,YES,Created by user ID,FOREIGN KEY
 users,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
 users,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
