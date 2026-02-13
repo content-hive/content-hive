@@ -58,7 +58,7 @@ app = FastAPI(
 
 app.add_exception_handler(DetailedHTTPException, http_exception_handler)
 
-app.include_router(content.router_v1)
-app.include_router(system.router_v1)
 app.include_router(user.router_v1)
+app.include_router(content.router_v1)
 app.include_router(admin.router_v1)
+app.include_router(system.router_v1)
