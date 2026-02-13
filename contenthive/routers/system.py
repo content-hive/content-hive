@@ -1,3 +1,4 @@
+from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
@@ -6,24 +7,15 @@ from contenthive.logger import logger
 from contenthive.core.restart import get_restart_manager, RestartType
 from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
+from contenthive.models.user import UserModel
+from contenthive.routers.user import get_current_admin_user
 
 router_v1 = APIRouter(prefix="/v1/system", tags=["system"])
-security = HTTPBearer()
-
-
-# Development environment: temporarily disable token verification
-# async def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-#     """Verify admin token"""
-#     admin_token = os.getenv("ADMIN_TOKEN", "your-secret-admin-token")
-#     
-#     if credentials.credentials != admin_token:
-#         raise HTTPException(status_code=403, detail="Invalid admin token")
-#     
-#     return credentials.credentials
 
 
 @router_v1.post("/restart")
 async def restart_application(
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
     background_tasks: BackgroundTasks,
     safe_mode: bool = False
 ):
@@ -51,7 +43,9 @@ async def restart_application(
 
 
 @router_v1.post("/reload")
-async def reload_configuration():
+async def reload_configuration(
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)]
+):
     """
     Reload configuration (HA's reload core config)
     """
@@ -79,7 +73,9 @@ async def reload_configuration():
 
 
 @router_v1.post("/check-config")
-async def check_configuration():
+async def check_configuration(
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)]
+):
     """
     Check configuration validity (HA's config check)
     Validate configuration before restart

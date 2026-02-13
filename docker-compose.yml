@@ -3,7 +3,7 @@ services:
     build: 
       context: .
       args:
-        - APP_VERSION=0.2.0
+        - APP_VERSION=0.3.0
     container_name: content-hive
     ports:
       - "6123:6123"
@@ -13,5 +13,7 @@ services:
       - ./plugins:/config/plugins
     environment:
       - TZ=Asia/Shanghai
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${ENVIRONMENT}
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     restart: unless-stopped

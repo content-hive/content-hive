@@ -63,6 +63,7 @@ class ParserService:
     
     async def parser_content(
         self, 
+        user_id: int,
         url: HttpUrl, 
         plugin_id: Optional[str] = None,
         download_media: bool = True
@@ -100,7 +101,7 @@ class ParserService:
             
             # Save parse result to database
             with ParserDAO() as dao:
-                parse_result_id = dao.save_parse_result(result)
+                parse_result_id = dao.save_parse_result(result, user_id=user_id)
 
             # Download media files if requested
             if download_media and result.media:
@@ -117,13 +118,19 @@ class ParserService:
             logger.error(f"Error fetching content from URL {url}: {e}")
             raise
 
-    async def list_contents(self, platform_id: Optional[int] = None, author_id: Optional[int] = None,
-                           page: int = 1, page_size: int = 10,
-                           sort_by: str = "created_at", order: str = "desc") -> PaginatedResponse[URLParserResult]:
+    async def list_contents(
+            self,
+            user_id: int,
+            platform_id: Optional[int] = None,
+            author_id: Optional[int] = None,
+            page: int = 1, page_size: int = 10,
+            sort_by: str = "created_at", order: str = "desc"
+    ) -> PaginatedResponse[URLParserResult]:
         """
         Fetch contents from the database with pagination and sorting.
         
         Args:
+            user_id: User ID to filter contents
             platform_id: Filter by platform ID
             author_id: Filter by author ID
             page: Page number (starting from 1)
@@ -138,6 +145,7 @@ class ParserService:
             offset = (page - 1) * page_size
             with ParserDAO() as dao:
                 results, total = dao.list_parse_results(
+                    user_id=user_id,
                     platform_id=platform_id, 
                     author_id=author_id,
                     limit=page_size,
@@ -162,12 +170,17 @@ class ParserService:
             logger.error(f"Error fetching contents from the database: {e}")
             raise
     
-    async def list_platforms(self, page: int = 1, page_size: int = 10,
-                            sort_by: str = "id", order: str = "asc") -> PaginatedResponse[PlatformInfo]:
+    async def list_platforms(
+            self,
+            user_id: int,
+            page: int = 1, page_size: int = 10,
+            sort_by: str = "id", order: str = "asc"
+    ) -> PaginatedResponse[PlatformInfo]:
         """
         Fetch platforms from the database with pagination and sorting.
         
         Args:
+            user_id: User ID to filter platforms
             page: Page number (starting from 1)
             page_size: Number of items per page
             sort_by: Field to sort by
@@ -180,6 +193,7 @@ class ParserService:
             offset = (page - 1) * page_size
             with ParserDAO() as dao:
                 platforms, total = dao.list_platforms(
+                    user_id=user_id,
                     limit=page_size,
                     offset=offset,
                     sort_by=sort_by,
@@ -202,13 +216,18 @@ class ParserService:
             logger.error(f"Error fetching platforms from the database: {e}")
             raise
 
-    async def list_authors(self, platform_id: Optional[int] = None,
-                          page: int = 1, page_size: int = 10,
-                          sort_by: str = "id", order: str = "asc") -> PaginatedResponse[AuthorInfo]:
+    async def list_authors(
+            self,
+            user_id: int,
+            platform_id: Optional[int] = None,
+            page: int = 1, page_size: int = 10,
+            sort_by: str = "id", order: str = "asc"
+    ) -> PaginatedResponse[AuthorInfo]:
         """
         Fetch authors from the database with pagination and sorting.
         
         Args:
+            user_id: User ID to filter authors
             platform_id: Filter by platform ID
             page: Page number (starting from 1)
             page_size: Number of items per page
@@ -222,6 +241,7 @@ class ParserService:
             offset = (page - 1) * page_size
             with ParserDAO() as dao:
                 authors, total = dao.list_authors(
+                    user_id=user_id,
                     platform_id=platform_id,
                     limit=page_size,
                     offset=offset,
@@ -245,11 +265,12 @@ class ParserService:
             logger.error(f"Error fetching authors from the database: {e}")
             raise
 
-    async def delete_platform(self, platform_id: int) -> bool:
+    async def delete_platform(self, user_id: int, platform_id: int) -> bool:
         """
         Delete platform and all related data (authors, parse results, media files).
         
         Args:
+            user_id: User ID performing the deletion
             platform_id: Platform ID to delete
             
         Returns:
@@ -259,7 +280,7 @@ class ParserService:
             logger.info(f"Deleting platform {platform_id}")
             
             with ParserDAO() as dao:
-                success, file_paths = dao.delete_platform(platform_id, commit=True)
+                success, file_paths = dao.delete_platform(user_id, platform_id, commit=True)
             
             if success and file_paths:
                 deleted, failed = mediaService.delete_media_files(file_paths)
@@ -270,11 +291,12 @@ class ParserService:
             logger.error(f"Error deleting platform {platform_id}: {e}")
             raise
 
-    async def delete_author(self, author_id: int) -> bool:
+    async def delete_author(self, user_id: int, author_id: int) -> bool:
         """
         Delete author and all related data (parse results, media files).
         
         Args:
+            user_id: User ID performing the deletion
             author_id: Author ID to delete
             
         Returns:
@@ -284,7 +306,7 @@ class ParserService:
             logger.info(f"Deleting author {author_id}")
             
             with ParserDAO() as dao:
-                success, file_paths = dao.delete_author(author_id, commit=True)
+                success, file_paths = dao.delete_author(user_id, author_id, commit=True)
             
             if success and file_paths:
                 deleted, failed = mediaService.delete_media_files(file_paths)
@@ -295,11 +317,12 @@ class ParserService:
             logger.error(f"Error deleting author {author_id}: {e}")
             raise
 
-    async def delete_parse_result(self, parse_result_id: int) -> bool:
+    async def delete_parse_result(self, user_id: int, parse_result_id: int) -> bool:
         """
         Delete parse result and associated media files.
         
         Args:
+            user_id: User ID performing the deletion
             parse_result_id: Parse result ID to delete
             
         Returns:
@@ -309,7 +332,7 @@ class ParserService:
             logger.info(f"Deleting parse result {parse_result_id}")
             
             with ParserDAO() as dao:
-                success, file_paths = dao.delete_parse_result(parse_result_id, commit=True)
+                success, file_paths = dao.delete_parse_result(user_id, parse_result_id, commit=True)
             
             if success and file_paths:
                 deleted, failed = mediaService.delete_media_files(file_paths)
