@@ -1,4 +1,6 @@
 import sqlite3
+import os
+from pathlib import Path
 from contenthive.config import settings
 
 def get_db_connection():
@@ -147,7 +149,46 @@ def initialize_db():
     # Create admin user if not exists
     from contenthive.services.user import user_service
     try:
-        username, password = user_service.create_admin_user()
-        print(f"Admin user created. Username: {username}, Password: {password}, please change it after first login.")
+        result = user_service.create_admin_user()
+        if result:
+            _write_admin_credentials(result[0], result[1])
     except ValueError:
         pass  # Admin user already exists
+
+
+def _write_admin_credentials(username: str, password: str) -> None:
+    """
+    Securely write admin credentials to a file with restricted permissions.
+    Only called on first-time admin user creation.
+    """
+    credentials_file = settings.data_dir / ".admin_credentials"
+    
+    try:
+        # Write credentials to file
+        credentials_file.write_text(
+            f"Admin Credentials (First-time setup)\n"
+            f"=====================================\n"
+            f"Username: {username}\n"
+            f"Password: {password}\n\n"
+            f"IMPORTANT: Change this password immediately after first login.\n"
+            f"This file should be deleted after you've recorded the credentials.\n"
+        )
+        
+        # Set restrictive permissions (owner read/write only)
+        credentials_file.chmod(0o600)
+        
+        # Print location only, not the password itself
+        print(f"\n{'='*60}")
+        print(f"Admin user created successfully!")
+        print(f"Credentials saved to: {credentials_file}")
+        print(f"File permissions: -rw------- (owner read/write only)")
+        print(f"Please retrieve the password from this file and delete it.")
+        print(f"{'='*60}\n")
+        
+    except Exception as e:
+        # If file write fails, we have no choice but to print to stderr
+        # This is a fallback and should be rare
+        import sys
+        print(f"WARNING: Could not write credentials file: {e}", file=sys.stderr)
+        print(f"Admin credentials - Username: {username}, Password: {password}", file=sys.stderr)
+        print(f"Please change the password immediately after first login.", file=sys.stderr)

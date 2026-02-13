@@ -1,5 +1,6 @@
 
 from typing import Optional
+import os
 
 from contenthive.database.userDAO import UserDAO
 from contenthive.utils.user import UserUtils
@@ -31,14 +32,33 @@ class UserService:
             
             return UserCreateResponse.from_entity(user)
         
-    def create_admin_user(self) -> tuple[str, str]:
-        """Public method to create a new user"""
+    def create_admin_user(self) -> Optional[tuple[str, str]]:
+        """
+        Create initial admin user. Returns (username, password) only on creation,
+        None if admin already exists.
+        
+        Password can be set via ADMIN_PASSWORD environment variable for automated setups,
+        otherwise a secure random password is generated.
+        """
         with UserDAO() as dao:
             username = "admin"
             if dao.user_exists(username=username):
                 raise ValueError("Admin user already exists")
 
-            password = UserUtils.generate_random_password()
+            # Check if ADMIN_PASSWORD is set (for automated deployments)
+            password = os.getenv("ADMIN_PASSWORD")
+            if password:
+                # Validate password strength if provided via env var
+                if not UserUtils.password_strength(password):
+                    raise ValueError(
+                        "ADMIN_PASSWORD does not meet strength requirements. "
+                        "Password must be at least 8 characters with uppercase, lowercase, "
+                        "digit, and special character (!@#$%^&*)"
+                    )
+            else:
+                # Generate secure random password
+                password = UserUtils.generate_random_password()
+            
             password_hash = UserUtils.hash_password(password)
 
             dao.create_user(
@@ -47,6 +67,11 @@ class UserService:
                 is_admin=True,
                 created_by=0
             )
+            
+            # Only return password if it was auto-generated
+            # If set via env var, don't return it (assume deployer knows it)
+            if os.getenv("ADMIN_PASSWORD"):
+                return None
             
             return username, password
     
