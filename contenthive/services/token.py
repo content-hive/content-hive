@@ -6,7 +6,7 @@ import uuid
 from fastapi import Request
 from contenthive.config import settings
 from contenthive.models.user import DeviceInfoModel, LoginResponse, RefreshTokenResponse, UserModel, AuthTokenModel
-from contenthive.database.userDAO import UserDAO
+from contenthive.database.user_dao import UserDAO
 from contenthive.core.secret import secret_manager
 
 class TokenService:
@@ -38,7 +38,7 @@ class TokenService:
             refresh_token = secret_manager.create_refresh_token(
                 data={"sub": user.username, "user_id": user.id, "jti": token_jti, "token_version": user.token_version}
             )
-            refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=secret_manager.refresh_token_expire_days)).isoformat()
+            refresh_token_expires_at = datetime.now(timezone.utc) + timedelta(days=secret_manager.refresh_token_expire_days)
 
             device_info = self._extract_device_info(request)
 
@@ -117,7 +117,7 @@ class TokenService:
                 refresh_token = secret_manager.create_refresh_token(
                     data={"sub": user.username, "user_id": user.id, "jti": new_jti, "token_version": user.token_version}
                 )
-                refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=secret_manager.refresh_token_expire_days)).isoformat()
+                refresh_token_expires_at = datetime.now(timezone.utc) + timedelta(days=secret_manager.refresh_token_expire_days)
 
                 device_info = self._extract_device_info(request)
 

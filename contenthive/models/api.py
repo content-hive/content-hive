@@ -1,14 +1,21 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Any, Literal
 
 # ERROR CODE CONSTANTS
 
 
 
-class ErrorDetail(BaseModel):
+class BaseEntity(BaseModel):
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda v: v.isoformat()
+        }
+    )
+
+class ErrorDetail(BaseEntity):
     """Error detail model"""
     
     code: str = Field(..., description="Error code")
@@ -16,19 +23,13 @@ class ErrorDetail(BaseModel):
     details: Optional[dict[str, Any]] = Field(default=None, description="Detailed error information")
 
 
-class APIResponse(BaseModel):
+class APIResponse(BaseEntity):
     """API response model"""
     
     status: Literal["success", "error"] = Field(..., description="Response status")
     data: Optional[Any] = Field(default=None, description="Response data")
     error: Optional[ErrorDetail] = Field(default=None, description="Error information")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Response timestamp")
-
-    model_config = {
-        "json_encoders": {
-            datetime: lambda v: v.isoformat()
-        }
-    }
+    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
 
 class DetailedHTTPException(HTTPException):
     """Custom exception for detailed HTTP errors"""

@@ -3,8 +3,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
-from contenthive.config import settings
-from contenthive.database.userDAO import UserDAO
+from contenthive.database.user_dao import UserDAO
 from contenthive.models.api import APIResponse, ErrorDetail, DetailedHTTPException
 from contenthive.models.user import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, UserModel
 from contenthive.services.token import token_service

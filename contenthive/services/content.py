@@ -12,7 +12,7 @@ from contenthive.models.content import (
     PaginatedResponse, 
     PaginationInfo
 )
-from contenthive.database.contentDAO import ParserDAO
+from contenthive.database.content_dao import ParserDAO
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import mediaService
 

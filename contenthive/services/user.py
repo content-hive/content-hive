@@ -2,7 +2,7 @@
 from typing import Optional
 import os
 
-from contenthive.database.userDAO import UserDAO
+from contenthive.database.user_dao import UserDAO
 from contenthive.core.secret import secret_manager
 from contenthive.models.user import UserCreateResponse, UserProfileResponse
 

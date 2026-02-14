@@ -3,9 +3,11 @@ Models for content-related operations.
 """
 
 from datetime import datetime, timezone
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import HttpUrl, Field
 from typing import Optional, Literal, Generic, TypeVar
 from dataclasses import dataclass, field
+
+from contenthive.models.api import BaseEntity
 
 T = TypeVar('T')
 
@@ -18,7 +20,7 @@ class PlatformEntity:
     code: str = ""
     name: str = ""
     url: str = ""
-    icon_url: str = ""
+    icon_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -29,10 +31,10 @@ class AuthorEntity:
     id: Optional[int] = None
     platform_id: int = 0
     uid: str = ""
-    name: str = ""
+    name: Optional[str] = None
     username: str = ""
-    avatar: str = ""
-    url: str = ""
+    avatar: Optional[str] = None
+    url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -66,7 +68,7 @@ class ParseResultEntity:
     author_id: int = 0
     platform_id: int = 0
     user_id: Optional[int] = None
-    post_time: int = 0
+    post_time: Optional[int] = None
     parser: str = ""
     state: str = ""
     created_at: Optional[datetime] = None
@@ -79,7 +81,7 @@ class ParseResultEntity:
 
 # Service Models
 
-class DownloadedMediaInfo(BaseModel):
+class DownloadedMediaInfo(BaseEntity):
     """Information about downloaded media file"""
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
@@ -93,7 +95,7 @@ class DownloadedMediaInfo(BaseModel):
 
 # API Response Models
 
-class PaginationInfo(BaseModel):
+class PaginationInfo(BaseEntity):
     """Pagination metadata"""
     
     page: int = Field(..., description="Current page number", ge=1)
@@ -102,14 +104,14 @@ class PaginationInfo(BaseModel):
     total_pages: int = Field(..., description="Total number of pages", ge=0)
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
+class PaginatedResponse(BaseEntity, Generic[T]):
     """Paginated response model"""
     
     items: list[T] = Field(..., description="List of items")
     pagination: PaginationInfo = Field(..., description="Pagination information")
 
 
-class MediaInfo(BaseModel):
+class MediaInfo(BaseEntity):
     """Stored media item model (with local paths)"""
     id: int = Field(..., description="Media ID")
     url: HttpUrl = Field(..., description="Original media URL")
@@ -139,13 +141,13 @@ class MediaInfo(BaseModel):
         )
 
 
-class PlatformInfo(BaseModel):
+class PlatformInfo(BaseEntity):
     """Platform information model (with database ID)"""
     id: int = Field(..., description="Platform ID")
     name: str = Field(..., description="Platform name")
     code: str = Field(..., description="Platform code")
     url: HttpUrl = Field(..., description="Platform URL")
-    icon_url: HttpUrl = Field(..., description="Platform icon URL")
+    icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
 
     @classmethod
     def from_entity(cls, entity: PlatformEntity) -> "PlatformInfo":
@@ -158,14 +160,14 @@ class PlatformInfo(BaseModel):
             icon_url=entity.icon_url, # type: ignore
         )
 
-class AuthorInfo(BaseModel):
+class AuthorInfo(BaseEntity):
     """Author information model (with database ID)"""
     id: int = Field(..., description="Author ID")
     uid: str = Field(..., description="User ID")
-    name: str = Field(..., description="Author name")
+    name: Optional[str] = Field(None, description="Author name")
     username: str = Field(..., description="Username")
-    avatar: HttpUrl = Field(..., description="Avatar URL")
-    url: HttpUrl = Field(..., description="Author profile URL")
+    avatar: Optional[HttpUrl] = Field(None, description="Avatar URL")
+    url: Optional[HttpUrl] = Field(None, description="Author profile URL")
     platform: PlatformInfo = Field(..., description="Platform information")
 
     @classmethod
@@ -174,14 +176,14 @@ class AuthorInfo(BaseModel):
         return cls(
             id=entity.id if entity.id else 0,
             uid=entity.uid,
-            name=entity.name,
+            name=entity.name ,
             username=entity.username,
             avatar=entity.avatar, # type: ignore
             url=entity.url, # type: ignore
             platform=PlatformInfo.from_entity(entity.platform)
         )
 
-class URLParserResult(BaseModel):
+class URLParserResult(BaseEntity):
     """API response model for stored content (with downloaded media)"""
     id: int = Field(..., description="Parser result ID")
     pid: str = Field(..., description="Content ID")
@@ -190,7 +192,7 @@ class URLParserResult(BaseModel):
     media: list[MediaInfo] = Field(default_factory=list, description="List of stored media items")
     author: AuthorInfo = Field(..., description="Author information")
     platform: PlatformInfo = Field(..., description="Platform information")
-    post_time: int = Field(..., description="Post timestamp in seconds since epoch")
+    post_time: Optional[int] = Field(None, description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
     state: Literal["success", "error"] = Field(..., description="Parsing state")
     created_at: datetime = Field(..., description="Database creation timestamp")

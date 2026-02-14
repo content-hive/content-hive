@@ -3,9 +3,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
 from contenthive.core.secret import secret_manager
+from contenthive.models.api import BaseEntity
 
 # Database Models
 
@@ -13,8 +14,8 @@ from contenthive.core.secret import secret_manager
 class UserEntity:
     id: int
     username: str
-    email: str
     password_hash: str
+    email: Optional[str] = field(default=None)
     status: int = field(default=0)
     force_password_change: bool = field(default=False)
     is_admin: bool = field(default=False)
@@ -48,7 +49,7 @@ class SessionEntity:
 
 # Services Models
 
-class DeviceInfoModel(BaseModel):
+class DeviceInfoModel(BaseEntity):
     device_id: Optional[str] = None
     device_name: Optional[str] = None
     ip_address: Optional[str] = None
@@ -56,7 +57,7 @@ class DeviceInfoModel(BaseModel):
 
 # API request/response Models
 
-class CreateUserRequest(BaseModel):
+class CreateUserRequest(BaseEntity):
     username: str
     password: str
     email: Optional[str] = None
@@ -74,7 +75,7 @@ class CreateUserRequest(BaseModel):
             )
         return v
 
-class UserCreateResponse(BaseModel):
+class UserCreateResponse(BaseEntity):
     username: str
     password: str
     email: Optional[str] = None
@@ -91,13 +92,13 @@ class UserCreateResponse(BaseModel):
             created_by=user.created_by
         )
 
-class LoginRequest(BaseModel):
+class LoginRequest(BaseEntity):
     username: str
     password: str
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
 
-class UserModel(BaseModel):
+class UserModel(BaseEntity):
     id: int
     username: str
     email: Optional[str] = None
@@ -124,23 +125,23 @@ class UserModel(BaseModel):
             updated_at=user.updated_at
         )
 
-class AuthTokenModel(BaseModel):
+class AuthTokenModel(BaseEntity):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int  # in seconds
 
-class LoginResponse(BaseModel):
+class LoginResponse(BaseEntity):
     user: UserModel
     tokens: AuthTokenModel
 
-class RefreshTokenRequest(BaseModel):
+class RefreshTokenRequest(BaseEntity):
     refresh_token: str
 
-class RefreshTokenResponse(BaseModel):
+class RefreshTokenResponse(BaseEntity):
     tokens: AuthTokenModel
 
-class ChangePasswordRequest(BaseModel):
+class ChangePasswordRequest(BaseEntity):
     new_password: str
 
     @field_validator('new_password')
@@ -155,10 +156,10 @@ class ChangePasswordRequest(BaseModel):
             )
         return v
 
-class UserStatusUpdateRequest(BaseModel):
+class UserStatusUpdateRequest(BaseEntity):
     status: Literal[0, 1, 2]  # 0 = inactive, 1 = active, 2 = disabled
 
-class UserProfileResponse(BaseModel):
+class UserProfileResponse(BaseEntity):
     user_id: int
     username: str
     email: Optional[str] = None

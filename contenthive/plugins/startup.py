@@ -1,5 +1,5 @@
 from contenthive.plugins.registry import PluginState
-from contenthive.database.database import get_db_connection
+from contenthive.database.database import get_engine
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
@@ -15,7 +15,7 @@ async def load_plugins_on_startup(app, data_dir):
     context = PluginContext(
         app=app,
         data_dir=data_dir,
-        db_factory=get_db_connection,
+        db_factory=get_engine(),
         logger=logger
     )
 
