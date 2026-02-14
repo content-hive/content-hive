@@ -1,0 +1,29 @@
+#!/bin/bash
+set -e
+
+echo "Starting Content Hive v${APP_VERSION}..."
+
+# Check if the config directory exists, if not create it
+if [ ! -d "/config" ]; then
+    echo "Creating config directory..."
+    mkdir -p /config
+fi
+
+# Install Playwright browsers on first run
+if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH/chromium-"* ]; then
+    echo "Installing Playwright browsers to $PLAYWRIGHT_BROWSERS_PATH..."
+    playwright install chromium --with-deps
+else
+    echo "Playwright browsers already installed."
+fi
+
+# Set timezone
+echo "Setting timezone to ${TZ}..."
+ln -snf /usr/share/zoneinfo/$TZ /etc/localtime || true
+
+# Start the application
+echo "Starting uvicorn on port ${PORT:-6123}..."
+exec uvicorn contenthive.main:app \
+    --host 0.0.0.0 \
+    --port "${PORT:-6123}" \
+    --log-level "${LOG_LEVEL:-info}"
