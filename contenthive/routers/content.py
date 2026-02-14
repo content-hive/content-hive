@@ -38,7 +38,7 @@ async def list_contents(
     author_id: Optional[int] = Query(None, description="Filter by author ID"),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)"),
-    sort_by: str = Query("created_at", pattern="^(id|created_time|created_at|updated_at)$", description="Sort field"),
+    sort_by: str = Query("created_at", pattern="^(id|post_time|created_at|updated_at)$", description="Sort field"),
     order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order")
 ) -> APIResponse:
     try:

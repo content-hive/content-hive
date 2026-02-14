@@ -251,10 +251,10 @@ class ParserDAO:
                 # Update existing parse result (only content-related fields)
                 cursor.execute("""
                     UPDATE parse_results
-                    SET url = ?, content = ?, created_time = ?, parser = ?, 
+                    SET url = ?, content = ?, post_time = ?, parser = ?, 
                         state = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                """, (entity.url, entity.content, entity.created_time, 
+                """, (entity.url, entity.content, entity.post_time, 
                       entity.parser, entity.state, parse_result_id))
 
                 # Clear old media associations
@@ -264,10 +264,10 @@ class ParserDAO:
                 # Insert new parse result
                 cursor.execute("""
                     INSERT INTO parse_results
-                    (pid, url, content, author_id, platform_id, user_id, created_time, parser, state)
+                    (pid, url, content, author_id, platform_id, user_id, post_time, parser, state)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (entity.pid, entity.url, entity.content, author_id, platform_id,
-                      user_id, entity.created_time, entity.parser, entity.state))
+                      user_id, entity.post_time, entity.parser, entity.state))
                 parse_result_id = cursor.lastrowid if cursor.lastrowid else 0
 
             # Save media (common for both insert and update)
@@ -384,7 +384,7 @@ class ParserDAO:
             author_id=row["author_id"],
             platform_id=row["platform_id"],
             user_id=row["user_id"],
-            created_time=row["created_time"],
+            post_time=row["post_time"],
             parser=row["parser"],
             state=row["state"],
             created_at=row["created_at"],
@@ -444,7 +444,7 @@ class ParserDAO:
         # Validate and sanitize sort parameters
         allowed_sort_fields = {
             "id": "pr.id",
-            "created_time": "pr.created_time",
+            "post_time": "pr.post_time",
             "created_at": "pr.created_at",
             "updated_at": "pr.updated_at"
         }
@@ -542,7 +542,7 @@ class ParserDAO:
                 author_id=row["author_id"],
                 platform_id=row["platform_id"],
                 user_id=row["user_id"],
-                created_time=row["created_time"],
+                post_time=row["post_time"],
                 parser=row["parser"],
                 state=row["state"],
                 created_at=row["created_at"],

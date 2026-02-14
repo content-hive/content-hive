@@ -63,7 +63,7 @@ parse_results,url,TEXT,YES,Parsed URL,NOT NULL
 parse_results,content,TEXT,YES,Content,NOT NULL
 parse_results,author_id,INTEGER,YES,Author ID,FOREIGN KEY
 parse_results,platform_id,INTEGER,YES,Platform ID,NOT NULL FOREIGN KEY
-parse_results,created_time,INTEGER,NO,Publish time,
+parse_results,post_time,INTEGER,NO,Post time,Unix timestamp
 parse_results,parser,TEXT,YES,Parser used,NOT NULL
 parse_results,state,TEXT,YES,Status,NOT NULL
 parse_results,user_id,INTEGER,YES,User ID,NOT NULL FOREIGN KEY

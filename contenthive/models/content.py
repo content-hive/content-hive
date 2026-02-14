@@ -73,7 +73,7 @@ class ParseResultEntity:
     author_id: int = 0
     platform_id: int = 0
     user_id: Optional[int] = None
-    created_time: int = 0
+    post_time: int = 0
     parser: str = ""
     state: str = ""
     created_at: Optional[datetime] = None
@@ -145,7 +145,7 @@ class URLParserResult(BaseModel):
     media: list[MediaInfo] = Field(default_factory=list, description="List of stored media items")
     author: AuthorInfo = Field(..., description="Author information")
     platform: PlatformInfo = Field(..., description="Platform information")
-    created_time: int = Field(..., description="Creation timestamp in milliseconds")
+    post_time: int = Field(..., description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
     state: Literal["success", "error"] = Field(..., description="Parsing state")
     created_at: datetime = Field(..., description="Database creation timestamp")
@@ -169,7 +169,7 @@ class ParserMapper:
             pid=parser_result.pid,
             url=str(parser_result.url),
             content=parser_result.content,
-            created_time=parser_result.created_time,
+            post_time=parser_result.post_time,
             parser=parser_result.parser,
             state=parser_result.state,
             user_id=user_id,
@@ -242,7 +242,7 @@ class ContentMapper:
                 ContentMapper.media_entity_to_info(media)
                 for media in entity.media
             ],
-            created_time=entity.created_time,
+            post_time=entity.post_time,
             parser=entity.parser,
             state=entity.state,  # type: ignore
             created_at=(entity.created_at) if entity.created_at else datetime.now(),

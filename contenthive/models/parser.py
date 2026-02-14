@@ -39,6 +39,6 @@ class ParserResult(BaseModel):
     media: list[ParserMediaInfo] = Field(default_factory=list, description="List of media items")
     author: ParserAuthorInfo = Field(..., description="Author information")
     platform: ParserPlatformInfo = Field(..., description="Platform information")
-    created_time: int = Field(..., description="Creation timestamp in milliseconds")
+    post_time: int = Field(..., description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
     state: Literal["success", "error"] = Field(..., description="Parsing state")

@@ -119,7 +119,7 @@ def initialize_db():
             content TEXT NOT NULL,
             author_id INTEGER NOT NULL,
             platform_id INTEGER NOT NULL,
-            created_time INTEGER,
+            post_time INTEGER,
             parser TEXT NOT NULL,
             state TEXT NOT NULL,
             user_id INTEGER NOT NULL,
