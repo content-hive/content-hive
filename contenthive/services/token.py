@@ -7,21 +7,18 @@ from fastapi import Request
 from contenthive.config import settings
 from contenthive.models.user import DeviceInfoModel, LoginResponse, RefreshTokenResponse, UserModel, AuthTokenModel
 from contenthive.database.userDAO import UserDAO
-from contenthive.utils.user import UserUtils
+from contenthive.core.secret import secret_manager
 
 class TokenService:
     
     def __init__(self):
-        self.secret_key = settings.secret_key
-        self.algorithm = settings.algorithm
-        self.access_token_expire_minutes = settings.access_token_expire_minutes
-        self.refresh_token_expire_days = settings.refresh_token_expire_days
+        pass
 
     def authenticate_user(self, username: str, password: str, request: Request) -> LoginResponse:
         """Authenticate user and return token data"""
         with UserDAO() as dao:
             user = dao.get_user_by_username(username)
-            if not user or not UserUtils.verify_password(password, user.password_hash):
+            if not user or not secret_manager.verify_password(password, user.password_hash):
                 raise ValueError("Invalid username or password")
             
             if user.status == 2:  # disabled
@@ -32,22 +29,16 @@ class TokenService:
             
             user_response = UserModel.from_entity(user)
             
-            access_token = UserUtils.create_access_token(
-                data={"sub": user.username, "user_id": user.id, "token_version": user.token_version},
-                expires_delta=timedelta(minutes=self.access_token_expire_minutes),
-                secret_key=self.secret_key,
-                algorithm=self.algorithm
+            access_token = secret_manager.create_access_token(
+                data={"sub": user.username, "user_id": user.id, "token_version": user.token_version}
             )
 
             # Generate unique JTI
             token_jti = str(uuid.uuid4())
-            refresh_token = UserUtils.create_refresh_token(
-                data={"sub": user.username, "user_id": user.id, "jti": token_jti, "token_version": user.token_version},
-                expires_delta=timedelta(days=self.refresh_token_expire_days),
-                secret_key=self.secret_key,
-                algorithm=self.algorithm
+            refresh_token = secret_manager.create_refresh_token(
+                data={"sub": user.username, "user_id": user.id, "jti": token_jti, "token_version": user.token_version}
             )
-            refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days)).isoformat()
+            refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=secret_manager.refresh_token_expire_days)).isoformat()
 
             device_info = self._extract_device_info(request)
 
@@ -67,7 +58,7 @@ class TokenService:
                     access_token=access_token,
                     refresh_token=refresh_token,
                     token_type="bearer",
-                    expires_in=self.access_token_expire_minutes * 60
+                    expires_in=secret_manager.access_token_expire_minutes * 60
                 )
             )
     
@@ -75,10 +66,8 @@ class TokenService:
     def refresh_access_token(self, refresh_token: str, request: Request) -> RefreshTokenResponse:
         """Refresh access token using a valid refresh token"""
         try:
-            payload = UserUtils.decode_token(
-                token=refresh_token,
-                secret_key=self.secret_key,
-                algorithms=[self.algorithm]
+            payload = secret_manager.decode_token(
+                token=refresh_token
             )
             
             # Validate token type
@@ -119,22 +108,16 @@ class TokenService:
                 dao.revoke_session_by_jti(user.id, jti)
 
                 # Generate new access token
-                access_token = UserUtils.create_access_token(
-                    data={"sub": user.username, "user_id": user.id, "token_version": user.token_version},
-                    expires_delta=timedelta(minutes=self.access_token_expire_minutes),
-                    secret_key=self.secret_key,
-                    algorithm=self.algorithm
+                access_token = secret_manager.create_access_token(
+                    data={"sub": user.username, "user_id": user.id, "token_version": user.token_version}
                 )
 
                 # Generate new refresh token with new JTI
                 new_jti = str(uuid.uuid4())
-                refresh_token = UserUtils.create_refresh_token(
-                    data={"sub": user.username, "user_id": user.id, "jti": new_jti, "token_version": user.token_version},
-                    expires_delta=timedelta(days=self.refresh_token_expire_days),
-                    secret_key=self.secret_key,
-                    algorithm=self.algorithm
+                refresh_token = secret_manager.create_refresh_token(
+                    data={"sub": user.username, "user_id": user.id, "jti": new_jti, "token_version": user.token_version}
                 )
-                refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days)).isoformat()
+                refresh_token_expires_at = (datetime.now(timezone.utc) + timedelta(days=secret_manager.refresh_token_expire_days)).isoformat()
 
                 device_info = self._extract_device_info(request)
 
@@ -153,7 +136,7 @@ class TokenService:
                         access_token=access_token,
                         refresh_token=refresh_token,
                         token_type="bearer",
-                        expires_in=self.access_token_expire_minutes * 60
+                        expires_in=secret_manager.access_token_expire_minutes * 60
                     )
                 )
         except Exception as e:

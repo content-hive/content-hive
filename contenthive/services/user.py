@@ -3,7 +3,7 @@ from typing import Optional
 import os
 
 from contenthive.database.userDAO import UserDAO
-from contenthive.utils.user import UserUtils
+from contenthive.core.secret import secret_manager
 from contenthive.models.user import UserCreateResponse, UserProfileResponse
 
 class UserService:
@@ -23,7 +23,7 @@ class UserService:
             if dao.user_exists(username=username, email=email):
                 raise ValueError("User with given username or email already exists")
 
-            password_hash = UserUtils.hash_password(password)
+            password_hash = secret_manager.hash_password(password)
             user_id = dao.create_user(username, password_hash, email, is_admin, created_by)
             user = dao.get_user_by_id(user_id)
             
@@ -49,7 +49,7 @@ class UserService:
             password = os.getenv("ADMIN_PASSWORD")
             if password:
                 # Validate password strength if provided via env var
-                if not UserUtils.password_strength(password):
+                if not secret_manager.password_strength(password):
                     raise ValueError(
                         "ADMIN_PASSWORD does not meet strength requirements. "
                         "Password must be at least 8 characters with uppercase, lowercase, "
@@ -57,9 +57,9 @@ class UserService:
                     )
             else:
                 # Generate secure random password
-                password = UserUtils.generate_random_password()
+                password = secret_manager.generate_random_password()
             
-            password_hash = UserUtils.hash_password(password)
+            password_hash = secret_manager.hash_password(password)
 
             dao.create_user(
                 username=username,
@@ -77,7 +77,7 @@ class UserService:
     
     def change_user_password(self, user_id: int, new_password: str) -> bool:
         """Change the password for a given user"""
-        if not UserUtils.password_strength(new_password):
+        if not secret_manager.password_strength(new_password):
             raise ValueError("Password does not meet strength requirements")
 
         with UserDAO() as dao:
@@ -85,7 +85,7 @@ class UserService:
             if not user:
                 raise ValueError("User not found")
             
-            new_password_hash = UserUtils.hash_password(new_password)
+            new_password_hash = secret_manager.hash_password(new_password)
             result = dao.update_user_password(user.id, new_password_hash, force_password_change=False)
             dao.revoke_all_user_sessions(user.id)
             return result
@@ -97,8 +97,8 @@ class UserService:
             if not user:
                 raise ValueError("User not found")
             
-            new_password = UserUtils.generate_random_password()
-            new_password_hash = UserUtils.hash_password(new_password)
+            new_password = secret_manager.generate_random_password()
+            new_password_hash = secret_manager.hash_password(new_password)
             result = dao.update_user_password(user.id, new_password_hash, force_password_change=True)
             dao.revoke_all_user_sessions(user.id)
             if not result:

@@ -9,7 +9,7 @@ from contenthive.models.api import APIResponse, ErrorDetail, DetailedHTTPExcepti
 from contenthive.models.user import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, UserModel
 from contenthive.services.token import token_service
 from contenthive.services.user import user_service
-from contenthive.utils.user import UserUtils
+from contenthive.core.secret import secret_manager
 
 router_v1 = APIRouter(prefix="/v1/user", tags=["user"])
 
@@ -26,11 +26,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     )
 
     try:
-        payload = UserUtils.decode_token(
-            token=token,
-            secret_key=settings.secret_key,
-            algorithms=[settings.algorithm]
-        )
+        payload = secret_manager.decode_token(token=token)
         username: Optional[str] = payload.get("sub")
         user_id: Optional[int] = payload.get("user_id")
         token_version: Optional[int] = payload.get("token_version")

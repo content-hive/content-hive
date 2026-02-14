@@ -5,7 +5,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
-from contenthive.utils.user import UserUtils
+from contenthive.core.secret import secret_manager
 
 # Database Models
 
@@ -66,7 +66,7 @@ class CreateUserRequest(BaseModel):
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
-        if not UserUtils.password_strength(v):
+        if not secret_manager.password_strength(v):
             raise ValueError(
                 'Password must be at least 8 characters long and contain '
                 'at least one lowercase letter, one uppercase letter, '
@@ -147,7 +147,7 @@ class ChangePasswordRequest(BaseModel):
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
-        if not UserUtils.password_strength(v):
+        if not secret_manager.password_strength(v):
             raise ValueError(
                 'Password must be at least 8 characters long and contain '
                 'at least one lowercase letter, one uppercase letter, '
