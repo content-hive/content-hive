@@ -13,7 +13,7 @@ class SecretManager:
     def __init__(self):
         """Initialize the SecretManager with configuration from settings"""
         self.secret_key = self._get_or_create_secret_key()
-        self.algorithm: str = settings.algorithm
+        self.algorithm: str = "HS256"
         self.access_token_expire_minutes: int = settings.access_token_expire_minutes
         self.refresh_token_expire_days: int = settings.refresh_token_expire_days
         self.password_hash = PasswordHash.recommended()

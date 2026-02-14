@@ -3,7 +3,7 @@ import secrets
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
-from pydantic import computed_field, Field
+from pydantic import computed_field
 
 
 class Settings(BaseSettings):
@@ -31,9 +31,7 @@ class Settings(BaseSettings):
     plugins_repo_ref_type: str = os.getenv("PLUGINS_REPO_REF_TYPE", "branch")  # branch, tag, commit
     plugins_repo_ref: str = os.getenv("PLUGINS_REPO_REF", "main")
 
-    # Security settings
-    secret_key: str = os.getenv("SECRET_KEY", "")
-    algorithm: str = os.getenv("ALGORITHM", "HS256")
+    # Token settings
     access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
