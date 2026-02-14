@@ -2,7 +2,7 @@
 Models for content-related operations.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, Literal, Generic, TypeVar
 from dataclasses import dataclass, field
@@ -210,7 +210,7 @@ class URLParserResult(BaseModel):
             post_time=entity.post_time,
             parser=entity.parser,
             state=entity.state,  # type: ignore
-            created_at=(entity.created_at) if entity.created_at else datetime.now(),
-            updated_at=(entity.updated_at) if entity.updated_at else datetime.now(),
+            created_at=(entity.created_at) if entity.created_at else datetime.now(timezone.utc),
+            updated_at=(entity.updated_at) if entity.updated_at else datetime.now(timezone.utc),
         )
     

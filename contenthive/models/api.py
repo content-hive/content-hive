@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -22,7 +22,7 @@ class APIResponse(BaseModel):
     status: Literal["success", "error"] = Field(..., description="Response status")
     data: Optional[Any] = Field(default=None, description="Response data")
     error: Optional[ErrorDetail] = Field(default=None, description="Error information")
-    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Response timestamp")
 
     model_config = {
         "json_encoders": {
