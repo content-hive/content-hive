@@ -10,8 +10,7 @@ from contenthive.models.content import (
     PlatformInfo, 
     AuthorInfo, 
     PaginatedResponse, 
-    PaginationInfo,
-    ContentMapper,
+    PaginationInfo
 )
 from contenthive.database.contentDAO import ParserDAO
 from contenthive.plugins.manager import get_plugin_manager
@@ -105,14 +104,14 @@ class ParserService:
 
             # Download media files if requested
             if download_media and result.media:
-                media_entities = await mediaService.download_media_for_result(result)
+                downloaded_media = await mediaService.download_media_for_result(result)
                 with ParserDAO() as dao:
-                    dao.save_medias(media_entities, commit=True)
+                    dao.save_downloaded_medias(downloaded_media, commit=True)
             
             # Return the saved parse result (with or without media)
             with ParserDAO() as dao:
                 entity = dao.get_parse_result(parse_result_id)
-                return ContentMapper.entity_to_url_parser_result(entity)
+                return URLParserResult.from_entity(entity)
                 
         except Exception as e:
             logger.error(f"Error fetching content from URL {url}: {e}")
@@ -154,7 +153,7 @@ class ParserService:
                     order=order
                 )
             
-            items = [ContentMapper.entity_to_url_parser_result(result) for result in results]
+            items = [URLParserResult.from_entity(result) for result in results]
             total_pages = (total + page_size - 1) // page_size  # Ceiling division
             
             return PaginatedResponse(
@@ -200,7 +199,7 @@ class ParserService:
                     order=order
                 )
             
-            items = [ContentMapper.platform_entity_to_info(platform) for platform in platforms]
+            items = [PlatformInfo.from_entity(platform) for platform in platforms]
             total_pages = (total + page_size - 1) // page_size
             
             return PaginatedResponse(
@@ -249,7 +248,7 @@ class ParserService:
                     order=order
                 )
             
-            items = [ContentMapper.author_entity_to_info(author) for author in authors]
+            items = [AuthorInfo.from_entity(author) for author in authors]
             total_pages = (total + page_size - 1) // page_size
             
             return PaginatedResponse(

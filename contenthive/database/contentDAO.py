@@ -2,13 +2,13 @@ import sqlite3
 from typing import Optional
 from contenthive.database.database import get_db_connection
 from contenthive.models.content import (
+    DownloadedMediaInfo,
     ParseResultEntity, 
     AuthorEntity,
     PlatformEntity, 
-    MediaEntity,
-    ParserMapper,     
+    MediaEntity     
 )
-from contenthive.models.parser import ParserResult
+from contenthive.models.parser import ParserAuthorInfo, ParserMediaInfo, ParserPlatformInfo, ParserResult
 from contenthive.logger import logger
 
 class ParserDAO:
@@ -40,7 +40,7 @@ class ParserDAO:
             self.conn.close()
             self.conn = None
 
-    def save_platform(self, platform: PlatformEntity, user_id: int, commit: bool = False) -> int:
+    def save_platform(self, platform: ParserPlatformInfo, user_id: int, commit: bool = False) -> int:
         """
         Save or update platform information.
 
@@ -66,14 +66,14 @@ class ParserDAO:
                     UPDATE platforms
                     SET name = ?, url = ?, icon_url = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND code = ?
-                """, (platform.name, platform.url, platform.icon_url, user_id, platform.code))
+                """, (platform.name, str(platform.url), str(platform.icon_url), user_id, platform.code))
                 platform_id = result[0]
             else:
                 # Insert new platform
                 cursor.execute("""
                     INSERT INTO platforms (user_id, code, name, url, icon_url)
                     VALUES (?, ?, ?, ?, ?)
-                """, (user_id, platform.code, platform.name, platform.url, platform.icon_url))
+                """, (user_id, platform.code, platform.name, str(platform.url), str(platform.icon_url)))
                 platform_id = cursor.lastrowid if cursor.lastrowid else 0
 
             if commit:
@@ -86,7 +86,7 @@ class ParserDAO:
             raise Exception(f"Failed to save platform: {e}")
 
 
-    def save_author(self, author: AuthorEntity, platform_id: int, user_id: int, commit: bool = False) -> int:
+    def save_author(self, author: ParserAuthorInfo, platform_id: int, user_id: int, commit: bool = False) -> int:
         """
         Save or update author information.
 
@@ -116,14 +116,14 @@ class ParserDAO:
                     UPDATE authors
                     SET name = ?, username = ?, avatar = ?, url = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND platform_id = ? AND uid = ?
-                """, (author.name, author.username, author.avatar, author.url, user_id, platform_id, author.uid))
+                """, (author.name, author.username, str(author.avatar), str(author.url), user_id, platform_id, author.uid))
                 author_id = result[0]
             else:
                 # Insert new author
                 cursor.execute("""
                     INSERT INTO authors (user_id, platform_id, uid, name, username, avatar, url)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, platform_id, author.uid, author.name, author.username, author.avatar, author.url))
+                """, (user_id, platform_id, author.uid, author.name, author.username, str(author.avatar), str(author.url)))
                 author_id = cursor.lastrowid if cursor.lastrowid else 0
 
             if commit:
@@ -136,7 +136,7 @@ class ParserDAO:
             raise Exception(f"Failed to save author: {e}")
 
 
-    def save_media(self, media: MediaEntity, commit: bool = False) -> int:
+    def _save_media(self, media: MediaEntity, commit: bool = False) -> int:
         """
         Save media information.
 
@@ -160,18 +160,22 @@ class ParserDAO:
                 if media.media_path or media.cover_path:
                     cursor.execute("""
                         UPDATE media
-                        SET media_path = COALESCE(?, media_path),
-                            cover_path = COALESCE(?, cover_path)
+                        SET duration = COALESCE(?, duration),
+                            width = COALESCE(?, width),
+                            height = COALESCE(?, height),
+                            media_path = COALESCE(?, media_path),
+                            cover_path = COALESCE(?, cover_path),
+                            updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
-                    """, (media.media_path, media.cover_path, result[0]))
+                    """, (media.duration, media.width, media.height, media.media_path, media.cover_path, result[0]))
                 return result[0]
 
             # Insert new media
             cursor.execute("""
-                INSERT INTO media (url, type, title, duration, width, height, cover, media_path, cover_path)
+                INSERT INTO media (url, type, title, cover, duration, width, height, media_path, cover_path)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (media.url, media.type, media.title, media.duration, media.width, media.height, 
-                   media.cover, media.media_path, media.cover_path))
+            """, (media.url, media.type, media.title, media.cover, media.duration, media.width, media.height, 
+                   media.media_path, media.cover_path))
 
             media_id = cursor.lastrowid if cursor.lastrowid else 0
 
@@ -184,19 +188,56 @@ class ParserDAO:
                 conn.rollback()
             raise Exception(f"Failed to save media: {e}")
 
-    def save_medias(self, medias: list[MediaEntity], commit: bool = False) -> list[int]:
+    def save_medias(self, medias: list[ParserMediaInfo], commit: bool = False) -> list[int]:
         """
         Save multiple media entities.
 
         Args:
-            medias: List of MediaEntity objects
+            medias: List of ParserMediaInfo objects
             commit: Whether to commit immediately (default: False)
 
         Returns list of media_ids.
         """
         media_ids = []
         for media in medias:
-            media_id = self.save_media(media, commit=False)
+            media_entity = MediaEntity(
+                url=str(media.url),
+                type=str(media.type) if media.type else "",
+                title=media.title,
+                cover=str(media.cover) if media.cover else None
+            )
+            media_id = self._save_media(media_entity, commit=False)
+            media_ids.append(media_id)
+
+        if commit:
+            self._get_connection().commit()
+
+        return media_ids
+
+    def save_downloaded_medias(self, medias: list[DownloadedMediaInfo], commit: bool = False) -> list[int]:
+        """
+        Save multiple downloaded media entities.
+
+        Args:
+            medias: List of DownloadedMediaInfo objects
+            commit: Whether to commit immediately (default: False)
+
+        Returns list of media_ids.
+        """
+        media_ids = []
+        for media in medias:
+            media_entity = MediaEntity(
+                url=str(media.url),
+                type=str(media.type) if media.type else "",
+                title=media.title,
+                cover=str(media.cover) if media.cover else None,
+                duration=media.duration,
+                width=media.width,
+                height=media.height,
+                media_path=media.media_path,
+                cover_path=media.cover_path
+            )
+            media_id = self._save_media(media_entity, commit=False)
             media_ids.append(media_id)
 
         if commit:
@@ -219,23 +260,10 @@ class ParserDAO:
         cursor = conn.cursor()
 
         try:
-            # Convert parser models to entities
-            platform_entity = ParserMapper.parser_platform_to_entity(result.platform)
-            author_entity = ParserMapper.parser_author_to_entity(result.author, 0)  # platform_id will be set later
-        
             # Save platform and get ID
-            platform_id = self.save_platform(platform_entity, user_id, commit=False)
-            
-            # Update author entity with correct platform_id
-            author_entity.platform_id = platform_id
-            author_id = self.save_author(author_entity, platform_id, user_id, commit=False)
-
-            # Convert ParserResult to ParseResultEntity
-            entity = ParserMapper.parser_result_to_entity(
-                result, platform_entity, author_entity, user_id
-            )
-            entity.platform_id = platform_id
-            entity.author_id = author_id
+            platform_id = self.save_platform(result.platform, user_id, commit=False)
+            # Save author and get ID
+            author_id = self.save_author(result.author, platform_id, user_id, commit=False)
 
             # Check if parse result already exists using pid and platform code
             cursor.execute("""
@@ -243,7 +271,7 @@ class ParserDAO:
                 FROM parse_results pr
                 JOIN platforms p ON pr.platform_id = p.id
                 WHERE pr.user_id = ? AND pr.pid = ? AND p.code = ?
-            """, (user_id, entity.pid, result.platform.code))
+            """, (user_id, result.pid, result.platform.code))
             existing_result = cursor.fetchone()
 
             if existing_result:
@@ -254,8 +282,8 @@ class ParserDAO:
                     SET url = ?, content = ?, post_time = ?, parser = ?, 
                         state = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                """, (entity.url, entity.content, entity.post_time, 
-                      entity.parser, entity.state, parse_result_id))
+                """, (str(result.url), result.content, result.post_time, 
+                      result.parser, result.state, parse_result_id))
 
                 # Clear old media associations
                 cursor.execute("DELETE FROM parse_result_media WHERE parse_result_id = ?", 
@@ -266,12 +294,12 @@ class ParserDAO:
                     INSERT INTO parse_results
                     (pid, url, content, author_id, platform_id, user_id, post_time, parser, state)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (entity.pid, entity.url, entity.content, author_id, platform_id,
-                      user_id, entity.post_time, entity.parser, entity.state))
+                """, (result.pid, str(result.url), result.content, author_id, platform_id,
+                      user_id, result.post_time, result.parser, result.state))
                 parse_result_id = cursor.lastrowid if cursor.lastrowid else 0
 
             # Save media (common for both insert and update)
-            self._save_media_associations(cursor, parse_result_id, entity.media)
+            self._save_media_associations(cursor, parse_result_id, result.media)
 
             # Commit all changes
             conn.commit()
@@ -279,14 +307,14 @@ class ParserDAO:
             return parse_result_id
         except sqlite3.Error as e:
             conn.rollback()
-            raise Exception(f"Failed to save parse result (pid: {entity.pid}, platform: {entity.platform.code}): {e}")
+            raise Exception(f"Failed to save parse result (pid: {result.pid}, platform: {result.platform.code}): {e}")
         except Exception as e:
             conn.rollback()
             raise Exception(f"Unexpected error saving parse result: {e}")
 
 
     def _save_media_associations(self, cursor: sqlite3.Cursor, parse_result_id: int, 
-                                 media: list[MediaEntity]) -> None:
+                                 media: list[ParserMediaInfo]) -> None:
         """
         Helper method to save media associations for a parse result.
         

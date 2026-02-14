@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 from contenthive.logger import logger
 from contenthive.models.parser import ParserResult
-from contenthive.models.content import MediaEntity, ParserMapper
+from contenthive.models.content import DownloadedMediaInfo
 from contenthive.config import settings
 from urllib.parse import quote
 
@@ -45,7 +45,7 @@ class MediaService:
             logger.error(f"Failed to generate relative media path: {e}")
             return ""
 
-    async def download_media_for_result(self, result: ParserResult) -> list[MediaEntity]:
+    async def download_media_for_result(self, result: ParserResult) -> list[DownloadedMediaInfo]:
         """
         Download all media files for a parser result.
         
@@ -53,7 +53,7 @@ class MediaService:
             result: Parser result containing media URLs
             
         Returns:
-            List of MediaEntity with updated local paths
+            List of DownloadedMediaInfo with updated local paths
         """
         if not (result.media):
             return []
@@ -73,9 +73,7 @@ class MediaService:
                         media_dir, 
                         index=i
                     )
-                    media_entity = ParserMapper.media_info_to_entity(media)
-                    # Store web-accessible path instead of local file system path
-                    media_entity.media_path = self.get_relative_media_path(local_path)
+                    
                     if media.cover:
                         # Download cover image if available
                         cover_path = await self._download_single_media(
@@ -84,13 +82,24 @@ class MediaService:
                             media_dir,
                             index=i
                         )
-                        media_entity.cover_path = self.get_relative_media_path(cover_path)
 
-                    local_media_items.append(media_entity)
-                    logger.info(f"Downloaded media {i+1}/{len(result.media)}: {media_entity.media_path}")
+                    downloaded_media = DownloadedMediaInfo(
+                        url=media.url,
+                        type=media.type,
+                        title=media.title,
+                        cover=media.cover,
+                        duration=0,
+                        width=0,
+                        height=0,
+                        media_path=self.get_relative_media_path(local_path),
+                        cover_path=self.get_relative_media_path(cover_path) if media.cover else None
+                    )
+
+                    local_media_items.append(downloaded_media)
+                    logger.info(f"Downloaded media {i+1}/{len(result.media)}: {downloaded_media.media_path}")
                 except Exception as e:
                     logger.error(f"Failed to download media {media.url}: {e}")
-                    local_media_items.append(ParserMapper.media_info_to_entity(media))
+                    continue
         
         return local_media_items
 
