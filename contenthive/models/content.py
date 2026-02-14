@@ -54,8 +54,8 @@ class MediaEntity:
     type: str = ""  # 'image' or 'video'
     title: Optional[str] = None
     duration: Optional[int] = None
-    width: Optional[str] = None
-    height: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
     cover: Optional[str] = None
     media_path: Optional[str] = None
     cover_path: Optional[str] = None
@@ -109,8 +109,8 @@ class MediaInfo(BaseModel):
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
     duration: Optional[int] = Field(None, description="Video duration in seconds")
-    width: Optional[str] = Field(None, description="Media width in pixels")
-    height: Optional[str] = Field(None, description="Media height in pixels")
+    width: Optional[int] = Field(None, description="Media width in pixels")
+    height: Optional[int] = Field(None, description="Media height in pixels")
     cover: Optional[HttpUrl] = Field(None, description="Original video cover URL")
     media_path: Optional[str] = Field(None, description="Local media file path")
     cover_path: Optional[str] = Field(None, description="Local cover file path")

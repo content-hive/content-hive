@@ -96,12 +96,12 @@ def initialize_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS media (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT NOT NULL,
+            url TEXT UNIQUE NOT NULL,
             type TEXT NOT NULL,
             title TEXT,
             duration INTEGER,
-            width TEXT,
-            height TEXT,
+            width INTEGER,
+            height INTEGER,
             cover TEXT,
             media_path TEXT,
             cover_path TEXT,
