@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -186,7 +186,6 @@ class UserDAO:
         try:
             user = session.get(User, user_id)
             if user:
-                from datetime import datetime, timezone
                 user.last_login_at = datetime.now(timezone.utc)
                 session.commit()
                 return True

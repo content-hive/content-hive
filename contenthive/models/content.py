@@ -7,7 +7,7 @@ from pydantic import HttpUrl, Field
 from typing import Optional, Literal, Generic, TypeVar
 from dataclasses import dataclass, field
 
-from contenthive.models.api import BaseEntity
+from contenthive.models.api import APIBaseModel
 
 T = TypeVar('T')
 
@@ -81,7 +81,7 @@ class ParseResultEntity:
 
 # Service Models
 
-class DownloadedMediaInfo(BaseEntity):
+class DownloadedMediaInfo():
     """Information about downloaded media file"""
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
@@ -95,7 +95,7 @@ class DownloadedMediaInfo(BaseEntity):
 
 # API Response Models
 
-class PaginationInfo(BaseEntity):
+class PaginationInfo(APIBaseModel):
     """Pagination metadata"""
     
     page: int = Field(..., description="Current page number", ge=1)
@@ -104,14 +104,14 @@ class PaginationInfo(BaseEntity):
     total_pages: int = Field(..., description="Total number of pages", ge=0)
 
 
-class PaginatedResponse(BaseEntity, Generic[T]):
+class PaginatedResponse(APIBaseModel, Generic[T]):
     """Paginated response model"""
     
     items: list[T] = Field(..., description="List of items")
     pagination: PaginationInfo = Field(..., description="Pagination information")
 
 
-class MediaInfo(BaseEntity):
+class MediaInfo(APIBaseModel):
     """Stored media item model (with local paths)"""
     id: int = Field(..., description="Media ID")
     url: HttpUrl = Field(..., description="Original media URL")
@@ -141,7 +141,7 @@ class MediaInfo(BaseEntity):
         )
 
 
-class PlatformInfo(BaseEntity):
+class PlatformInfo(APIBaseModel):
     """Platform information model (with database ID)"""
     id: int = Field(..., description="Platform ID")
     name: str = Field(..., description="Platform name")
@@ -160,7 +160,7 @@ class PlatformInfo(BaseEntity):
             icon_url=entity.icon_url, # type: ignore
         )
 
-class AuthorInfo(BaseEntity):
+class AuthorInfo(APIBaseModel):
     """Author information model (with database ID)"""
     id: int = Field(..., description="Author ID")
     uid: str = Field(..., description="User ID")
@@ -183,7 +183,7 @@ class AuthorInfo(BaseEntity):
             platform=PlatformInfo.from_entity(entity.platform)
         )
 
-class URLParserResult(BaseEntity):
+class URLParserResult(APIBaseModel):
     """API response model for stored content (with downloaded media)"""
     id: int = Field(..., description="Parser result ID")
     pid: str = Field(..., description="Content ID")

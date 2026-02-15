@@ -1,13 +1,34 @@
 """SQLAlchemy ORM models for database tables"""
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import Integer, String, Boolean, DateTime, ForeignKey, TypeDecorator, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship, Mapped, mapped_column
 
 Base = declarative_base()
 
 
-class User(Base):
+class AwareDatetime(TypeDecorator):
+    impl = DateTime
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    
+    
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(AwareDatetime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(AwareDatetime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class User(Base, TimestampMixin):
     __tablename__ = "users"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -18,10 +39,8 @@ class User(Base):
     force_password_change: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     token_version: Mapped[int] = mapped_column(Integer, default=0)
-    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(AwareDatetime, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     profile: Mapped[Optional["Profile"]] = relationship("Profile", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -31,21 +50,19 @@ class User(Base):
     parse_results: Mapped[list["ParseResult"]] = relationship("ParseResult", back_populates="user", cascade="all, delete-orphan")
 
 
-class Profile(Base):
+class Profile(Base, TimestampMixin):
     __tablename__ = "profiles"
     
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True)
     full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     bio: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="profile")
 
 
-class Session(Base):
+class Session(Base, TimestampMixin):
     __tablename__ = "sessions"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -53,11 +70,10 @@ class Session(Base):
     device_id: Mapped[str] = mapped_column(String, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     token_jti: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(AwareDatetime, nullable=False)
     ip_address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    last_accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_accessed_at: Mapped[datetime] = mapped_column(AwareDatetime, default=lambda: datetime.now(timezone.utc))
     
     # Unique constraint
     __table_args__ = (
@@ -68,7 +84,7 @@ class Session(Base):
     user: Mapped["User"] = relationship("User", back_populates="sessions")
 
 
-class Platform(Base):
+class Platform(Base, TimestampMixin):
     __tablename__ = "platforms"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -77,8 +93,6 @@ class Platform(Base):
     url: Mapped[str] = mapped_column(String, nullable=False)
     icon_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Unique constraint
     __table_args__ = (
@@ -91,7 +105,7 @@ class Platform(Base):
     parse_results: Mapped[list["ParseResult"]] = relationship("ParseResult", back_populates="platform", cascade="all, delete-orphan")
 
 
-class Author(Base):
+class Author(Base, TimestampMixin):
     __tablename__ = "authors"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -102,8 +116,6 @@ class Author(Base):
     avatar: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Unique constraint
     __table_args__ = (
@@ -116,7 +128,7 @@ class Author(Base):
     parse_results: Mapped[list["ParseResult"]] = relationship("ParseResult", back_populates="author", cascade="all, delete-orphan")
 
 
-class Media(Base):
+class Media(Base, TimestampMixin):
     __tablename__ = "media"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -129,14 +141,12 @@ class Media(Base):
     cover: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     media_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     cover_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     parse_results: Mapped[list["ParseResultMedia"]] = relationship("ParseResultMedia", back_populates="media", cascade="all, delete-orphan")
 
 
-class ParseResult(Base):
+class ParseResult(Base, TimestampMixin):
     __tablename__ = "parse_results"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -149,8 +159,6 @@ class ParseResult(Base):
     parser: Mapped[str] = mapped_column(String, nullable=False)
     state: Mapped[str] = mapped_column(String, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Unique constraint
     __table_args__ = (

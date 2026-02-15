@@ -2,13 +2,11 @@
 Models for parser operations.
 """
 
-from pydantic import HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, Literal
 
-from contenthive.models.api import BaseEntity
 
-
-class ParserMediaInfo(BaseEntity):
+class ParserMediaInfo(BaseModel):
     """Media information from parser (no database ID)"""
     url: HttpUrl = Field(..., description="Media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
@@ -16,7 +14,7 @@ class ParserMediaInfo(BaseEntity):
     cover: Optional[HttpUrl] = Field(None, description="Video cover URL")
 
 
-class ParserPlatformInfo(BaseEntity):
+class ParserPlatformInfo(BaseModel):
     """Platform information from parser (no database ID)"""
     code: str = Field(..., description="Platform code")
     name: str = Field(..., description="Platform name")
@@ -24,7 +22,7 @@ class ParserPlatformInfo(BaseEntity):
     icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
 
 
-class ParserAuthorInfo(BaseEntity):
+class ParserAuthorInfo(BaseModel):
     """Author information from parser (no database ID)"""
     uid: str = Field(..., description="User ID on platform")
     name: Optional[str] = Field(None, description="Author name")
@@ -33,7 +31,7 @@ class ParserAuthorInfo(BaseEntity):
     url: Optional[HttpUrl] = Field(None, description="Author profile URL")
 
 
-class ParserResult(BaseEntity):
+class ParserResult(BaseModel):
     """Raw parser result (before saving to database)"""
     pid: str = Field(..., description="Content ID")
     url: HttpUrl = Field(..., description="The URL that was parsed")

@@ -6,7 +6,7 @@ from typing import Literal, Optional
 from pydantic import field_validator
 
 from contenthive.core.secret import secret_manager
-from contenthive.models.api import BaseEntity
+from contenthive.models.api import APIBaseModel
 
 # Database Models
 
@@ -49,7 +49,7 @@ class SessionEntity:
 
 # Services Models
 
-class DeviceInfoModel(BaseEntity):
+class DeviceInfoModel(APIBaseModel):
     device_id: Optional[str] = None
     device_name: Optional[str] = None
     ip_address: Optional[str] = None
@@ -57,7 +57,7 @@ class DeviceInfoModel(BaseEntity):
 
 # API request/response Models
 
-class CreateUserRequest(BaseEntity):
+class CreateUserRequest(APIBaseModel):
     username: str
     password: str
     email: Optional[str] = None
@@ -75,7 +75,7 @@ class CreateUserRequest(BaseEntity):
             )
         return v
 
-class UserCreateResponse(BaseEntity):
+class UserCreateResponse(APIBaseModel):
     username: str
     password: str
     email: Optional[str] = None
@@ -92,13 +92,13 @@ class UserCreateResponse(BaseEntity):
             created_by=user.created_by
         )
 
-class LoginRequest(BaseEntity):
+class LoginRequest(APIBaseModel):
     username: str
     password: str
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
 
-class UserModel(BaseEntity):
+class UserModel(APIBaseModel):
     id: int
     username: str
     email: Optional[str] = None
@@ -125,23 +125,23 @@ class UserModel(BaseEntity):
             updated_at=user.updated_at
         )
 
-class AuthTokenModel(BaseEntity):
+class AuthTokenModel(APIBaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int  # in seconds
 
-class LoginResponse(BaseEntity):
+class LoginResponse(APIBaseModel):
     user: UserModel
     tokens: AuthTokenModel
 
-class RefreshTokenRequest(BaseEntity):
+class RefreshTokenRequest(APIBaseModel):
     refresh_token: str
 
-class RefreshTokenResponse(BaseEntity):
+class RefreshTokenResponse(APIBaseModel):
     tokens: AuthTokenModel
 
-class ChangePasswordRequest(BaseEntity):
+class ChangePasswordRequest(APIBaseModel):
     new_password: str
 
     @field_validator('new_password')
@@ -156,10 +156,10 @@ class ChangePasswordRequest(BaseEntity):
             )
         return v
 
-class UserStatusUpdateRequest(BaseEntity):
+class UserStatusUpdateRequest(APIBaseModel):
     status: Literal[0, 1, 2]  # 0 = inactive, 1 = active, 2 = disabled
 
-class UserProfileResponse(BaseEntity):
+class UserProfileResponse(APIBaseModel):
     user_id: int
     username: str
     email: Optional[str] = None
