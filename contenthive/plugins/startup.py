@@ -15,7 +15,7 @@ async def load_plugins_on_startup(app, data_dir):
     context = PluginContext(
         app=app,
         data_dir=data_dir,
-        db_factory=get_engine(),
+        db_factory=get_engine,
         logger=logger
     )
 
