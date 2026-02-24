@@ -22,6 +22,9 @@ class SecretManager:
         """Get or create the application secret key."""
         secret_file = settings.data_dir / "secret.key"
         
+        # Ensure the parent directory exists
+        secret_file.parent.mkdir(parents=True, exist_ok=True)
+        
         if secret_file.exists():
             return secret_file.read_text().strip()
         
