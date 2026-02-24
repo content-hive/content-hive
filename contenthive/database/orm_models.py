@@ -26,7 +26,7 @@ class AwareDatetime(TypeDecorator):
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(AwareDatetime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(AwareDatetime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
-
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(AwareDatetime, nullable=True)
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"

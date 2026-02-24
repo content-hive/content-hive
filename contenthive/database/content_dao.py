@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
@@ -60,7 +61,7 @@ class ParserDAO:
         """
         session = self._get_session()
         try:
-            # Check if platform exists
+            # Check if platform exists (including soft-deleted ones)
             stmt = select(Platform).where(
                 (Platform.user_id == user_id) & (Platform.code == platform.code)
             )
@@ -71,6 +72,10 @@ class ParserDAO:
                 existing_platform.name = platform.name
                 existing_platform.url = str(platform.url)
                 existing_platform.icon_url = str(platform.icon_url)
+                # Restore if soft-deleted
+                if existing_platform.deleted_at is not None:
+                    existing_platform.deleted_at = None
+                    logger.info(f"Restored soft-deleted platform {existing_platform.id}")
                 session.flush()
                 platform_id = existing_platform.id
             else:
@@ -109,7 +114,7 @@ class ParserDAO:
         """
         session = self._get_session()
         try:
-            # Check if author exists
+            # Check if author exists (including soft-deleted ones)
             stmt = select(Author).where(
                 (Author.user_id == user_id) & 
                 (Author.platform_id == platform_id) & 
@@ -123,6 +128,10 @@ class ParserDAO:
                 existing_author.username = author.username
                 existing_author.avatar = str(author.avatar)
                 existing_author.url = str(author.url)
+                # Restore if soft-deleted
+                if existing_author.deleted_at is not None:
+                    existing_author.deleted_at = None
+                    logger.info(f"Restored soft-deleted author {existing_author.id}")
                 session.flush()
                 author_id = existing_author.id
             else:
@@ -282,7 +291,7 @@ class ParserDAO:
             # Save author and get ID
             author_id = self.save_author(result.author, platform_id, user_id, commit=False)
 
-            # Check if parse result already exists using pid and platform code
+            # Check if parse result already exists using pid and platform code (including soft-deleted ones)
             stmt = select(ParseResult).where(
                 (ParseResult.user_id == user_id) &
                 (ParseResult.pid == result.pid) &
@@ -298,6 +307,10 @@ class ParserDAO:
                 existing_result.post_time = result.post_time
                 existing_result.parser = result.parser
                 existing_result.state = result.state
+                # Restore if soft-deleted
+                if existing_result.deleted_at is not None:
+                    existing_result.deleted_at = None
+                    logger.info(f"Restored soft-deleted parse result {existing_result.id}")
                 session.flush()
 
                 # Clear old media associations
@@ -409,7 +422,10 @@ class ParserDAO:
         """
         session = self._get_session()
         
-        result_orm = session.get(ParseResult, parse_result_id)
+        result_orm = session.query(ParseResult).filter(
+            ParseResult.id == parse_result_id,
+            ParseResult.deleted_at.is_(None)
+        ).first()
         if not result_orm:
             raise ValueError(f"Parse result with id {parse_result_id} not found")
 
@@ -464,7 +480,10 @@ class ParserDAO:
         session = self._get_session()
 
         # Build WHERE clause
-        query = select(ParseResult).where(ParseResult.user_id == user_id)
+        query = select(ParseResult).where(
+            ParseResult.user_id == user_id,
+            ParseResult.deleted_at.is_(None)
+        )
 
         if platform_id is not None:
             query = query.where(ParseResult.platform_id == platform_id)
@@ -474,7 +493,8 @@ class ParserDAO:
 
         # Get total count
         total = session.query(func.count(ParseResult.id)).where(
-            ParseResult.user_id == user_id
+            ParseResult.user_id == user_id,
+            ParseResult.deleted_at.is_(None)
         )
         if platform_id is not None:
             total = total.where(ParseResult.platform_id == platform_id)
@@ -548,11 +568,15 @@ class ParserDAO:
 
         # Get total count
         total = session.query(func.count(Platform.id)).where(
-            Platform.user_id == user_id
+            Platform.user_id == user_id,
+            Platform.deleted_at.is_(None)
         ).scalar()
 
         # Build query
-        query = select(Platform).where(Platform.user_id == user_id)
+        query = select(Platform).where(
+            Platform.user_id == user_id,
+            Platform.deleted_at.is_(None)
+        )
 
         # Add sorting
         sort_field_map = {
@@ -592,13 +616,19 @@ class ParserDAO:
         session = self._get_session()
 
         # Build query
-        query = select(Author).where(Author.user_id == user_id)
+        query = select(Author).where(
+            Author.user_id == user_id,
+            Author.deleted_at.is_(None)
+        )
 
         if platform_id is not None:
             query = query.where(Author.platform_id == platform_id)
 
         # Get total count
-        total = session.query(func.count(Author.id)).where(Author.user_id == user_id)
+        total = session.query(func.count(Author.id)).where(
+            Author.user_id == user_id,
+            Author.deleted_at.is_(None)
+        )
         if platform_id is not None:
             total = total.where(Author.platform_id == platform_id)
         total = total.scalar()
@@ -624,7 +654,7 @@ class ParserDAO:
 
     def delete_platform(self, user_id: int, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
-        Delete platform by ID and cascade delete related authors and parse results.
+        Soft delete platform by ID and cascade soft delete related authors and parse results.
         
         Args:
             user_id: User ID performing the deletion
@@ -640,43 +670,48 @@ class ParserDAO:
         try:
             # First verify ownership/existence of platform
             platform_orm = session.query(Platform).where(
-                (Platform.id == platform_id) & (Platform.user_id == user_id)
+                (Platform.id == platform_id) & 
+                (Platform.user_id == user_id) & 
+                (Platform.deleted_at.is_(None))
             ).first()
             
             if not platform_orm:
                 logger.warning(f"Platform {platform_id} not found or access denied for user {user_id}")
                 return False, all_file_paths
             
-            # Get all authors belonging to this platform
+            # Get all authors belonging to this platform (not already deleted)
             authors = session.query(Author).filter(
-                (Author.user_id == user_id) & (Author.platform_id == platform_id)
+                (Author.user_id == user_id) & 
+                (Author.platform_id == platform_id) &
+                (Author.deleted_at.is_(None))
             ).all()
             
-            logger.info(f"Deleting platform {platform_id} with {len(authors)} authors")
+            logger.info(f"Soft deleting platform {platform_id} with {len(authors)} authors")
             
-            # Delete each author (which will collect file paths)
+            # Soft delete each author (which will collect file paths)
             for author in authors:
                 success, file_paths = self.delete_author(user_id, author.id, commit=False)
                 all_file_paths.extend(file_paths)
             
-            # Delete platform
-            session.delete(platform_orm)
+            # Soft delete platform
+            platform_orm.deleted_at = datetime.now(timezone.utc)
+            session.flush()
             
             if commit:
                 session.commit()
-                logger.info(f"Successfully deleted platform {platform_id} from database")
+                logger.info(f"Successfully soft deleted platform {platform_id} from database")
             
             return True, all_file_paths
             
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Database error when deleting platform {platform_id}: {e}")
-            raise Exception(f"Failed to delete platform: {e}")
+            logger.error(f"Database error when soft deleting platform {platform_id}: {e}")
+            raise Exception(f"Failed to soft delete platform: {e}")
 
     def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
-        Delete author by ID and cascade delete related parse results.
+        Soft delete author by ID and cascade soft delete related parse results.
         
         Args:
             user_id: User ID performing the deletion
@@ -692,43 +727,49 @@ class ParserDAO:
         try:
             # First verify ownership/existence of author
             author_orm = session.query(Author).where(
-                (Author.id == author_id) & (Author.user_id == user_id)
+                (Author.id == author_id) & 
+                (Author.user_id == user_id) &
+                (Author.deleted_at.is_(None))
             ).first()
             
             if not author_orm:
                 logger.warning(f"Author {author_id} not found or access denied for user {user_id}")
                 return False, all_file_paths
             
-            # Get all parse result IDs for this author
+            # Get all parse result IDs for this author (not already deleted)
             parse_results = session.query(ParseResult).filter(
-                (ParseResult.user_id == user_id) & (ParseResult.author_id == author_id)
+                (ParseResult.user_id == user_id) & 
+                (ParseResult.author_id == author_id) &
+                (ParseResult.deleted_at.is_(None))
             ).all()
             
-            logger.info(f"Deleting author {author_id} with {len(parse_results)} parse results")
+            logger.info(f"Soft deleting author {author_id} with {len(parse_results)} parse results")
 
-            # Delete each parse result (which will collect file paths)
+            # Soft delete each parse result (which will collect file paths)
             for pr in parse_results:
                 success, file_paths = self.delete_parse_result(user_id, pr.id, commit=False)
                 all_file_paths.extend(file_paths)
 
-            # Delete author
-            session.delete(author_orm)
+            # Soft delete author
+            author_orm.deleted_at = datetime.now(timezone.utc)
+            session.flush()
             
             if commit:
                 session.commit()
-                logger.info(f"Successfully deleted author {author_id} from database")
+                logger.info(f"Successfully soft deleted author {author_id} from database")
             
             return True, all_file_paths
             
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Database error when deleting author {author_id}: {e}")
-            raise Exception(f"Failed to delete author: {e}")
+            logger.error(f"Database error when soft deleting author {author_id}: {e}")
+            raise Exception(f"Failed to soft delete author: {e}")
 
     def delete_parse_result(self, user_id: int, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
-        Delete parse result by ID and return list of associated media file paths.
+        Soft delete parse result by ID and return list of associated media file paths.
+        Media and ParseResultMedia are still hard deleted if orphaned.
 
         Args:
             user_id: User ID performing the deletion
@@ -744,22 +785,28 @@ class ParserDAO:
         try:
             # 1. FIRST verify ownership/existence of parse result
             result_orm = session.query(ParseResult).where(
-                (ParseResult.id == parse_result_id) & (ParseResult.user_id == user_id)
+                (ParseResult.id == parse_result_id) & 
+                (ParseResult.user_id == user_id) &
+                (ParseResult.deleted_at.is_(None))
             ).first()
             
             if not result_orm:
                 logger.warning(f"Parse result {parse_result_id} not found or access denied for user {user_id}")
                 raise ValueError(f"Parse result {parse_result_id} not found or access denied")
             
-            # 2. Get orphaned media IDs (only used by this parse result)
+            # 2. Get orphaned media IDs (only used by this parse result and not used by non-deleted results)
             orphaned_media_ids = []
             for prm in result_orm.media_list:
                 media_id = prm.media_id
-                # Check if this media is used by other parse results
-                count = session.query(func.count(ParseResultMedia.parse_result_id)).filter(
-                    ParseResultMedia.media_id == media_id
+                # Check if this media is used by other non-deleted parse results
+                count = session.query(func.count(ParseResultMedia.parse_result_id)).join(
+                    ParseResult
+                ).filter(
+                    ParseResultMedia.media_id == media_id,
+                    ParseResult.deleted_at.is_(None),
+                    ParseResult.id != parse_result_id
                 ).scalar()
-                if count == 1:  # Only used by this parse result
+                if count == 0:  # Only used by this parse result
                     orphaned_media_ids.append(media_id)
 
             # 3. Collect media paths ONLY for orphaned media
@@ -771,26 +818,28 @@ class ParserDAO:
                     if media.cover_path:
                         file_paths.append(media.cover_path)
 
-            # 4. Delete database records
+            # 4. Hard delete orphaned media and associations
             session.query(ParseResultMedia).filter(
                 ParseResultMedia.parse_result_id == parse_result_id
             ).delete()
 
             if orphaned_media_ids:
                 session.query(Media).filter(Media.id.in_(orphaned_media_ids)).delete()
-                logger.debug(f"Deleted {len(orphaned_media_ids)} orphaned media records")
+                logger.debug(f"Hard deleted {len(orphaned_media_ids)} orphaned media records")
 
-            session.delete(result_orm)
+            # 5. Soft delete parse result
+            result_orm.deleted_at = datetime.now(timezone.utc)
+            session.flush()
             
-            # 5. Commit if requested
+            # 6. Commit if requested
             if commit:
                 session.commit()
-                logger.info(f"Deleted parse result {parse_result_id} from database")
+                logger.info(f"Soft deleted parse result {parse_result_id} from database")
 
             return True, file_paths
 
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Unexpected error when deleting parse result {parse_result_id}: {e}")
+            logger.error(f"Unexpected error when soft deleting parse result {parse_result_id}: {e}")
             raise
