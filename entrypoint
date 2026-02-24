@@ -12,10 +12,10 @@ fi
 # Ensure Playwright browsers directory exists
 mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
 
-# Install Playwright browsers on first run
+# Install Playwright browsers on first run (system deps already in image)
 if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium-* ]; then
     echo "Installing Playwright browsers to $PLAYWRIGHT_BROWSERS_PATH..."
-    playwright install chromium --with-deps
+    playwright install chromium
 else
     echo "Playwright browsers already installed."
 fi
