@@ -17,9 +17,18 @@ else
     echo "Playwright browsers already installed."
 fi
 
-# Set timezone
-echo "Setting timezone to ${TZ}..."
-ln -snf /usr/share/zoneinfo/$TZ /etc/localtime || true
+# Set timezone with validation
+if [ -n "$TZ" ]; then
+    # Validate that TZ contains only safe characters (alphanumeric, /, _, -, +)
+    if [[ "$TZ" =~ ^[a-zA-Z0-9/_+-]+$ ]] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
+        echo "Setting timezone to ${TZ}..."
+        ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime || true
+    else
+        echo "Warning: Invalid timezone '$TZ', using default timezone"
+    fi
+else
+    echo "No timezone specified, using default"
+fi
 
 # Start the application
 echo "Starting uvicorn on port ${PORT:-6123}..."
