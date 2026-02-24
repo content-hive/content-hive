@@ -9,6 +9,9 @@ if [ ! -d "/config" ]; then
     mkdir -p /config
 fi
 
+# Ensure Playwright browsers directory exists
+mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+
 # Install Playwright browsers on first run
 if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium-* ]; then
     echo "Installing Playwright browsers to $PLAYWRIGHT_BROWSERS_PATH..."

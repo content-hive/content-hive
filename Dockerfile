@@ -20,11 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY contenthive ./contenthive
 
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+COPY entrypoint /entrypoint
+RUN chmod +x /entrypoint
 
 EXPOSE 6123
 
 VOLUME /config
 
-ENTRYPOINT [ "/docker-entrypoint.sh" ]
+ENTRYPOINT [ "/entrypoint" ]
