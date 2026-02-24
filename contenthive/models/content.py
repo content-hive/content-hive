@@ -3,7 +3,7 @@ Models for content-related operations.
 """
 
 from datetime import datetime, timezone
-from pydantic import HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, Literal, Generic, TypeVar
 from dataclasses import dataclass, field
 
@@ -81,7 +81,7 @@ class ParseResultEntity:
 
 # Service Models
 
-class DownloadedMediaInfo():
+class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")

@@ -74,6 +74,7 @@ class MediaService:
                         index=i
                     )
                     
+                    cover_path = None
                     if media.cover:
                         # Download cover image if available
                         cover_path = await self._download_single_media(
@@ -92,7 +93,7 @@ class MediaService:
                         width=0,
                         height=0,
                         media_path=self.get_relative_media_path(local_path),
-                        cover_path=self.get_relative_media_path(cover_path) if media.cover else None
+                        cover_path=self.get_relative_media_path(cover_path) if cover_path else None
                     )
 
                     local_media_items.append(downloaded_media)
