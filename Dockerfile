@@ -8,7 +8,7 @@ LABEL version="${APP_VERSION}" \
 
 ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PLAYWRIGHT_BROWSERS_PATH=/config/ms-playwright \
     APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
@@ -20,8 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY contenthive ./contenthive
 
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 6123
 
 VOLUME /config
 
-CMD ["uvicorn", "contenthive.main:app", "--host", "0.0.0.0", "--port", "6123"]
+ENTRYPOINT [ "/docker-entrypoint.sh" ]

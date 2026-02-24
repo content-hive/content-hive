@@ -1,13 +1,16 @@
 import os
 import secrets
 from pathlib import Path
+from typing import Optional
 from pydantic_settings import BaseSettings
-from pydantic import computed_field, Field, field_validator
+from pydantic import computed_field
+
 
 class Settings(BaseSettings):
     """
     Application configuration settings.
     """
+    
     # Application settings
     app_name: str = "Content Hive"
     app_version: str = os.getenv("APP_VERSION", "1.0.0")
@@ -18,37 +21,6 @@ class Settings(BaseSettings):
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "6123"))
 
-    # Security settings
-    secret_key: str = Field(default_factory=lambda: os.getenv("SECRET_KEY") or secrets.token_urlsafe(32))
-    algorithm: str = os.getenv("ALGORITHM", "HS256")
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
-    
-    @field_validator("secret_key")
-    @classmethod
-    def validate_secret_key(cls, v: str, info) -> str:
-        """Validate that secret_key is properly configured in production"""
-        # Get environment from the data being validated
-        environment = info.data.get("environment", "production")
-        
-        # In production, SECRET_KEY must be explicitly set via environment variable
-        if environment == "production" and not os.getenv("SECRET_KEY"):
-            raise ValueError(
-                "SECRET_KEY environment variable must be set in production. "
-                "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
-            )
-        
-        # Warn if using auto-generated key in non-production
-        if not os.getenv("SECRET_KEY") and environment != "production":
-            import warnings
-            warnings.warn(
-                f"Using auto-generated SECRET_KEY in {environment} environment. "
-                "Set SECRET_KEY environment variable for consistent sessions across restarts.",
-                UserWarning
-            )
-        
-        return v
-
     # Directory paths
     app_base: Path = Path(os.getenv("APP_BASE", "/app"))
     data_dir: Path = Path(os.getenv("DATA_DIR", "/config/data"))
@@ -58,6 +30,10 @@ class Settings(BaseSettings):
     plugins_repo_url: str = os.getenv("PLUGINS_REPO_URL", "https://github.com/content-hive/plugins.git")
     plugins_repo_ref_type: str = os.getenv("PLUGINS_REPO_REF_TYPE", "branch")  # branch, tag, commit
     plugins_repo_ref: str = os.getenv("PLUGINS_REPO_REF", "main")
+
+    # Token settings
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     
     @computed_field

@@ -225,6 +225,7 @@ __marimo__/
 /data/
 /logs/
 /plugins/
+/ms-playwright/
 
 # Note: contenthive/plugins/ is part of source code and will be tracked
 !contenthive/plugins/

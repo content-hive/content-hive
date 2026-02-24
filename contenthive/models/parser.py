@@ -14,21 +14,21 @@ class ParserMediaInfo(BaseModel):
     cover: Optional[HttpUrl] = Field(None, description="Video cover URL")
 
 
-class ParserAuthorInfo(BaseModel):
-    """Author information from parser (no database ID)"""
-    uid: str = Field(..., description="User ID on platform")
-    name: str = Field(..., description="Author name")
-    username: str = Field(..., description="Username")
-    avatar: HttpUrl = Field(..., description="Avatar URL")
-    url: HttpUrl = Field(..., description="Author profile URL")
-
-
 class ParserPlatformInfo(BaseModel):
     """Platform information from parser (no database ID)"""
     code: str = Field(..., description="Platform code")
     name: str = Field(..., description="Platform name")
     url: HttpUrl = Field(..., description="Platform URL")
-    icon_url: HttpUrl = Field(..., description="Platform icon URL")
+    icon_url: Optional[HttpUrl] = Field(None, description="Platform icon URL")
+
+
+class ParserAuthorInfo(BaseModel):
+    """Author information from parser (no database ID)"""
+    uid: str = Field(..., description="User ID on platform")
+    name: Optional[str] = Field(None, description="Author name")
+    username: str = Field(..., description="Username")
+    avatar: Optional[HttpUrl] = Field(None, description="Avatar URL")
+    url: Optional[HttpUrl] = Field(None, description="Author profile URL")
 
 
 class ParserResult(BaseModel):
@@ -39,6 +39,6 @@ class ParserResult(BaseModel):
     media: list[ParserMediaInfo] = Field(default_factory=list, description="List of media items")
     author: ParserAuthorInfo = Field(..., description="Author information")
     platform: ParserPlatformInfo = Field(..., description="Platform information")
-    created_time: int = Field(..., description="Creation timestamp in milliseconds")
+    post_time: Optional[int] = Field(None, description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
     state: Literal["success", "error"] = Field(..., description="Parsing state")

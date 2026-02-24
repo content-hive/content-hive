@@ -3,9 +3,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
-from contenthive.utils.user import UserUtils
+from contenthive.core.secret import secret_manager
+from contenthive.models.api import APIBaseModel
 
 # Database Models
 
@@ -13,8 +14,8 @@ from contenthive.utils.user import UserUtils
 class UserEntity:
     id: int
     username: str
-    email: str
     password_hash: str
+    email: Optional[str] = field(default=None)
     status: int = field(default=0)
     force_password_change: bool = field(default=False)
     is_admin: bool = field(default=False)
@@ -48,7 +49,7 @@ class SessionEntity:
 
 # Services Models
 
-class DeviceInfoModel(BaseModel):
+class DeviceInfoModel(APIBaseModel):
     device_id: Optional[str] = None
     device_name: Optional[str] = None
     ip_address: Optional[str] = None
@@ -56,7 +57,7 @@ class DeviceInfoModel(BaseModel):
 
 # API request/response Models
 
-class CreateUserRequest(BaseModel):
+class CreateUserRequest(APIBaseModel):
     username: str
     password: str
     email: Optional[str] = None
@@ -66,7 +67,7 @@ class CreateUserRequest(BaseModel):
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
-        if not UserUtils.password_strength(v):
+        if not secret_manager.password_strength(v):
             raise ValueError(
                 'Password must be at least 8 characters long and contain '
                 'at least one lowercase letter, one uppercase letter, '
@@ -74,7 +75,7 @@ class CreateUserRequest(BaseModel):
             )
         return v
 
-class UserCreateResponse(BaseModel):
+class UserCreateResponse(APIBaseModel):
     username: str
     password: str
     email: Optional[str] = None
@@ -91,13 +92,13 @@ class UserCreateResponse(BaseModel):
             created_by=user.created_by
         )
 
-class LoginRequest(BaseModel):
+class LoginRequest(APIBaseModel):
     username: str
     password: str
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
 
-class UserModel(BaseModel):
+class UserModel(APIBaseModel):
     id: int
     username: str
     email: Optional[str] = None
@@ -124,30 +125,30 @@ class UserModel(BaseModel):
             updated_at=user.updated_at
         )
 
-class AuthTokenModel(BaseModel):
+class AuthTokenModel(APIBaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int  # in seconds
 
-class LoginResponse(BaseModel):
+class LoginResponse(APIBaseModel):
     user: UserModel
     tokens: AuthTokenModel
 
-class RefreshTokenRequest(BaseModel):
+class RefreshTokenRequest(APIBaseModel):
     refresh_token: str
 
-class RefreshTokenResponse(BaseModel):
+class RefreshTokenResponse(APIBaseModel):
     tokens: AuthTokenModel
 
-class ChangePasswordRequest(BaseModel):
+class ChangePasswordRequest(APIBaseModel):
     new_password: str
 
     @field_validator('new_password')
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
-        if not UserUtils.password_strength(v):
+        if not secret_manager.password_strength(v):
             raise ValueError(
                 'Password must be at least 8 characters long and contain '
                 'at least one lowercase letter, one uppercase letter, '
@@ -155,10 +156,10 @@ class ChangePasswordRequest(BaseModel):
             )
         return v
 
-class UserStatusUpdateRequest(BaseModel):
+class UserStatusUpdateRequest(APIBaseModel):
     status: Literal[0, 1, 2]  # 0 = inactive, 1 = active, 2 = disabled
 
-class UserProfileResponse(BaseModel):
+class UserProfileResponse(APIBaseModel):
     user_id: int
     username: str
     email: Optional[str] = None

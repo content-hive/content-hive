@@ -11,9 +11,11 @@ services:
       - ./data:/config/data
       - ./logs:/config/logs
       - ./plugins:/config/plugins
+      - ./ms-playwright:/config/ms-playwright
     environment:
       - TZ=Asia/Shanghai
       - ENVIRONMENT=${ENVIRONMENT}
-      - SECRET_KEY=${SECRET_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - PLUGINS_REPO_REF_TYPE=${PLUGINS_REPO_REF_TYPE}
+      - PLUGINS_REPO_REF=${PLUGINS_REPO_REF}
     restart: unless-stopped
