@@ -10,7 +10,7 @@ if [ ! -d "/config" ]; then
 fi
 
 # Install Playwright browsers on first run
-if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH/chromium-"* ]; then
+if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium-* ]; then
     echo "Installing Playwright browsers to $PLAYWRIGHT_BROWSERS_PATH..."
     playwright install chromium --with-deps
 else
