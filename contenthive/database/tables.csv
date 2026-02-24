@@ -11,12 +11,14 @@ users,last_login_at,TIMESTAMP,NO,Last login time,
 users,created_by,INTEGER,YES,Created by user ID,FOREIGN KEY
 users,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
 users,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+users,deleted_at,TIMESTAMP,NO,Soft delete time,
 profiles,user_id,INTEGER,YES,User ID,PRIMARY KEY FOREIGN KEY
 profiles,full_name,TEXT,NO,Full name,
 profiles,bio,TEXT,NO,Biography,
 profiles,avatar_url,TEXT,NO,Avatar URL,
 profiles,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
 profiles,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+profiles,deleted_at,TIMESTAMP,NO,Soft delete time,
 sessions,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 sessions,user_id,INTEGER,YES,User ID,NOT NULL FOREIGN KEY
 sessions,device_id,TEXT,YES,Session device ID,NOT NULL
@@ -27,6 +29,8 @@ sessions,expires_at,TIMESTAMP,YES,Expiration time,NOT NULL
 sessions,ip_address,TEXT,NO,IP address,
 sessions,user_agent,TEXT,NO,User agent,
 sessions,revoked,BOOLEAN,YES,Is revoked,DEFAULT 0
+sessions,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+sessions,deleted_at,TIMESTAMP,NO,Soft delete time,
 platforms,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 platforms,code,TEXT,YES,Platform code,NOT NULL UNIQUE(user_id, code)
 platforms,name,TEXT,YES,Name,NOT NULL
@@ -35,6 +39,7 @@ platforms,icon_url,TEXT,NO,Icon URL,
 platforms,user_id,INTEGER,YES,User ID,FOREIGN KEY
 platforms,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
 platforms,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+platforms,deleted_at,TIMESTAMP,NO,Soft delete time,
 authors,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 authors,platform_id,INTEGER,YES,Platform ID,NOT NULL FOREIGN KEY
 authors,uid,TEXT,YES,Platform user ID,NOT NULL UNIQUE(user_id, platform_id, uid)
@@ -45,6 +50,7 @@ authors,url,TEXT,NO,Profile URL,
 authors,user_id,INTEGER,YES,User ID,FOREIGN KEY
 authors,created_at,TIMESTAMP,YES,Added time,DEFAULT CURRENT_TIMESTAMP
 authors,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+authors,deleted_at,TIMESTAMP,NO,Soft delete time,
 media,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 media,url,TEXT,YES,Media URL,UNIQUE NOT NULL
 media,type,TEXT,YES,Type,NOT NULL
@@ -57,6 +63,7 @@ media,media_path,TEXT,NO,Local path,
 media,cover_path,TEXT,NO,Cover path,
 media,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
 media,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+media,deleted_at,TIMESTAMP,NO,Soft delete time,
 parse_results,id,INTEGER,YES,Primary key,PRIMARY KEY AUTOINCREMENT
 parse_results,pid,TEXT,YES,Unique identifier,NOT NULL UNIQUE(user_id, platform_id, pid)
 parse_results,url,TEXT,YES,Parsed URL,NOT NULL
@@ -69,5 +76,6 @@ parse_results,state,TEXT,YES,Status,NOT NULL
 parse_results,user_id,INTEGER,YES,User ID,NOT NULL FOREIGN KEY
 parse_results,created_at,TIMESTAMP,YES,Creation time,DEFAULT CURRENT_TIMESTAMP
 parse_results,updated_at,TIMESTAMP,YES,Update time,DEFAULT CURRENT_TIMESTAMP
+parse_results,deleted_at,TIMESTAMP,NO,Soft delete time,
 parse_result_media,parse_result_id,INTEGER,YES,Parse result ID,PRIMARY KEY FOREIGN KEY ON DELETE CASCADE
 parse_result_media,media_id,INTEGER,YES,Media ID,PRIMARY KEY FOREIGN KEY ON DELETE CASCADE
