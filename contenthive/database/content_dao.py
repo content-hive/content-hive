@@ -71,7 +71,7 @@ class ParserDAO:
                 # Update existing platform
                 existing_platform.name = platform.name
                 existing_platform.url = str(platform.url)
-                existing_platform.icon_url = str(platform.icon_url)
+                existing_platform.icon_url = str(platform.icon_url) if platform.icon_url else None
                 # Restore if soft-deleted
                 if existing_platform.deleted_at is not None:
                     existing_platform.deleted_at = None
@@ -85,7 +85,7 @@ class ParserDAO:
                     code=platform.code,
                     name=platform.name,
                     url=str(platform.url),
-                    icon_url=str(platform.icon_url)
+                    icon_url=str(platform.icon_url) if platform.icon_url else None
                 )
                 session.add(new_platform)
                 session.flush()
@@ -126,8 +126,8 @@ class ParserDAO:
                 # Update existing author
                 existing_author.name = author.name
                 existing_author.username = author.username
-                existing_author.avatar = str(author.avatar)
-                existing_author.url = str(author.url)
+                existing_author.avatar = str(author.avatar) if author.avatar else None
+                existing_author.url = str(author.url) if author.url else None
                 # Restore if soft-deleted
                 if existing_author.deleted_at is not None:
                     existing_author.deleted_at = None
@@ -142,8 +142,8 @@ class ParserDAO:
                     uid=author.uid,
                     name=author.name,
                     username=author.username,
-                    avatar=str(author.avatar),
-                    url=str(author.url)
+                    avatar=str(author.avatar) if author.avatar else None,
+                    url=str(author.url) if author.url else None
                 )
                 session.add(new_author)
                 session.flush()
