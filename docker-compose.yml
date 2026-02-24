@@ -3,7 +3,7 @@ services:
     build: 
       context: .
       args:
-        - APP_VERSION=0.3.0
+        - APP_VERSION=0.4.1
     container_name: content-hive
     ports:
       - "6123:6123"
