@@ -9,6 +9,7 @@ Base = declarative_base()
 
 class AwareDatetime(TypeDecorator):
     impl = DateTime
+    cache_ok = True
 
     def process_bind_param(self, value, dialect):
         if value is not None:
