@@ -551,6 +551,78 @@ class ParserDAO:
 
         return results, total
 
+    def sync_parse_results(self, user_id: int,
+                          last_sync_time: Optional[datetime] = None,
+                          limit: int = 20, offset: int = 0) -> tuple[list[ParseResultEntity], int]:
+        """
+        Sync parse results based on last sync time.
+        Returns all parse results (including deleted ones) that were created or updated after the last sync time.
+    
+        Args:
+            user_id: Filter by user ID
+            last_sync_time: Optional datetime of the last sync. If None, returns all results.
+            limit: Maximum number of results to return
+            offset: Number of results to skip
+
+        Returns tuple of (list of ParseResultEntity objects with deleted_at field, total count).
+        """
+        session = self._get_session()
+
+        # Build WHERE clause - NOTE: We do NOT filter by deleted_at to include deleted records
+        query = select(ParseResult).where(
+            ParseResult.user_id == user_id
+        )
+
+        # Filter by last_sync_time if provided
+        if last_sync_time is not None:
+            query = query.where(ParseResult.updated_at > last_sync_time)
+
+        # Get total count
+        total = session.query(func.count(ParseResult.id)).where(
+            ParseResult.user_id == user_id
+        )
+        if last_sync_time is not None:
+            total = total.where(ParseResult.updated_at > last_sync_time)
+        total = total.scalar()
+
+        # Sort by updated_at desc (most recent first)
+        query = query.order_by(ParseResult.updated_at.desc())
+
+        query = query.limit(limit).offset(offset)
+        results_orm = session.execute(query).scalars().all()
+
+        results = []
+        for result_orm in results_orm:
+            # Get media
+            media_list = []
+            for prm in result_orm.media_list:
+                media_list.append(self._orm_to_media_entity(prm.media))
+
+            platform = self._orm_to_platform_entity(result_orm.platform)
+            author = self._orm_to_author_entity(result_orm.author, result_orm.platform)
+
+            entity = ParseResultEntity(
+                id=result_orm.id,
+                pid=result_orm.pid,
+                url=result_orm.url,
+                content=result_orm.content,
+                author_id=result_orm.author_id,
+                platform_id=result_orm.platform_id,
+                user_id=result_orm.user_id,
+                post_time=result_orm.post_time,
+                parser=result_orm.parser,
+                state=result_orm.state,
+                created_at=result_orm.created_at,
+                updated_at=result_orm.updated_at,
+                deleted_at=result_orm.deleted_at,
+                author=author,
+                platform=platform,
+                media=media_list
+            )
+            results.append(entity)
+
+        return results, total
+
     def list_platforms(self, user_id: int, limit: int = 100, offset: int = 0,
                        sort_by: str = "id", order: str = "asc") -> tuple[list[PlatformEntity], int]:
         """

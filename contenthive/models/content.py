@@ -73,6 +73,7 @@ class ParseResultEntity:
     state: str = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     
     # Related entities (for joins) - must not be None
     author: AuthorEntity = field(default_factory=AuthorEntity)
@@ -109,6 +110,14 @@ class PaginatedResponse(APIBaseModel, Generic[T]):
     
     items: list[T] = Field(..., description="List of items")
     pagination: PaginationInfo = Field(..., description="Pagination information")
+
+
+class SyncResponse(APIBaseModel, Generic[T]):
+    """Sync response model with server timestamp"""
+    
+    items: list[T] = Field(..., description="List of items")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
+    sync_timestamp: datetime = Field(..., description="Server timestamp for this sync operation (use this for next sync)")
 
 
 class MediaInfo(APIBaseModel):
@@ -197,6 +206,7 @@ class URLParserResult(APIBaseModel):
     state: Literal["success", "error"] = Field(..., description="Parsing state")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: Optional[datetime] = Field(None, description="Deletion timestamp (null if not deleted)")
 
     @classmethod
     def from_entity(cls, entity: ParseResultEntity) -> "URLParserResult":
@@ -214,5 +224,6 @@ class URLParserResult(APIBaseModel):
             state=entity.state,  # type: ignore
             created_at=(entity.created_at) if entity.created_at else datetime.now(timezone.utc),
             updated_at=(entity.updated_at) if entity.updated_at else datetime.now(timezone.utc),
+            deleted_at=entity.deleted_at,
         )
     
