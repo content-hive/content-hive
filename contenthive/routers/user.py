@@ -136,7 +136,7 @@ async def refresh_token(request: Request, data: RefreshTokenRequest) -> APIRespo
             )
         )
 
-@router_v1.post("/profile")
+@router_v1.get("/profile")
 async def read_users_me(current_user: Annotated[UserModel, Depends(get_current_active_user)]) -> APIResponse:
     """"""
     try:
