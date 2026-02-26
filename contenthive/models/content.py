@@ -93,7 +93,7 @@ class DownloadedMediaInfo(BaseModel):
     duration: Optional[int] = Field(None, description="Video duration in seconds")
     width: Optional[int] = Field(None, description="Media width in pixels")
     height: Optional[int] = Field(None, description="Media height in pixels")
-    media_path: str = Field(..., description="Local media file path")
+    media_path: Optional[str] = Field(None, description="Local media file path")
     cover_path: Optional[str] = Field(None, description="Local cover file path")
 
 # API Response Models

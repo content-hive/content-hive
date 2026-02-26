@@ -100,6 +100,19 @@ class MediaService:
                     local_media_items.append(downloaded_media)
                     logger.info(f"Downloaded media {i+1}/{len(result.media)}: {downloaded_media.media_path}")
                 except Exception as e:
+                    failed_media = DownloadedMediaInfo(
+                        status="failed",
+                        url=media.url,
+                        type=media.type,
+                        title=media.title,
+                        cover=media.cover,
+                        duration=0,
+                        width=0,
+                        height=0,                        
+                        media_path=None,
+                        cover_path=None
+                    )
+                    local_media_items.append(failed_media)
                     logger.error(f"Failed to download media {media.url}: {e}")
                     continue
         
