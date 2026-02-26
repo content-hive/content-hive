@@ -175,6 +175,7 @@ class ParserDAO:
             existing_media = session.execute(stmt).scalar_one_or_none()
 
             if existing_media:
+                existing_media.status = media.status
                 # Update existing media if paths are provided
                 if media.media_path or media.cover_path:
                     if media.duration:
@@ -200,7 +201,8 @@ class ParserDAO:
                 width=media.width,
                 height=media.height,
                 media_path=media.media_path,
-                cover_path=media.cover_path
+                cover_path=media.cover_path,
+                status=media.status
             )
             session.add(new_media)
             session.flush()
@@ -228,6 +230,7 @@ class ParserDAO:
         media_ids = []
         for media in medias:
             media_entity = MediaEntity(
+                status="pending",  # Default to pending when saving from parser result
                 url=str(media.url),
                 type=str(media.type) if media.type else "",
                 title=media.title,
@@ -254,6 +257,7 @@ class ParserDAO:
         media_ids = []
         for media in medias:
             media_entity = MediaEntity(
+                status=media.status,
                 url=str(media.url),
                 type=str(media.type) if media.type else "",
                 title=media.title,
@@ -368,6 +372,7 @@ class ParserDAO:
         """Convert ORM media object to entity"""
         return MediaEntity(
             id=media_orm.id,
+            status=media_orm.status,
             url=media_orm.url,
             type=media_orm.type,
             title=media_orm.title,

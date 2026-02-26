@@ -45,6 +45,7 @@ class AuthorEntity:
 class MediaEntity:
     """Media database entity"""
     id: Optional[int] = None
+    status: str = "pending"  # pending, downloading, completed, failed
     url: str = ""
     type: str = ""  # 'image' or 'video'
     title: Optional[str] = None
@@ -84,6 +85,7 @@ class ParseResultEntity:
 
 class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
+    status: str = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
@@ -123,6 +125,7 @@ class SyncResponse(APIBaseModel, Generic[T]):
 class MediaInfo(APIBaseModel):
     """Stored media item model (with local paths)"""
     id: int = Field(..., description="Media ID")
+    status: str = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
@@ -138,6 +141,7 @@ class MediaInfo(APIBaseModel):
         """Create MediaInfo from MediaEntity"""
         return cls(
             id=entity.id if entity.id else 0,
+            status=entity.status,
             url=entity.url, # type: ignore
             type=entity.type,  # type: ignore
             title=entity.title,

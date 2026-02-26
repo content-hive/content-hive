@@ -85,6 +85,7 @@ class MediaService:
                         )
 
                     downloaded_media = DownloadedMediaInfo(
+                        status="completed",
                         url=media.url,
                         type=media.type,
                         title=media.title,
