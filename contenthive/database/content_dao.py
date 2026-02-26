@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime, timezone
-from sqlalchemy import select, func
+from sqlalchemy import exists, or_, select, func
 from sqlalchemy.orm import Session
 
 from contenthive.database.database import get_engine, get_session_local
@@ -382,7 +382,8 @@ class ParserDAO:
             cover=media_orm.cover,
             media_path=media_orm.media_path,
             cover_path=media_orm.cover_path,
-            created_at=media_orm.created_at
+            created_at=media_orm.created_at,
+            updated_at=media_orm.updated_at
         )
 
     def _orm_to_platform_entity(self, platform_orm: Platform) -> PlatformEntity:
@@ -580,16 +581,27 @@ class ParserDAO:
 
         # Filter by last_sync_time if provided
         if last_sync_time is not None:
-            query = query.where(ParseResult.updated_at > last_sync_time)
+            media_update_subquery = exists(
+                select(1)
+                .select_from(ParseResultMedia)
+                .join(Media, ParseResultMedia.media_id == Media.id)
+                .where(
+                    ParseResultMedia.parse_result_id == ParseResult.id,
+                    Media.updated_at > last_sync_time
+                )
+            )
+            query = query.where(
+                or_(
+                    ParseResult.updated_at > last_sync_time,
+                    media_update_subquery
+                )
+            )
 
         # Get total count
-        total = session.query(func.count(ParseResult.id)).where(
-            ParseResult.user_id == user_id
-        )
-        if last_sync_time is not None:
-            total = total.where(ParseResult.updated_at > last_sync_time)
-        total = total.scalar()
-
+        count_query = select(func.count()).select_from(query.subquery())
+        total = session.execute(count_query).scalar()
+        total = total if total is not None else 0
+        
         # Sort by updated_at desc (most recent first)
         query = query.order_by(ParseResult.updated_at.desc())
 
