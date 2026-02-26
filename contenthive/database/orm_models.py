@@ -142,7 +142,8 @@ class Media(Base, TimestampMixin):
     cover: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     media_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     cover_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    
+    status: Mapped[str] = mapped_column(String, default="pending", nullable=False) # pending, downloading, completed, failed
+
     # Relationships
     parse_results: Mapped[list["ParseResultMedia"]] = relationship("ParseResultMedia", back_populates="media", cascade="all, delete-orphan")
 

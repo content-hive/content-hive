@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime, timezone
-from sqlalchemy import select, func
+from sqlalchemy import exists, or_, select, func
 from sqlalchemy.orm import Session
 
 from contenthive.database.database import get_engine, get_session_local
@@ -175,8 +175,12 @@ class ParserDAO:
             existing_media = session.execute(stmt).scalar_one_or_none()
 
             if existing_media:
-                # Update existing media if paths are provided
+                # Only update status if:
+                # 1. We have new media/cover paths (successful download), or
+                # 2. Current status is 'pending' (allow first status update)
                 if media.media_path or media.cover_path:
+                    # Successful download - update everything
+                    existing_media.status = media.status
                     if media.duration:
                         existing_media.duration = media.duration
                     if media.width:
@@ -188,6 +192,11 @@ class ParserDAO:
                     if media.cover_path:
                         existing_media.cover_path = media.cover_path
                     session.flush()
+                elif existing_media.status == 'pending':
+                    # Allow status update from pending to failed/other
+                    existing_media.status = media.status
+                    session.flush()
+                # else: Don't overwrite completed/failed status without new files
                 return existing_media.id
 
             # Insert new media
@@ -200,7 +209,8 @@ class ParserDAO:
                 width=media.width,
                 height=media.height,
                 media_path=media.media_path,
-                cover_path=media.cover_path
+                cover_path=media.cover_path,
+                status=media.status
             )
             session.add(new_media)
             session.flush()
@@ -228,6 +238,7 @@ class ParserDAO:
         media_ids = []
         for media in medias:
             media_entity = MediaEntity(
+                status="pending",  # Default to pending when saving from parser result
                 url=str(media.url),
                 type=str(media.type) if media.type else "",
                 title=media.title,
@@ -254,6 +265,7 @@ class ParserDAO:
         media_ids = []
         for media in medias:
             media_entity = MediaEntity(
+                status=media.status,
                 url=str(media.url),
                 type=str(media.type) if media.type else "",
                 title=media.title,
@@ -368,6 +380,7 @@ class ParserDAO:
         """Convert ORM media object to entity"""
         return MediaEntity(
             id=media_orm.id,
+            status=media_orm.status,
             url=media_orm.url,
             type=media_orm.type,
             title=media_orm.title,
@@ -377,7 +390,8 @@ class ParserDAO:
             cover=media_orm.cover,
             media_path=media_orm.media_path,
             cover_path=media_orm.cover_path,
-            created_at=media_orm.created_at
+            created_at=media_orm.created_at,
+            updated_at=media_orm.updated_at
         )
 
     def _orm_to_platform_entity(self, platform_orm: Platform) -> PlatformEntity:
@@ -543,6 +557,89 @@ class ParserDAO:
                 state=result_orm.state,
                 created_at=result_orm.created_at,
                 updated_at=result_orm.updated_at,
+                author=author,
+                platform=platform,
+                media=media_list
+            )
+            results.append(entity)
+
+        return results, total
+
+    def sync_parse_results(self, user_id: int,
+                          last_sync_time: Optional[datetime] = None,
+                          limit: int = 20, offset: int = 0) -> tuple[list[ParseResultEntity], int]:
+        """
+        Sync parse results based on last sync time.
+        Returns all parse results (including deleted ones) that were created or updated after the last sync time.
+    
+        Args:
+            user_id: Filter by user ID
+            last_sync_time: Optional datetime of the last sync. If None, returns all results.
+            limit: Maximum number of results to return
+            offset: Number of results to skip
+
+        Returns tuple of (list of ParseResultEntity objects with deleted_at field, total count).
+        """
+        session = self._get_session()
+
+        # Build WHERE clause - NOTE: We do NOT filter by deleted_at to include deleted records
+        query = select(ParseResult).where(
+            ParseResult.user_id == user_id
+        )
+
+        # Filter by last_sync_time if provided
+        if last_sync_time is not None:
+            media_update_subquery = exists(
+                select(1)
+                .select_from(ParseResultMedia)
+                .join(Media, ParseResultMedia.media_id == Media.id)
+                .where(
+                    ParseResultMedia.parse_result_id == ParseResult.id,
+                    Media.updated_at > last_sync_time
+                )
+            )
+            query = query.where(
+                or_(
+                    ParseResult.updated_at > last_sync_time,
+                    media_update_subquery
+                )
+            )
+
+        # Get total count
+        count_query = select(func.count()).select_from(query.subquery())
+        total = session.execute(count_query).scalar()
+        total = total if total is not None else 0
+
+        # Sort by updated_at desc (most recent first)
+        query = query.order_by(ParseResult.updated_at.desc())
+
+        query = query.limit(limit).offset(offset)
+        results_orm = session.execute(query).scalars().all()
+
+        results = []
+        for result_orm in results_orm:
+            # Get media
+            media_list = []
+            for prm in result_orm.media_list:
+                media_list.append(self._orm_to_media_entity(prm.media))
+
+            platform = self._orm_to_platform_entity(result_orm.platform)
+            author = self._orm_to_author_entity(result_orm.author, result_orm.platform)
+
+            entity = ParseResultEntity(
+                id=result_orm.id,
+                pid=result_orm.pid,
+                url=result_orm.url,
+                content=result_orm.content,
+                author_id=result_orm.author_id,
+                platform_id=result_orm.platform_id,
+                user_id=result_orm.user_id,
+                post_time=result_orm.post_time,
+                parser=result_orm.parser,
+                state=result_orm.state,
+                created_at=result_orm.created_at,
+                updated_at=result_orm.updated_at,
+                deleted_at=result_orm.deleted_at,
                 author=author,
                 platform=platform,
                 media=media_list

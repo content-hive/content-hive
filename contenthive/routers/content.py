@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import HttpUrl
@@ -191,6 +192,35 @@ async def delete_content(
             error=ErrorDetail(
                 code="CONTENT_DELETE_ERROR",
                 message="Failed to delete content",
+                details={"error": str(e)}
+            )
+        )
+    
+
+@router_v1.get("/sync", response_model=APIResponse)
+async def increment_sync(
+    current_user: Annotated[UserModel, Depends(get_current_active_user)],
+    last_sync_at: Optional[datetime] = Query(None, description="Last sync timestamp in ISO 8601 format (e.g., 2026-02-25T12:00:00Z)"),
+    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)")
+) -> APIResponse:
+    try:
+        result = await parserService.increment_sync(
+            user_id=current_user.id,
+            last_sync_time=last_sync_at,
+            page=page,
+            page_size=page_size
+        )
+        return APIResponse(
+            status="success",
+            data=result
+        )
+    except Exception as e:
+        return APIResponse(
+            status="error",
+            error=ErrorDetail(
+                code="CONTENT_SYNC_ERROR",
+                message="Failed to sync content with external platforms",
                 details={"error": str(e)}
             )
         )

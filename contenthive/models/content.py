@@ -45,6 +45,7 @@ class AuthorEntity:
 class MediaEntity:
     """Media database entity"""
     id: Optional[int] = None
+    status: str = "pending"  # pending, downloading, completed, failed
     url: str = ""
     type: str = ""  # 'image' or 'video'
     title: Optional[str] = None
@@ -73,6 +74,7 @@ class ParseResultEntity:
     state: str = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     
     # Related entities (for joins) - must not be None
     author: AuthorEntity = field(default_factory=AuthorEntity)
@@ -83,6 +85,7 @@ class ParseResultEntity:
 
 class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
+    status: str = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
@@ -90,7 +93,7 @@ class DownloadedMediaInfo(BaseModel):
     duration: Optional[int] = Field(None, description="Video duration in seconds")
     width: Optional[int] = Field(None, description="Media width in pixels")
     height: Optional[int] = Field(None, description="Media height in pixels")
-    media_path: str = Field(..., description="Local media file path")
+    media_path: Optional[str] = Field(None, description="Local media file path")
     cover_path: Optional[str] = Field(None, description="Local cover file path")
 
 # API Response Models
@@ -111,9 +114,18 @@ class PaginatedResponse(APIBaseModel, Generic[T]):
     pagination: PaginationInfo = Field(..., description="Pagination information")
 
 
+class SyncResponse(APIBaseModel, Generic[T]):
+    """Sync response model with server timestamp"""
+    
+    items: list[T] = Field(..., description="List of items")
+    pagination: PaginationInfo = Field(..., description="Pagination information")
+    sync_timestamp: datetime = Field(..., description="Server timestamp for this sync operation (use this for next sync)")
+
+
 class MediaInfo(APIBaseModel):
     """Stored media item model (with local paths)"""
     id: int = Field(..., description="Media ID")
+    status: str = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
@@ -129,6 +141,7 @@ class MediaInfo(APIBaseModel):
         """Create MediaInfo from MediaEntity"""
         return cls(
             id=entity.id if entity.id else 0,
+            status=entity.status,
             url=entity.url, # type: ignore
             type=entity.type,  # type: ignore
             title=entity.title,
@@ -197,6 +210,7 @@ class URLParserResult(APIBaseModel):
     state: Literal["success", "error"] = Field(..., description="Parsing state")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: Optional[datetime] = Field(None, description="Deletion timestamp (null if not deleted)")
 
     @classmethod
     def from_entity(cls, entity: ParseResultEntity) -> "URLParserResult":
@@ -214,5 +228,6 @@ class URLParserResult(APIBaseModel):
             state=entity.state,  # type: ignore
             created_at=(entity.created_at) if entity.created_at else datetime.now(timezone.utc),
             updated_at=(entity.updated_at) if entity.updated_at else datetime.now(timezone.utc),
+            deleted_at=entity.deleted_at,
         )
     

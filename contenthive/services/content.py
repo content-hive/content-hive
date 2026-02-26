@@ -2,6 +2,7 @@
 Parser service for fetching and parsing URL content.
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 from pydantic import HttpUrl
 from contenthive.logger import logger
@@ -10,7 +11,8 @@ from contenthive.models.content import (
     PlatformInfo, 
     AuthorInfo, 
     PaginatedResponse, 
-    PaginationInfo
+    PaginationInfo,
+    SyncResponse
 )
 from contenthive.database.content_dao import ParserDAO
 from contenthive.plugins.manager import get_plugin_manager
@@ -340,6 +342,55 @@ class ParserService:
             return success
         except Exception as e:
             logger.error(f"Error deleting parse result {parse_result_id}: {e}")
+            raise
+    
+    async def increment_sync(
+            self,
+            user_id: int, 
+            last_sync_time: Optional[datetime] = None,
+            page: int = 1, 
+            page_size: int = 10
+    ) -> SyncResponse[URLParserResult]:
+        """
+        Incrementally sync content for the user based on last sync time.
+        
+        Args:
+            user_id: User ID to sync content for
+            last_sync_time: Optional datetime of the last sync time. If not provided, will return all content.
+            page: Page number (starting from 1)
+            page_size: Number of items per page
+            
+        Returns:
+            SyncResponse with items, pagination info, and server sync_timestamp
+        """
+        try:
+            # Capture server timestamp BEFORE query to ensure no data is missed
+            sync_timestamp = datetime.now(timezone.utc)
+            
+            offset = (page - 1) * page_size
+            with ParserDAO() as dao:
+                results, total = dao.sync_parse_results(
+                    user_id=user_id,
+                    last_sync_time=last_sync_time,
+                    limit=page_size,
+                    offset=offset
+                )
+            
+            items = [URLParserResult.from_entity(result) for result in results]
+            total_pages = (total + page_size - 1) // page_size
+            
+            return SyncResponse(
+                items=items,
+                pagination=PaginationInfo(
+                    page=page,
+                    page_size=page_size,
+                    total=total,
+                    total_pages=total_pages
+                ),
+                sync_timestamp=sync_timestamp
+            )
+        except Exception as e:
+            logger.error(f"Error syncing content for user {user_id}: {e}")
             raise
 
 parserService = ParserService()
