@@ -175,9 +175,12 @@ class ParserDAO:
             existing_media = session.execute(stmt).scalar_one_or_none()
 
             if existing_media:
-                existing_media.status = media.status
-                # Update existing media if paths are provided
+                # Only update status if:
+                # 1. We have new media/cover paths (successful download), or
+                # 2. Current status is 'pending' (allow first status update)
                 if media.media_path or media.cover_path:
+                    # Successful download - update everything
+                    existing_media.status = media.status
                     if media.duration:
                         existing_media.duration = media.duration
                     if media.width:
@@ -189,6 +192,11 @@ class ParserDAO:
                     if media.cover_path:
                         existing_media.cover_path = media.cover_path
                     session.flush()
+                elif existing_media.status == 'pending':
+                    # Allow status update from pending to failed/other
+                    existing_media.status = media.status
+                    session.flush()
+                # else: Don't overwrite completed/failed status without new files
                 return existing_media.id
 
             # Insert new media
@@ -601,7 +609,7 @@ class ParserDAO:
         count_query = select(func.count()).select_from(query.subquery())
         total = session.execute(count_query).scalar()
         total = total if total is not None else 0
-        
+
         # Sort by updated_at desc (most recent first)
         query = query.order_by(ParseResult.updated_at.desc())
 
