@@ -289,4 +289,4 @@ class MediaService:
         
         return deleted_count, failed_count
 
-mediaService = MediaService()
+media_service = MediaService()

@@ -18,7 +18,7 @@ from contenthive.models.parser import ParserAuthorInfo, ParserMediaInfo, ParserP
 from contenthive.logger import logger
 
 
-class ParserDAO:
+class ContentDAO:
     """
     Data Access Object for parser-related database operations.
     """
