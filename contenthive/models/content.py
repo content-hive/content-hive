@@ -68,7 +68,6 @@ class ParseResultEntity:
     content: str = ""
     author_id: int = 0
     platform_id: int = 0
-    user_id: Optional[int] = None
     post_time: Optional[int] = None
     parser: str = ""
     state: str = ""

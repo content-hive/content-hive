@@ -112,7 +112,7 @@ class ContentService:
             
             # Return the saved parse result (with or without media)
             with ContentDAO() as dao:
-                entity = dao.get_parse_result(parse_result_id)
+                entity = dao.get_parse_result(parse_result_id, user_id=user_id)
                 return URLParserResult.from_entity(entity)
                 
         except Exception as e:
