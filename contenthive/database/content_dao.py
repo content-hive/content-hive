@@ -15,6 +15,7 @@ from contenthive.models.content import (
     PlatformEntity, 
     MediaEntity     
 )
+from contenthive.models.enumerates import MediaStatus
 from contenthive.models.parser import ParserAuthorInfo, ParserMediaInfo, ParserPlatformInfo, ParserResult
 from contenthive.logger import logger
 
@@ -220,7 +221,7 @@ class ContentDAO:
                     if media.cover_path:
                         existing_media.cover_path = media.cover_path
                     session.flush()
-                elif existing_media.status == 'pending':
+                elif existing_media.status == MediaStatus.PENDING:
                     # Allow status update from pending to failed/other
                     existing_media.status = media.status
                     session.flush()
@@ -266,7 +267,7 @@ class ContentDAO:
         media_ids = []
         for media in medias:
             media_entity = MediaEntity(
-                status="pending",  # Default to pending when saving from parser result
+                status=MediaStatus.PENDING,  # Default to pending when saving from parser result
                 url=str(media.url),
                 type=str(media.type) if media.type else "",
                 title=media.title,

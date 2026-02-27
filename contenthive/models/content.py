@@ -8,6 +8,7 @@ from typing import Optional, Literal, Generic, TypeVar
 from dataclasses import dataclass, field
 
 from contenthive.models.api import APIBaseModel
+from contenthive.models.enumerates import MediaStatus
 
 T = TypeVar('T')
 
@@ -45,7 +46,7 @@ class AuthorEntity:
 class MediaEntity:
     """Media database entity"""
     id: Optional[int] = None
-    status: str = "pending"  # pending, downloading, completed, failed
+    status: MediaStatus = MediaStatus.PENDING
     url: str = ""
     type: str = ""  # 'image' or 'video'
     title: Optional[str] = None
@@ -84,7 +85,7 @@ class ParseResultEntity:
 
 class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
-    status: str = Field(..., description="Download status: pending, downloading, completed, failed")
+    status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
     type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")

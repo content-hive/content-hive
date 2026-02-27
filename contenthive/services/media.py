@@ -8,6 +8,7 @@ import hashlib
 import shutil
 from pathlib import Path
 from contenthive.logger import logger
+from contenthive.models.enumerates import MediaStatus
 from contenthive.models.parser import ParserResult
 from contenthive.models.content import DownloadedMediaInfo
 from contenthive.config import settings
@@ -85,7 +86,7 @@ class MediaService:
                         )
 
                     downloaded_media = DownloadedMediaInfo(
-                        status="completed",
+                        status=MediaStatus.COMPLETED,
                         url=media.url,
                         type=media.type,
                         title=media.title,
@@ -101,7 +102,7 @@ class MediaService:
                     logger.info(f"Downloaded media {i+1}/{len(result.media)}: {downloaded_media.media_path}")
                 except Exception as e:
                     failed_media = DownloadedMediaInfo(
-                        status="failed",
+                        status=MediaStatus.FAILED,
                         url=media.url,
                         type=media.type,
                         title=media.title,
