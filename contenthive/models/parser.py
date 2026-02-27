@@ -5,11 +5,13 @@ Models for parser operations.
 from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, Literal
 
+from contenthive.models.enumerates import MediaType
+
 
 class ParserMediaInfo(BaseModel):
     """Media information from parser (no database ID)"""
     url: HttpUrl = Field(..., description="Media URL")
-    type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
+    type: Optional[MediaType] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
     cover: Optional[HttpUrl] = Field(None, description="Video cover URL")
 

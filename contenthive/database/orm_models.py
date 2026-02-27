@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import JSON, Enum as SQLEnum, Integer, String, Boolean, DateTime, ForeignKey, TypeDecorator, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship, Mapped, mapped_column
 
-from contenthive.models.enumerates import MediaStatus, TaskRole, TaskStatus, TaskType
+from contenthive.models.enumerates import MediaStatus, MediaType, TaskRole, TaskStatus, TaskType
 
 Base = declarative_base()
 
@@ -129,7 +129,7 @@ class Media(Base, TimestampMixin):
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     url: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    type: Mapped[str] = mapped_column(String, nullable=False)
+    type: Mapped[Optional[MediaType]] = mapped_column(SQLEnum(MediaType), nullable=True)
     title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     duration: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

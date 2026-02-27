@@ -269,7 +269,7 @@ class ContentDAO:
             media_entity = MediaEntity(
                 status=MediaStatus.PENDING,  # Default to pending when saving from parser result
                 url=str(media.url),
-                type=str(media.type) if media.type else "",
+                type=media.type if media.type else None,
                 title=media.title,
                 cover=str(media.cover) if media.cover else None
             )
@@ -296,7 +296,7 @@ class ContentDAO:
             media_entity = MediaEntity(
                 status=media.status,
                 url=str(media.url),
-                type=str(media.type) if media.type else "",
+                type=media.type if media.type else None,
                 title=media.title,
                 cover=str(media.cover) if media.cover else None,
                 duration=media.duration,
@@ -420,59 +420,6 @@ class ContentDAO:
             session.add(assoc)
         session.flush()
 
-    def _orm_to_media_entity(self, media_orm: Media) -> MediaEntity:
-        """Convert ORM media object to entity"""
-        return MediaEntity(
-            id=media_orm.id,
-            status=media_orm.status,
-            url=media_orm.url,
-            type=media_orm.type,
-            title=media_orm.title,
-            duration=media_orm.duration,
-            width=media_orm.width,
-            height=media_orm.height,
-            cover=media_orm.cover,
-            media_path=media_orm.media_path,
-            cover_path=media_orm.cover_path,
-            created_at=media_orm.created_at,
-            updated_at=media_orm.updated_at
-        )
-
-    def _orm_to_platform_entity(self, platform_orm: Platform) -> PlatformEntity:
-        """Convert ORM platform object to entity"""
-        return PlatformEntity(
-            id=platform_orm.id,
-            code=platform_orm.code,
-            name=platform_orm.name,
-            url=platform_orm.url,
-            icon_url=platform_orm.icon_url,
-            created_at=platform_orm.created_at,
-            updated_at=platform_orm.updated_at
-        )
-
-    def _orm_to_author_entity(self, author_orm: Author, platform: Optional[Platform] = None) -> AuthorEntity:
-        """Convert ORM author object to entity"""
-        platform_entity = None
-        if author_orm.platform or platform:
-            p = author_orm.platform or platform
-            platform_entity = self._orm_to_platform_entity(p)
-        
-        if not platform_entity:
-            raise ValueError("Author's platform information is missing, cannot convert to AuthorEntity")
-        
-        return AuthorEntity(
-            id=author_orm.id,
-            platform_id=author_orm.platform_id,
-            uid=author_orm.uid,
-            name=author_orm.name,
-            username=author_orm.username,
-            avatar=author_orm.avatar,
-            url=author_orm.url,
-            created_at=author_orm.created_at,
-            updated_at=author_orm.updated_at,
-            platform=platform_entity
-        )
-
     def get_parse_result(self, parse_result_id: int, user_id: int) -> ParseResultEntity:
         """
         Get parse result entity by ID.
@@ -496,33 +443,28 @@ class ContentDAO:
         if not result_orm:
             raise ValueError(f"Parse result with id {parse_result_id} not found or access denied")
 
-        # Get media
-        media_list = []
-        for prm in result_orm.media_list:
-            media_list.append(self._orm_to_media_entity(prm.media))
+        return ParseResultEntity.from_orm(result_orm)
 
-        platform = self._orm_to_platform_entity(result_orm.platform if hasattr(result_orm, 'platform') else None)
-        author = self._orm_to_author_entity(result_orm.author if hasattr(result_orm, 'author') else None, result_orm.platform)
-
-        # Build entity
-        entity = ParseResultEntity(
-            id=result_orm.id,
-            pid=result_orm.pid,
-            url=result_orm.url,
-            content=result_orm.content,
-            author_id=result_orm.author_id,
-            platform_id=result_orm.platform_id,
-            post_time=result_orm.post_time,
-            parser=result_orm.parser,
-            state=result_orm.state,
-            created_at=result_orm.created_at,
-            updated_at=result_orm.updated_at,
-            author=author,
-            platform=platform,
-            media=media_list
+    def find_parse_result_by_url(self, url: str) -> Optional[ParseResultEntity]:
+        """
+        Find parse result by URL (globally, without user filtering).
+        Used for task deduplication.
+        
+        Args:
+            url: URL to search for
+            
+        Returns:
+            ParseResultEntity object if found, None otherwise
+        """
+        session = self._get_session()
+        
+        stmt = select(ParseResult).where(
+            ParseResult.url == url,
+            ParseResult.deleted_at.is_(None)
         )
-
-        return entity
+        
+        result_orm = session.execute(stmt).scalar_one_or_none()
+        return ParseResultEntity.from_orm(result_orm) if result_orm else None
 
     def list_parse_results(self, user_id: int,
                           platform_id: Optional[int] = None,
@@ -594,34 +536,7 @@ class ContentDAO:
         query = query.limit(limit).offset(offset)
         results_orm = session.execute(query).scalars().all()
 
-        results = []
-        for result_orm in results_orm:
-            # Get media
-            media_list = []
-            for prm in result_orm.media_list:
-                media_list.append(self._orm_to_media_entity(prm.media))
-
-            platform = self._orm_to_platform_entity(result_orm.platform)
-            author = self._orm_to_author_entity(result_orm.author, result_orm.platform)
-
-            entity = ParseResultEntity(
-                id=result_orm.id,
-                pid=result_orm.pid,
-                url=result_orm.url,
-                content=result_orm.content,
-                author_id=result_orm.author_id,
-                platform_id=result_orm.platform_id,
-                post_time=result_orm.post_time,
-                parser=result_orm.parser,
-                state=result_orm.state,
-                created_at=result_orm.created_at,
-                updated_at=result_orm.updated_at,
-                author=author,
-                platform=platform,
-                media=media_list
-            )
-            results.append(entity)
-
+        results = [ParseResultEntity.from_orm(result_orm) for result_orm in results_orm]
         return results, total
 
     def sync_parse_results(self, user_id: int,
@@ -680,14 +595,6 @@ class ContentDAO:
 
         results = []
         for result_orm in results_orm:
-            # Get media
-            media_list = []
-            for prm in result_orm.media_list:
-                media_list.append(self._orm_to_media_entity(prm.media))
-
-            platform = self._orm_to_platform_entity(result_orm.platform)
-            author = self._orm_to_author_entity(result_orm.author, result_orm.platform)
-
             # Check if association is deleted
             stmt = select(UserParseResult).where(
                 (UserParseResult.user_id == user_id) &
@@ -696,23 +603,9 @@ class ContentDAO:
             user_parse_result = session.execute(stmt).scalar_one_or_none()
             association_deleted_at = user_parse_result.deleted_at if user_parse_result else None
 
-            entity = ParseResultEntity(
-                id=result_orm.id,
-                pid=result_orm.pid,
-                url=result_orm.url,
-                content=result_orm.content,
-                author_id=result_orm.author_id,
-                platform_id=result_orm.platform_id,
-                post_time=result_orm.post_time,
-                parser=result_orm.parser,
-                state=result_orm.state,
-                created_at=result_orm.created_at,
-                updated_at=result_orm.updated_at,
-                deleted_at=association_deleted_at or result_orm.deleted_at,
-                author=author,
-                platform=platform,
-                media=media_list
-            )
+            # Convert to entity and override deleted_at if needed
+            entity = ParseResultEntity.from_orm(result_orm)
+            entity.deleted_at = association_deleted_at or result_orm.deleted_at
             results.append(entity)
 
         return results, total
@@ -770,7 +663,7 @@ class ContentDAO:
         query = query.limit(limit).offset(offset)
         platforms_orm = session.execute(query).scalars().all()
 
-        platforms = [self._orm_to_platform_entity(p) for p in platforms_orm]
+        platforms = [PlatformEntity.from_orm(p) for p in platforms_orm]
         return platforms, total
 
     def list_authors(self, user_id: int, platform_id: Optional[int] = None,
@@ -833,7 +726,7 @@ class ContentDAO:
         query = query.limit(limit).offset(offset)
         authors_orm = session.execute(query).scalars().all()
 
-        authors = [self._orm_to_author_entity(a) for a in authors_orm]
+        authors = [AuthorEntity.from_orm(a) for a in authors_orm]
         return authors, total
 
     def delete_platform(self, user_id: int, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:

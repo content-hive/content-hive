@@ -25,3 +25,7 @@ class MediaStatus(str, Enum):
     DOWNLOADING = "downloading"
     COMPLETED = "completed"
     FAILED = "failed"
+
+class MediaType(str, Enum):
+    IMAGE = "image"
+    VIDEO = "video"

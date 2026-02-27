@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 from contenthive.logger import logger
 from contenthive.models.enumerates import MediaStatus
+from contenthive.models.enumerates import MediaStatus, MediaType
 from contenthive.models.parser import ParserResult
 from contenthive.models.content import DownloadedMediaInfo
 from contenthive.config import settings
