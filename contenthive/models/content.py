@@ -160,7 +160,7 @@ class ParseResultEntity:
             deleted_at=orm.deleted_at,
             author=AuthorEntity.from_orm(orm.author),
             platform=PlatformEntity.from_orm(orm.platform),
-            media=[MediaEntity.from_orm(media) for media in orm.media_list] if orm.media_list else []
+            media=[MediaEntity.from_orm(prm.media) for prm in orm.media_list] if orm.media_list else []
         )
     
 
