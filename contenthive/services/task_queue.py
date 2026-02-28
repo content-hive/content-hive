@@ -43,7 +43,12 @@ class TaskQueue:
             await self._worker_task
         # Wait for running tasks to complete
         if self._running_tasks:
-            await asyncio.gather(*self._running_tasks.values(), return_exceptions=True)
+            results = await asyncio.gather(*self._running_tasks.values(), return_exceptions=True)
+            # Log any exceptions from running tasks
+            for task_id, result in zip(list(self._running_tasks.keys()), results):
+                if isinstance(result, Exception):
+                    logger.error(f"Task {task_id} failed during shutdown: {result}")
+            self._running_tasks.clear()
         logger.info("Task queue worker stopped")
     
     def enqueue(self, task_id: int, priority: int = 0) -> bool:
@@ -94,6 +99,19 @@ class TaskQueue:
             "running_tasks": list(self._running_tasks.keys())
         }
     
+    def _task_done_callback(self, task_id: int, task: asyncio.Task):
+        """Callback to handle task completion and consume exceptions."""
+        try:
+            # Retrieve exception/result to prevent "Task exception was never retrieved" warnings
+            exception = task.exception()
+            if exception:
+                # Exception already logged in _execute_task, but we consume it here
+                pass
+        except asyncio.CancelledError:
+            logger.warning(f"Task {task_id} was cancelled")
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving task {task_id} result: {e}")
+    
     async def _worker(self):
         """Background worker that processes tasks from the queue."""
         logger.info("Task queue worker started processing")
@@ -103,7 +121,19 @@ class TaskQueue:
                 # Clean up completed tasks
                 completed = [tid for tid, task in self._running_tasks.items() if task.done()]
                 for tid in completed:
-                    del self._running_tasks[tid]
+                    task = self._running_tasks[tid]
+                    # Consume exception/result before deleting to prevent warnings
+                    try:
+                        exception = task.exception()
+                        if exception:
+                            # Exception already logged in _execute_task
+                            pass
+                    except asyncio.CancelledError:
+                        logger.warning(f"Task {tid} was cancelled")
+                    except Exception as e:
+                        logger.error(f"Unexpected error retrieving task {tid} result: {e}")
+                    finally:
+                        del self._running_tasks[tid]
                 
                 # Check if we can start more tasks
                 while len(self._running_tasks) < self._max_concurrent and self._queue:
@@ -114,6 +144,8 @@ class TaskQueue:
                     
                     # Create task for execution
                     task = asyncio.create_task(self._execute_task(task_id))
+                    # Add done callback to consume exceptions
+                    task.add_done_callback(lambda t, tid=task_id: self._task_done_callback(tid, t))
                     self._running_tasks[task_id] = task
                 
                 # Wait a bit before next iteration
