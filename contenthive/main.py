@@ -43,21 +43,21 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Plugins loading skipped (safe mode)")
 
-    logger.info("Application started successfully.")
 
     # 8. Start task queue worker
     await task_queue.start()
-    logger.info("Task queue worker started")
 
+    logger.info("Application started successfully.")
+    
     yield
-    # Application shutdown logic
 
     # Stop task queue worker gracefully
     await task_queue.stop()
-    logger.info("Task queue worker stopped")
 
     # Shutdown plugins gracefully
     await shutdown_plugins()
+
+    # Application shutdown logic
     logger.info("Shutting down application.")
 
 
