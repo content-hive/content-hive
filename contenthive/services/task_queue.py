@@ -148,6 +148,15 @@ class TaskQueue:
             
         except Exception as e:
             logger.error(f"Task {task_id} execution failed: {e}")
+            
+            # If this was a PRIMARY task, mark all linked tasks as failed
+            try:
+                task = task_service.get_main_task(task_id)
+                if task and task.role == TaskRole.PRIMARY:
+                    await task_service.fail_linked_tasks(task_id)
+            except Exception as linked_error:
+                logger.error(f"Failed to update linked tasks for failed primary task {task_id}: {linked_error}")
+            
             raise
 
 

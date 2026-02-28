@@ -1099,6 +1099,62 @@ class TaskService:
         except Exception as e:
             logger.error(f"Failed to monitor linked tasks for primary {primary_task_id}: {e}")
 
+    async def fail_linked_tasks(self, primary_task_id: int) -> None:
+        """
+        Mark all linked tasks as failed/canceled when the primary task fails or is canceled.
+        Should be called after a primary task fails or is canceled.
+
+        Args:
+            primary_task_id: Database ID of the failed/canceled primary task
+        """
+        try:
+            # Get the primary task
+            primary_task = self.get_main_task(primary_task_id)
+            if not primary_task:
+                logger.error(f"Primary task {primary_task_id} not found")
+                return
+
+            if primary_task.status not in (TaskStatus.FAILED, TaskStatus.CANCELED):
+                logger.warning(f"Primary task {primary_task_id} is not failed or canceled (status: {primary_task.status})")
+                return
+
+            # Find all linked tasks waiting for this primary task
+            with TaskDAO() as dao:
+                linked_tasks = dao.list_main_tasks(
+                    task_type=TaskType.PARSE_CONTENT,
+                    role=TaskRole.LINKED,
+                    status=TaskStatus.PENDING,
+                    limit=1000
+                )
+
+            # Filter tasks that are waiting for this specific primary task
+            waiting_tasks = [task for task in linked_tasks if task.primary_task_id == primary_task_id]
+
+            if not waiting_tasks:
+                logger.info(f"No linked tasks waiting for primary task {primary_task_id}")
+                return
+
+            logger.info(f"Marking {len(waiting_tasks)} linked tasks as {primary_task.status.value} for primary task {primary_task_id}")
+
+            # Mark all linked tasks with the same status and error
+            for linked_task in waiting_tasks:
+                try:
+                    error_message = f"Primary task failed: {primary_task.error_message}" if primary_task.error_message else "Primary task failed"
+                    
+                    with TaskDAO() as dao:
+                        dao.update_main_task_status(
+                            linked_task.id,
+                            primary_task.status,  # Use the same status as primary (FAILED or CANCELED)
+                            error_message=error_message,
+                            commit=True
+                        )
+                    logger.info(f"Marked linked task {linked_task.task_id} (ID: {linked_task.id}) as {primary_task.status.value}")
+                except Exception as e:
+                    logger.error(f"Failed to update linked task {linked_task.id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Failed to fail linked tasks for primary {primary_task_id}: {e}")
+
 
 # Singleton instance
 task_service = TaskService()
