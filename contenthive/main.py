@@ -2,13 +2,14 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
-from contenthive.routers import admin, content, system, user
+from contenthive.routers import admin, content, system, user, task
 from contenthive.database.database import initialize_db
 from contenthive.config import settings, ensure_directories
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
 from contenthive.logger import logger, setup_file_logging
 from contenthive.core.restart import RestartManager, RestartType, set_restart_manager
 from contenthive.models.api import DetailedHTTPException, http_exception_handler
+from contenthive.services.task_queue import task_queue
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,11 +43,21 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Plugins loading skipped (safe mode)")
 
+
+    # 8. Start task queue worker
+    await task_queue.start()
+
     logger.info("Application started successfully.")
-    yield
     
-    # Application shutdown logic
+    yield
+
+    # Stop task queue worker gracefully
+    await task_queue.stop()
+
+    # Shutdown plugins gracefully
     await shutdown_plugins()
+
+    # Application shutdown logic
     logger.info("Shutting down application.")
 
 
@@ -58,7 +69,8 @@ app = FastAPI(
 
 app.add_exception_handler(DetailedHTTPException, http_exception_handler)
 
-app.include_router(user.router_v1)
+app.include_router(task.router_v1)
 app.include_router(content.router_v1)
+app.include_router(user.router_v1)
 app.include_router(admin.router_v1)
 app.include_router(system.router_v1)

@@ -5,31 +5,9 @@ from pydantic import HttpUrl
 from contenthive.models.api import APIResponse, ErrorDetail
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_active_user
-from contenthive.services.content import parserService
+from contenthive.services.content import content_service
 
 router_v1 = APIRouter(prefix="/v1/content", tags=["content"])
-
-@router_v1.get("/parser", response_model=APIResponse)
-async def parser_url(
-    current_user: Annotated[UserModel, Depends(get_current_active_user)],
-    url: HttpUrl,
-    plugin_id: Optional[str] = None
-) -> APIResponse:
-    try:
-        result = await parserService.parser_content(current_user.id, url, plugin_id=plugin_id)
-        return APIResponse(
-            status="success",
-            data=result
-        )
-    except Exception as e:
-        return APIResponse(
-            status="error",
-            error=ErrorDetail(
-                code="PARSER_ERROR",
-                message="Failed to parse URL content",
-                details={"error": str(e)}
-            )
-        )
     
 
 @router_v1.get("/contents", response_model=APIResponse)
@@ -43,7 +21,7 @@ async def list_contents(
     order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order")
 ) -> APIResponse:
     try:
-        result = await parserService.list_contents(
+        result = await content_service.list_contents(
             user_id=current_user.id,
             platform_id=platform_id,
             author_id=author_id,
@@ -76,7 +54,7 @@ async def list_platforms(
     order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order")
 ) -> APIResponse:
     try:
-        platforms = await parserService.list_platforms(
+        platforms = await content_service.list_platforms(
             user_id=current_user.id,
             page=page,
             page_size=page_size,
@@ -108,7 +86,7 @@ async def list_authors(
     order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order")
 ) -> APIResponse:
     try:
-        authors = await parserService.list_authors(
+        authors = await content_service.list_authors(
             user_id=current_user.id,
             platform_id=platform_id,
             page=page,
@@ -137,7 +115,7 @@ async def delete_platform(
     current_user: Annotated[UserModel, Depends(get_current_active_user)]
 ) -> APIResponse:
     try:
-        success = await parserService.delete_platform(current_user.id, platform_id)
+        success = await content_service.delete_platform(current_user.id, platform_id)
         return APIResponse(
             status="success",
             data={"deleted": success, "platform_id": platform_id}
@@ -159,7 +137,7 @@ async def delete_author(
     current_user: Annotated[UserModel, Depends(get_current_active_user)]
 ) -> APIResponse:
     try:
-        success = await parserService.delete_author(current_user.id, author_id)
+        success = await content_service.delete_author(current_user.id, author_id)
         return APIResponse(
             status="success",
             data={"deleted": success, "author_id": author_id}
@@ -181,7 +159,7 @@ async def delete_content(
     current_user: Annotated[UserModel, Depends(get_current_active_user)]
 ) -> APIResponse:
     try:
-        success = await parserService.delete_parse_result(current_user.id, parse_result_id)
+        success = await content_service.delete_parse_result(current_user.id, parse_result_id)
         return APIResponse(
             status="success",
             data={"deleted": success, "parse_result_id": parse_result_id}
@@ -205,7 +183,7 @@ async def increment_sync(
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)")
 ) -> APIResponse:
     try:
-        result = await parserService.increment_sync(
+        result = await content_service.increment_sync(
             user_id=current_user.id,
             last_sync_time=last_sync_at,
             page=page,

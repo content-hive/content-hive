@@ -14,11 +14,12 @@ from contenthive.models.content import (
     PaginationInfo,
     SyncResponse
 )
-from contenthive.database.content_dao import ParserDAO
+from contenthive.database.content_dao import ContentDAO
+from contenthive.models.parser import ParserResult
 from contenthive.plugins.manager import get_plugin_manager
-from contenthive.services.media import mediaService
+from contenthive.services.media import media_service
 
-class ParserService:
+class ContentService:
     """
     Parser service for fetching and parsing URL content.
     """
@@ -61,21 +62,21 @@ class ParserService:
                 logger.error(f"Error checking {domain}: {e}")
         
         return None
-    
+
     async def parser_content(
-        self, 
-        user_id: int,
-        url: HttpUrl, 
-        plugin_id: Optional[str] = None,
-        download_media: bool = True
-    ) -> Optional[URLParserResult]:
+        self,
+        url: HttpUrl,
+        plugin_id: Optional[str] = None
+    ) -> Optional[ParserResult]:
         """
-        Fetch and parse content from the given URL.
-        
+        Fetch and parse content from the given URL using the appropriate parser plugin.
+
         Args:
-            url: URL to parse
-            plugin_id: Optional specific plugin to use
-            download_media: Whether to download media files locally
+            url: The URL to fetch and parse content from.
+            plugin_id: Optional preferred parser plugin domain to use for parsing.
+
+        Returns:
+            ParserResult containing the parsed content and metadata, or None if parsing failed.
         """
         try:
             logger.info(f"Fetching content from URL: {url}")
@@ -99,25 +100,11 @@ class ParserService:
                 raise Exception(f"Parser returned empty result for URL: {url}")
             
             logger.info(f"Successfully parsed content from URL: {url} using plugin: {domain}")
-            
-            # Save parse result to database
-            with ParserDAO() as dao:
-                parse_result_id = dao.save_parse_result(result, user_id=user_id)
-
-            # Download media files if requested
-            if download_media and result.media:
-                downloaded_media = await mediaService.download_media_for_result(result)
-                with ParserDAO() as dao:
-                    dao.save_downloaded_medias(downloaded_media, commit=True)
-            
-            # Return the saved parse result (with or without media)
-            with ParserDAO() as dao:
-                entity = dao.get_parse_result(parse_result_id)
-                return URLParserResult.from_entity(entity)
-                
+            return result
         except Exception as e:
             logger.error(f"Error fetching content from URL {url}: {e}")
-            raise
+            raise ValueError(f"Failed to parse URL content: {e}")
+
 
     async def list_contents(
             self,
@@ -144,7 +131,7 @@ class ParserService:
         """
         try:
             offset = (page - 1) * page_size
-            with ParserDAO() as dao:
+            with ContentDAO() as dao:
                 results, total = dao.list_parse_results(
                     user_id=user_id,
                     platform_id=platform_id, 
@@ -192,7 +179,7 @@ class ParserService:
         """
         try:
             offset = (page - 1) * page_size
-            with ParserDAO() as dao:
+            with ContentDAO() as dao:
                 platforms, total = dao.list_platforms(
                     user_id=user_id,
                     limit=page_size,
@@ -240,7 +227,7 @@ class ParserService:
         """
         try:
             offset = (page - 1) * page_size
-            with ParserDAO() as dao:
+            with ContentDAO() as dao:
                 authors, total = dao.list_authors(
                     user_id=user_id,
                     platform_id=platform_id,
@@ -280,11 +267,11 @@ class ParserService:
         try:
             logger.info(f"Deleting platform {platform_id}")
             
-            with ParserDAO() as dao:
+            with ContentDAO() as dao:
                 success, file_paths = dao.delete_platform(user_id, platform_id, commit=True)
             
             if success and file_paths:
-                deleted, failed = mediaService.delete_media_files(file_paths)
+                deleted, failed = media_service.delete_media_files(file_paths)
                 logger.info(f"Deleted platform {platform_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
             
             return success
@@ -306,11 +293,11 @@ class ParserService:
         try:
             logger.info(f"Deleting author {author_id}")
             
-            with ParserDAO() as dao:
+            with ContentDAO() as dao:
                 success, file_paths = dao.delete_author(user_id, author_id, commit=True)
             
             if success and file_paths:
-                deleted, failed = mediaService.delete_media_files(file_paths)
+                deleted, failed = media_service.delete_media_files(file_paths)
                 logger.info(f"Deleted author {author_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
             
             return success
@@ -332,11 +319,11 @@ class ParserService:
         try:
             logger.info(f"Deleting parse result {parse_result_id}")
             
-            with ParserDAO() as dao:
+            with ContentDAO() as dao:
                 success, file_paths = dao.delete_parse_result(user_id, parse_result_id, commit=True)
             
             if success and file_paths:
-                deleted, failed = mediaService.delete_media_files(file_paths)
+                deleted, failed = media_service.delete_media_files(file_paths)
                 logger.info(f"Deleted parse result {parse_result_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
             
             return success
@@ -368,7 +355,7 @@ class ParserService:
             sync_timestamp = datetime.now(timezone.utc)
             
             offset = (page - 1) * page_size
-            with ParserDAO() as dao:
+            with ContentDAO() as dao:
                 results, total = dao.sync_parse_results(
                     user_id=user_id,
                     last_sync_time=last_sync_time,
@@ -393,5 +380,5 @@ class ParserService:
             logger.error(f"Error syncing content for user {user_id}: {e}")
             raise
 
-parserService = ParserService()
+content_service = ContentService()
 

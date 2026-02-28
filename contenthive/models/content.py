@@ -7,7 +7,9 @@ from pydantic import BaseModel, HttpUrl, Field
 from typing import Optional, Literal, Generic, TypeVar
 from dataclasses import dataclass, field
 
+from contenthive.database.orm_models import Author, Media, ParseResult, Platform
 from contenthive.models.api import APIBaseModel
+from contenthive.models.enumerates import MediaStatus, MediaType
 
 T = TypeVar('T')
 
@@ -23,6 +25,19 @@ class PlatformEntity:
     icon_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_orm(cls, orm: Platform) -> "PlatformEntity":
+        """Convert ORM Platform object to entity"""
+        return PlatformEntity(
+            id=orm.id,
+            code=orm.code,
+            name=orm.name,
+            url=orm.url,
+            icon_url=orm.icon_url,
+            created_at=orm.created_at,
+            updated_at=orm.updated_at
+        )
 
 
 @dataclass
@@ -40,14 +55,35 @@ class AuthorEntity:
 
     platform: PlatformEntity = field(default_factory=PlatformEntity)
 
+    @classmethod
+    def from_orm(cls, orm: Author) -> "AuthorEntity":
+        """Convert ORM Author object to entity"""
+
+        if orm.platform is None:
+            # Author's platform information is missing, cannot convert to AuthorEntity
+            raise ValueError(f"Author ORM object (id={orm.id}) has no associated platform")
+
+        return cls(
+            id=orm.id,
+            platform_id=orm.platform_id,
+            uid=orm.uid,
+            name=orm.name,
+            username=orm.username,
+            avatar=orm.avatar,
+            url=orm.url,
+            created_at=orm.created_at,
+            updated_at=orm.updated_at,
+            platform=PlatformEntity.from_orm(orm.platform)
+        )
+
 
 @dataclass
 class MediaEntity:
     """Media database entity"""
     id: Optional[int] = None
-    status: str = "pending"  # pending, downloading, completed, failed
+    status: MediaStatus = MediaStatus.PENDING
     url: str = ""
-    type: str = ""  # 'image' or 'video'
+    type: Optional[MediaType] = None
     title: Optional[str] = None
     cover: Optional[str] = None
     duration: Optional[int] = None
@@ -57,6 +93,25 @@ class MediaEntity:
     cover_path: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_orm(cls, orm: Media) -> "MediaEntity":
+        """Convert ORM Media object to entity"""
+        return cls(
+            id=orm.id,
+            status=orm.status,
+            url=orm.url,
+            type=orm.type,
+            title=orm.title,
+            cover=orm.cover,
+            duration=orm.duration,
+            width=orm.width,
+            height=orm.height,
+            media_path=orm.media_path,
+            cover_path=orm.cover_path,
+            created_at=orm.created_at,
+            updated_at=orm.updated_at
+        )
 
 
 @dataclass
@@ -68,7 +123,6 @@ class ParseResultEntity:
     content: str = ""
     author_id: int = 0
     platform_id: int = 0
-    user_id: Optional[int] = None
     post_time: Optional[int] = None
     parser: str = ""
     state: str = ""
@@ -81,13 +135,42 @@ class ParseResultEntity:
     platform: PlatformEntity = field(default_factory=PlatformEntity)
     media: list[MediaEntity] = field(default_factory=list)
 
+    @classmethod
+    def from_orm(cls, orm: ParseResult) -> "ParseResultEntity":
+        """Convert ORM ParseResult object to entity"""
+
+        if orm.author is None:
+            raise ValueError(f"ParseResult ORM object (id={orm.id}) has no associated author")
+        
+        if orm.platform is None:
+            raise ValueError(f"ParseResult ORM object (id={orm.id}) has no associated platform")
+
+        return cls(
+            id=orm.id,
+            pid=orm.pid,
+            url=orm.url,
+            content=orm.content,
+            author_id=orm.author_id,
+            platform_id=orm.platform_id,
+            post_time=orm.post_time,
+            parser=orm.parser,
+            state=orm.state,
+            created_at=orm.created_at,
+            updated_at=orm.updated_at,
+            deleted_at=orm.deleted_at,
+            author=AuthorEntity.from_orm(orm.author),
+            platform=PlatformEntity.from_orm(orm.platform),
+            media=[MediaEntity.from_orm(prm.media) for prm in orm.media_list] if orm.media_list else []
+        )
+    
+
 # Service Models
 
 class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
-    status: str = Field(..., description="Download status: pending, downloading, completed, failed")
+    status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
-    type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
+    type: Optional[MediaType] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
     cover: Optional[HttpUrl] = Field(None, description="Original video cover URL")
     duration: Optional[int] = Field(None, description="Video duration in seconds")
@@ -125,9 +208,9 @@ class SyncResponse(APIBaseModel, Generic[T]):
 class MediaInfo(APIBaseModel):
     """Stored media item model (with local paths)"""
     id: int = Field(..., description="Media ID")
-    status: str = Field(..., description="Download status: pending, downloading, completed, failed")
+    status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
-    type: Optional[Literal["image", "video"]] = Field(None, description="Media type")
+    type: Optional[MediaType] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
     duration: Optional[int] = Field(None, description="Video duration in seconds")
     width: Optional[int] = Field(None, description="Media width in pixels")
@@ -143,7 +226,7 @@ class MediaInfo(APIBaseModel):
             id=entity.id if entity.id else 0,
             status=entity.status,
             url=entity.url, # type: ignore
-            type=entity.type,  # type: ignore
+            type=entity.type,
             title=entity.title,
             duration=entity.duration,
             width=entity.width,
