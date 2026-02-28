@@ -42,13 +42,6 @@ async def create_parser_task(
             plugin_id=request.plugin_id
         )
         
-        # Execute PRIMARY tasks in the background immediately
-        if result and result.role == TaskRole.PRIMARY:
-            background_tasks.add_task(
-                task_service.execute_main_task_background,
-                result.id
-            )
-        
         return APIResponse(
             status="success",
             data=result

@@ -9,6 +9,7 @@ from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugin
 from contenthive.logger import logger, setup_file_logging
 from contenthive.core.restart import RestartManager, RestartType, set_restart_manager
 from contenthive.models.api import DetailedHTTPException, http_exception_handler
+from contenthive.services.task_queue import task_queue
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,9 +44,19 @@ async def lifespan(app: FastAPI):
         logger.warning("Plugins loading skipped (safe mode)")
 
     logger.info("Application started successfully.")
+
+    # 8. Start task queue worker
+    await task_queue.start()
+    logger.info("Task queue worker started")
+
     yield
-    
     # Application shutdown logic
+
+    # Stop task queue worker gracefully
+    await task_queue.stop()
+    logger.info("Task queue worker stopped")
+
+    # Shutdown plugins gracefully
     await shutdown_plugins()
     logger.info("Shutting down application.")
 

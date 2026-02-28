@@ -1,4 +1,3 @@
-
 """
 Task service for managing and executing tasks.
 """
@@ -14,7 +13,8 @@ from contenthive.database.content_dao import ContentDAO
 from contenthive.models.content import DownloadedMediaInfo
 from contenthive.models.enumerates import MediaStatus, TaskType, TaskStatus, TaskRole
 from contenthive.models.parser import ParserResult
-from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity, SubTaskInfo
+from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
+from contenthive.services.task_queue import task_queue
 from contenthive.services.content import content_service
 from contenthive.services.media import media_service  
 
@@ -45,6 +45,7 @@ class TaskService:
     ) -> Optional[MainTaskInfo]:
         """
         Create a new parser main task with deduplication logic.
+        Task will be automatically enqueued for execution.
         
         Deduplication strategy:
         1. Check if there's a running PRIMARY task for this URL
@@ -91,6 +92,8 @@ class TaskService:
                     role=TaskRole.LINKED,
                     primary_task_id=running_primary.id
                 )
+                # LINKED tasks don't need to be executed, they wait for PRIMARY
+                # No need to enqueue
         else:
             # No running PRIMARY task - create new PRIMARY task
             logger.info(f"No running PRIMARY task for URL: {url}. Creating PRIMARY task.")
@@ -101,6 +104,11 @@ class TaskService:
                 parameters=parameters,
                 role=TaskRole.PRIMARY
             )
+            
+            # Enqueue the task for execution
+            if task_entity:
+                task_queue.enqueue(task_entity.id, priority=0)
+                logger.info(f"Task {task_entity.id} enqueued for execution")
         
         if task_entity:
             return MainTaskInfo.from_entity(task_entity)
@@ -401,25 +409,6 @@ class TaskService:
             return dao.update_sub_task_result(id, result, commit=True)
 
     # Task Execution Methods
-
-    async def execute_main_task_background(self, task_id: int) -> None:
-        """
-        Execute a main task in the background (no return value).
-        Suitable for FastAPI BackgroundTasks.
-
-        Args:
-            task_id: Database ID of the task
-        """
-        try:
-            result = await self.execute_main_task(task_id)
-            
-            # If this was a PRIMARY task, complete all linked tasks
-            task = self.get_main_task(task_id)
-            if task and task.role == TaskRole.PRIMARY:
-                await self.monitor_and_complete_linked_tasks(task_id)
-                
-        except Exception as e:
-            logger.error(f"Background task execution failed for task {task_id}: {e}")
 
     async def execute_main_task(self, id: int) -> Dict[str, Any]:
         """

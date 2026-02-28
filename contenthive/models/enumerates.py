@@ -13,7 +13,6 @@ class TaskStatus(str, Enum):
     CANCELED = "canceled"
     COMPLETED = "completed"
     FAILED = "failed"
-    WAITING_FOR_PRIMARY = "waiting_for_primary"
 
 class TaskRole(str, Enum):
     PRIMARY = "primary"
