@@ -6,6 +6,7 @@ import hashlib
 from typing import Optional, List, Dict, Any
 import uuid
 import asyncio
+from pydantic import HttpUrl
 
 from contenthive.logger import logger
 from contenthive.database.task_dao import TaskDAO
@@ -889,8 +890,6 @@ class TaskService:
             # If download_single_media returns None, treat as failure
             if result is None:
                 logger.warning(f"Media download sub task {sub_task.sub_task_id} returned None")
-                from contenthive.models.enumerates import MediaStatus
-                from pydantic import HttpUrl
                 return DownloadedMediaInfo(
                     status=MediaStatus.FAILED,
                     url=HttpUrl(media_url) if media_url else HttpUrl("https://unknown.url"),
@@ -919,8 +918,6 @@ class TaskService:
             })
             
             # Return a failed DownloadedMediaInfo object instead of raising exception
-            from contenthive.models.enumerates import MediaStatus
-            from pydantic import HttpUrl
             return DownloadedMediaInfo(
                 status=MediaStatus.FAILED,
                 url=HttpUrl(media_url) if media_url else HttpUrl("https://unknown.url"),
