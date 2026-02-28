@@ -206,13 +206,14 @@ class MainTask(Base, TimestampMixin):
     __tablename__ = "main_tasks"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    task_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    task_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     type: Mapped[TaskType] = mapped_column(SQLEnum(TaskType), nullable=False, index=True) # parse_content
     status: Mapped[TaskStatus] = mapped_column(SQLEnum(TaskStatus), nullable=False, index=True) # pending, running, canceled, completed, failed, waiting_for_primary
     role: Mapped[Optional[TaskRole]] = mapped_column(SQLEnum(TaskRole), nullable=True) # primary, linked, reused
 
+    url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

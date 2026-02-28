@@ -8,28 +8,6 @@ from contenthive.routers.user import get_current_active_user
 from contenthive.services.content import content_service
 
 router_v1 = APIRouter(prefix="/v1/content", tags=["content"])
-
-@router_v1.get("/parser", response_model=APIResponse)
-async def parser_url(
-    current_user: Annotated[UserModel, Depends(get_current_active_user)],
-    url: HttpUrl,
-    plugin_id: Optional[str] = None
-) -> APIResponse:
-    try:
-        result = await content_service.parser_content(current_user.id, url, plugin_id=plugin_id)
-        return APIResponse(
-            status="success",
-            data=result
-        )
-    except Exception as e:
-        return APIResponse(
-            status="error",
-            error=ErrorDetail(
-                code="PARSER_ERROR",
-                message="Failed to parse URL content",
-                details={"error": str(e)}
-            )
-        )
     
 
 @router_v1.get("/contents", response_model=APIResponse)

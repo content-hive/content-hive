@@ -3,12 +3,13 @@ Media service for downloading and managing media files.
 """
 
 import os
+from typing import Optional
 import aiohttp
 import hashlib
-import shutil
 from pathlib import Path
+
+from pydantic import HttpUrl
 from contenthive.logger import logger
-from contenthive.models.enumerates import MediaStatus
 from contenthive.models.enumerates import MediaStatus, MediaType
 from contenthive.models.parser import ParserResult
 from contenthive.models.content import DownloadedMediaInfo
@@ -47,78 +48,73 @@ class MediaService:
             logger.error(f"Failed to generate relative media path: {e}")
             return ""
 
-    async def download_media_for_result(self, result: ParserResult) -> list[DownloadedMediaInfo]:
+
+    async def download_single_media(
+        self,
+        platform: str,
+        author: str,
+        content_id: str,
+        media_url: HttpUrl,
+        media_type: MediaType,
+        media_cover: Optional[HttpUrl] = None,
+        media_description: Optional[str] = None,
+        media_index: int = 0
+    ) -> Optional[DownloadedMediaInfo]:
         """
-        Download all media files for a parser result.
-        
+        Download a single media file and its optional cover image, then return the local paths.
         Args:
-            result: Parser result containing media URLs
-            
+            platform: Platform code (e.g., "twitter")
+            author: Author username
+            content_id: Content ID
+            media_url: URL of the media to download
+            media_type: Type of the media (e.g., image, video)
+            media_cover: Optional URL of the cover image
+            media_description: Optional description of the media
+            media_index: Index of the media in the list
         Returns:
-            List of DownloadedMediaInfo with updated local paths
+            DownloadedMediaInfo object or None if download failed
         """
-        if not (result.media):
-            return []
+        try:
+            # Sanitize directory names
+            platform = self._sanitize_filename(platform)
+            author = self._sanitize_filename(author)
         
-        media_dir = self._get_media_directory(result)
-        media_dir.mkdir(parents=True, exist_ok=True)
-        
-        logger.info(f"Downloading {len(result.media)} media files to {media_dir}")
-        
-        local_media_items = []
-        async with aiohttp.ClientSession(trust_env=True) as session:
-            for i, media in enumerate(result.media):
-                try:
-                    local_path = await self._download_single_media(
+            media_dir = self.media_dir / platform / author / content_id
+            media_dir.mkdir(parents=True, exist_ok=True)
+
+            async with aiohttp.ClientSession(trust_env=True) as session:
+                local_path = await self._download_single_media(
+                    session,
+                    str(media_url),
+                    media_dir,
+                    media_index
+                )
+                cover_path = None
+                if media_cover:
+                    cover_path = await self._download_single_media(
                         session, 
-                        str(media.url), 
+                        str(media_cover), 
                         media_dir, 
-                        index=i
-                    )
-                    
-                    cover_path = None
-                    if media.cover:
-                        # Download cover image if available
-                        cover_path = await self._download_single_media(
-                            session,
-                            str(media.cover),
-                            media_dir,
-                            index=i
-                        )
-
-                    downloaded_media = DownloadedMediaInfo(
-                        status=MediaStatus.COMPLETED,
-                        url=media.url,
-                        type=media.type,
-                        title=media.title,
-                        cover=media.cover,
-                        duration=0,
-                        width=0,
-                        height=0,
-                        media_path=self.get_relative_media_path(local_path),
-                        cover_path=self.get_relative_media_path(cover_path) if cover_path else None
+                        media_index
                     )
 
-                    local_media_items.append(downloaded_media)
-                    logger.info(f"Downloaded media {i+1}/{len(result.media)}: {downloaded_media.media_path}")
-                except Exception as e:
-                    failed_media = DownloadedMediaInfo(
-                        status=MediaStatus.FAILED,
-                        url=media.url,
-                        type=media.type,
-                        title=media.title,
-                        cover=media.cover,
-                        duration=0,
-                        width=0,
-                        height=0,                        
-                        media_path=None,
-                        cover_path=None
-                    )
-                    local_media_items.append(failed_media)
-                    logger.error(f"Failed to download media {media.url}: {e}")
-                    continue
-        
-        return local_media_items
+                downloaded_media = DownloadedMediaInfo(
+                    status=MediaStatus.COMPLETED,
+                    url=media_url,
+                    type=media_type,
+                    title=media_description,
+                    cover=media_cover,
+                    duration=0,
+                    width=0,
+                    height=0,
+                    media_path=self.get_relative_media_path(local_path),
+                    cover_path=self.get_relative_media_path(cover_path) if cover_path else None
+                )
+
+                return downloaded_media
+        except Exception as e:
+            logger.error(f"Failed to create media directory: {e}")
+            return None
 
     async def _download_single_media(
         self, 
@@ -179,26 +175,6 @@ class MediaService:
         
         return self.media_dir / platform / author / content_id
 
-    def delete_media_for_result(self, result: ParserResult) -> bool:
-        """
-        Delete all media files for a parser result.
-        
-        Args:
-            result: Parser result
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            media_dir = self._get_media_directory(result)
-            if media_dir.exists():
-                shutil.rmtree(media_dir)
-                logger.info(f"Deleted media directory: {media_dir}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to delete media directory: {e}")
-            return False
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:

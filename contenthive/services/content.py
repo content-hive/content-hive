@@ -15,6 +15,7 @@ from contenthive.models.content import (
     SyncResponse
 )
 from contenthive.database.content_dao import ContentDAO
+from contenthive.models.parser import ParserResult
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import media_service
 
@@ -61,21 +62,21 @@ class ContentService:
                 logger.error(f"Error checking {domain}: {e}")
         
         return None
-    
+
     async def parser_content(
-        self, 
-        user_id: int,
-        url: HttpUrl, 
-        plugin_id: Optional[str] = None,
-        download_media: bool = True
-    ) -> Optional[URLParserResult]:
+        self,
+        url: HttpUrl,
+        plugin_id: Optional[str] = None
+    ) -> Optional[ParserResult]:
         """
-        Fetch and parse content from the given URL.
-        
+        Fetch and parse content from the given URL using the appropriate parser plugin.
+
         Args:
-            url: URL to parse
-            plugin_id: Optional specific plugin to use
-            download_media: Whether to download media files locally
+            url: The URL to fetch and parse content from.
+            plugin_id: Optional preferred parser plugin domain to use for parsing.
+
+        Returns:
+            ParserResult containing the parsed content and metadata, or None if parsing failed.
         """
         try:
             logger.info(f"Fetching content from URL: {url}")
@@ -99,25 +100,11 @@ class ContentService:
                 raise Exception(f"Parser returned empty result for URL: {url}")
             
             logger.info(f"Successfully parsed content from URL: {url} using plugin: {domain}")
-            
-            # Save parse result to database
-            with ContentDAO() as dao:
-                parse_result_id = dao.save_parse_result(result, user_id=user_id)
-
-            # Download media files if requested
-            if download_media and result.media:
-                downloaded_media = await media_service.download_media_for_result(result)
-                with ContentDAO() as dao:
-                    dao.save_downloaded_medias(downloaded_media, commit=True)
-            
-            # Return the saved parse result (with or without media)
-            with ContentDAO() as dao:
-                entity = dao.get_parse_result(parse_result_id, user_id=user_id)
-                return URLParserResult.from_entity(entity)
-                
+            return result
         except Exception as e:
             logger.error(f"Error fetching content from URL {url}: {e}")
-            raise
+            raise ValueError(f"Failed to parse URL content: {e}")
+
 
     async def list_contents(
             self,
