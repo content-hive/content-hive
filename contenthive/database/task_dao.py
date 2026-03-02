@@ -1,7 +1,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session, joinedload
 
 from contenthive.database.database import get_engine, get_session_local
@@ -343,7 +343,7 @@ class TaskDAO:
         limit: int = 100,
         offset: int = 0,
         include_sub_tasks: bool = False
-    ) -> List[MainTaskEntity]:
+    ) -> tuple[List[MainTaskEntity], int]:
         """
         List main tasks with filters.
 
@@ -357,7 +357,7 @@ class TaskDAO:
             include_sub_tasks: Whether to load sub tasks
 
         Returns:
-            List of MainTaskEntity objects
+            Tuple of (List of MainTaskEntity objects, total count)
         """
         session = self._get_session()
         try:
@@ -375,13 +375,26 @@ class TaskDAO:
             if role is not None:
                 stmt = stmt.where(MainTask.role == role)
             
+            # Get total count with the same filters
+            count_stmt = select(func.count(MainTask.id)).where(MainTask.deleted_at == None)
+            if user_id is not None:
+                count_stmt = count_stmt.where(MainTask.user_id == user_id)
+            if task_type is not None:
+                count_stmt = count_stmt.where(MainTask.type == task_type)
+            if status is not None:
+                count_stmt = count_stmt.where(MainTask.status == status)
+            if role is not None:
+                count_stmt = count_stmt.where(MainTask.role == role)
+            
+            total = session.execute(count_stmt).scalar() or 0
+            
             if include_sub_tasks:
                 stmt = stmt.options(joinedload(MainTask.sub_tasks))
             
             stmt = stmt.order_by(MainTask.created_at.desc()).limit(limit).offset(offset)
             
             result = session.execute(stmt).unique().scalars().all()
-            return [MainTaskEntity.from_orm(task) for task in result]
+            return [MainTaskEntity.from_orm(task) for task in result], total
         except Exception as e:
             logger.error(f"Failed to list main tasks: {e}")
             raise

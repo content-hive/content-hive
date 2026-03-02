@@ -113,7 +113,10 @@ async def get_parser_task(
 async def list_parser_tasks(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     status: Optional[TaskStatus] = None,
-    limit: int = 20
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: str = "created_at",
+    order: str = "desc"
 ) -> APIResponse:
     """
     List parser tasks for the current user with optional status filter and pagination.
@@ -121,20 +124,27 @@ async def list_parser_tasks(
     Args:
         current_user: The currently authenticated user
         status: Optional task status filter (e.g., pending, running, completed)
-        limit: Maximum number of records to return
+        page: Page number (starting from 1)
+        page_size: Number of items per page (default: 20)
+        sort_by: Field to sort by (default: created_at)
+        order: Sort order - asc or desc (default: desc)
+        
     Returns:
-        API response with list of tasks
+        API response with paginated list of tasks
     """
     try:
-        tasks = task_service.list_main_tasks_by_user(
+        result = task_service.list_main_tasks_by_user(
             user_id=current_user.id,
             status=status,
-            limit=limit
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            order=order
         )
         
         return APIResponse(
             status="success",
-            data=tasks
+            data=result
         )
     except Exception as e:
         raise DetailedHTTPException(
