@@ -389,6 +389,10 @@ class ContentDAO:
                 # Restore soft-deleted association
                 user_parse_result.deleted_at = None
                 session.flush()
+            else:
+                # Update updated_at to reflect re-parse, ensures sync detects the change
+                user_parse_result.updated_at = datetime.now(timezone.utc)
+                session.flush()
 
             # Save media associations
             self._save_media_associations(parse_result_id, result.media)
@@ -606,6 +610,17 @@ class ContentDAO:
             # Convert to entity and override deleted_at if needed
             entity = ParseResultEntity.from_orm(result_orm)
             entity.deleted_at = association_deleted_at or result_orm.deleted_at
+
+            # Use the latest updated_at across parse result, user association, and associated media.
+            # This ensures the client's next last_sync_time advances correctly when the trigger
+            # was a media update (media_update_subquery), preventing infinite re-sync.
+            timestamps = [result_orm.updated_at]
+            if user_parse_result and user_parse_result.updated_at:
+                timestamps.append(user_parse_result.updated_at)
+            for prm in result_orm.media_list:
+                if prm.media and prm.media.updated_at:
+                    timestamps.append(prm.media.updated_at)
+            entity.updated_at = max(timestamps)
             results.append(entity)
 
         return results, total
