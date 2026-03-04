@@ -11,7 +11,7 @@ from pydantic import HttpUrl
 from contenthive.logger import logger
 from contenthive.database.task_dao import TaskDAO
 from contenthive.database.content_dao import ContentDAO
-from contenthive.models.content import DownloadedMediaInfo
+from contenthive.models.content import DownloadedMediaInfo, PaginatedResponse, PaginationInfo
 from contenthive.models.enumerates import MediaStatus, TaskType, TaskStatus, TaskRole
 from contenthive.models.parser import ParserResult
 from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
@@ -267,7 +267,7 @@ class TaskService:
             List of MainTaskInfo objects
         """
         with TaskDAO() as dao:
-            tasks = dao.list_main_tasks(
+            tasks, _ = dao.list_main_tasks(
                 user_id=user_id,
                 task_type=task_type,
                 status=status,
@@ -277,19 +277,57 @@ class TaskService:
             )
             return [MainTaskInfo.from_entity(task) for task in tasks]
 
-    def list_main_tasks_by_user(self, user_id: int, status: Optional[TaskStatus] = None, limit: int = 100, offset: int = 0) -> List[MainTaskInfo]:
+    def list_main_tasks_by_user(
+            self,
+            user_id: int,
+            status: Optional[TaskStatus] = None,
+            page: int = 1,
+            page_size: int = 20,
+            sort_by: str = "created_at",
+            order: str = "desc"
+    ) -> PaginatedResponse[MainTaskInfo]:
         """
-        List main tasks for a specific user.
+        List main tasks for a specific user with pagination.
 
         Args:
             user_id: User ID to filter tasks
             status: Optional task status filter (e.g., pending, running, completed)
-            limit: Maximum number of results
-            offset: Offset for pagination
+            page: Page number (starting from 1)
+            page_size: Number of items per page
+            sort_by: Field to sort by (id, created_at, updated_at)
+            order: Sort direction (asc, desc)
+
         Returns:
-            List of MainTaskInfo objects
+            PaginatedResponse containing list of MainTaskInfo and pagination info
         """
-        return self.list_main_tasks(user_id=user_id, status=status, limit=limit, offset=offset)
+        try:
+            offset = (page - 1) * page_size
+            
+            with TaskDAO() as dao:
+                tasks, total = dao.list_main_tasks(
+                    user_id=user_id,
+                    status=status,
+                    limit=page_size,
+                    offset=offset,
+                    sort_by=sort_by,
+                    order=order
+                )
+            
+            items = [MainTaskInfo.from_entity(task) for task in tasks]
+            total_pages = (total + page_size - 1) // page_size  # Ceiling division
+            
+            return PaginatedResponse(
+                items=items,
+                pagination=PaginationInfo(
+                    page=page,
+                    page_size=page_size,
+                    total=total,
+                    total_pages=total_pages
+                )
+            )
+        except Exception as e:
+            logger.error(f"Error listing main tasks for user {user_id}: {e}")
+            raise
 
     # Sub Task Methods
 
@@ -568,7 +606,7 @@ class TaskService:
                         "content_id": content_id,
                         "media_url": str(media.url),
                         "media_type": media.type,
-                        "media_cover": media.cover,
+                        "media_cover": str(media.cover) if media.cover else None,
                         "media_description": media.title,
                         "media_index": idx
                     },
@@ -868,14 +906,14 @@ class TaskService:
             # Update sub task status to RUNNING
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
             
-            # Download media
+            # Download media (convert string URLs back to HttpUrl objects)
             result = await media_service.download_single_media(
                 platform=platform,
                 author=author,
                 content_id=content_id,
-                media_url=media_url,
+                media_url=HttpUrl(media_url),
                 media_type=media_type,
-                media_cover=media_cover,
+                media_cover=HttpUrl(media_cover) if media_cover else None,
                 media_description=media_description,
                 media_index=media_index
             )
@@ -1056,7 +1094,7 @@ class TaskService:
 
             # Find all linked tasks waiting for this primary task
             with TaskDAO() as dao:
-                linked_tasks = dao.list_main_tasks(
+                linked_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
                     status=TaskStatus.PENDING,
@@ -1120,7 +1158,7 @@ class TaskService:
 
             # Find all linked tasks waiting for this primary task
             with TaskDAO() as dao:
-                linked_tasks = dao.list_main_tasks(
+                linked_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
                     status=TaskStatus.PENDING,
