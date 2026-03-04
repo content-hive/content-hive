@@ -36,17 +36,30 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+    - name: Compute image tags
+      id: tags
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        GHCR="ghcr.io/${{ github.repository_owner }}/content-hive"
+        DH="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/content-hive"
+        {
+          echo "TAGS<<EOF"
+          echo "${GHCR}:${VERSION}"
+          echo "${DH}:${VERSION}"
+          if [[ "$VERSION" != *"dev"* && "$VERSION" != *"beta"* ]]; then
+            echo "${GHCR}:latest"
+            echo "${DH}:latest"
+          fi
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
       with:
         context: .
         file: Dockerfile
         push: true
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/content-hive:${{ steps.get_version.outputs.VERSION }}
-          ghcr.io/${{ github.repository_owner }}/content-hive:latest
-          docker.io/${{ secrets.DOCKERHUB_USERNAME }}/content-hive:${{ steps.get_version.outputs.VERSION }}
-          docker.io/${{ secrets.DOCKERHUB_USERNAME }}/content-hive:latest
+        tags: ${{ steps.tags.outputs.TAGS }}
         build-args: |
           APP_VERSION=${{ steps.get_version.outputs.VERSION }}
         cache-from: type=gha
