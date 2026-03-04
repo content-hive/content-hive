@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy import exists, or_, select, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from contenthive.database.database import get_engine, get_session_local
 from contenthive.database.orm_models import (
@@ -561,10 +561,13 @@ class ContentDAO:
         session = self._get_session()
 
         # Build query with JOIN to UserParseResult (include soft-deleted associations)
+        # Eagerly load media_list -> media to avoid N+1 lazy-load queries per result
         query = select(ParseResult).join(
             UserParseResult,
             (UserParseResult.parse_result_id == ParseResult.id) &
             (UserParseResult.user_id == user_id)
+        ).options(
+            selectinload(ParseResult.media_list).selectinload(ParseResultMedia.media)
         )
 
         # Filter by last_sync_time if provided

@@ -1,7 +1,7 @@
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks, Query
 
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.task import TaskCreateRequest
@@ -113,10 +113,10 @@ async def get_parser_task(
 async def list_parser_tasks(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     status: Optional[TaskStatus] = None,
-    page: int = 1,
-    page_size: int = 20,
-    sort_by: str = "created_at",
-    order: str = "desc"
+    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
+    sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),
+    order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order")
 ) -> APIResponse:
     """
     List parser tasks for the current user with optional status filter and pagination.

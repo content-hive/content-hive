@@ -342,7 +342,9 @@ class TaskDAO:
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0,
-        include_sub_tasks: bool = False
+        include_sub_tasks: bool = False,
+        sort_by: str = "created_at",
+        order: str = "desc"
     ) -> tuple[List[MainTaskEntity], int]:
         """
         List main tasks with filters.
@@ -355,6 +357,8 @@ class TaskDAO:
             limit: Maximum number of results
             offset: Offset for pagination
             include_sub_tasks: Whether to load sub tasks
+            sort_by: Column to sort by (id, created_at, updated_at)
+            order: Sort direction (asc, desc)
 
         Returns:
             Tuple of (List of MainTaskEntity objects, total count)
@@ -391,7 +395,19 @@ class TaskDAO:
             if include_sub_tasks:
                 stmt = stmt.options(joinedload(MainTask.sub_tasks))
             
-            stmt = stmt.order_by(MainTask.created_at.desc()).limit(limit).offset(offset)
+            sort_field_map = {
+                "id": MainTask.id,
+                "created_at": MainTask.created_at,
+                "updated_at": MainTask.updated_at,
+            }
+            sort_field = sort_field_map.get(sort_by, MainTask.created_at)
+
+            if order.lower() == "asc":
+                stmt = stmt.order_by(sort_field.asc())
+            else:
+                stmt = stmt.order_by(sort_field.desc())
+
+            stmt = stmt.limit(limit).offset(offset)
             
             result = session.execute(stmt).unique().scalars().all()
             return [MainTaskEntity.from_orm(task) for task in result], total

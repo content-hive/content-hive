@@ -294,8 +294,8 @@ class TaskService:
             status: Optional task status filter (e.g., pending, running, completed)
             page: Page number (starting from 1)
             page_size: Number of items per page
-            sort_by: Field to sort by (currently fixed to created_at)
-            order: Sort order (currently fixed to desc)
+            sort_by: Field to sort by (id, created_at, updated_at)
+            order: Sort direction (asc, desc)
 
         Returns:
             PaginatedResponse containing list of MainTaskInfo and pagination info
@@ -308,7 +308,9 @@ class TaskService:
                     user_id=user_id,
                     status=status,
                     limit=page_size,
-                    offset=offset
+                    offset=offset,
+                    sort_by=sort_by,
+                    order=order
                 )
             
             items = [MainTaskInfo.from_entity(task) for task in tasks]
