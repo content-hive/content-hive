@@ -1,23 +1,23 @@
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, Query
 
-from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
-from contenthive.models.task import TaskCreateRequest
+from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail, OperationResult
+from contenthive.models.content import PaginatedResponse
+from contenthive.models.task import MainTaskInfo, TaskCreateRequest
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_active_user
 from contenthive.services.task import task_service
-from contenthive.models.enumerates import TaskRole, TaskStatus
+from contenthive.models.enumerates import OperationType, ResponseStatus, TaskStatus
 
 router_v1 = APIRouter(prefix="/v1/task", tags=["task"])
 
-@router_v1.post("/parser", response_model=APIResponse)
+@router_v1.post("/parser", response_model=APIResponse[MainTaskInfo])
 async def create_parser_task(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
-    request: TaskCreateRequest,
-    background_tasks: BackgroundTasks
-) -> APIResponse:
+    request: TaskCreateRequest
+) -> APIResponse[MainTaskInfo]:
     """
     Create a new parser task for parsing content from a URL.
     
@@ -30,8 +30,6 @@ async def create_parser_task(
     Args:
         current_user: The currently authenticated user
         request: Task creation request containing URL and optional plugin ID
-        background_tasks: FastAPI background tasks executor
-
     Returns:
         API response with created parser task details
     """
@@ -43,7 +41,7 @@ async def create_parser_task(
         )
         
         return APIResponse(
-            status="success",
+            status=ResponseStatus.SUCCESS,
             data=result
         )
     except Exception as e:
@@ -56,11 +54,81 @@ async def create_parser_task(
         )
     
 
-@router_v1.get("/parser/{task_id}", response_model=APIResponse)
+@router_v1.delete("/parser/{task_id}", response_model=APIResponse[OperationResult])
+async def cancel_parser_task(
+    task_id: str,
+    current_user: Annotated[UserModel, Depends(get_current_active_user)]
+) -> APIResponse[OperationResult]:
+    """
+    Cancel a parser task by task ID.
+
+    Only the task owner can cancel it. Tasks that are already completed, failed,
+    or canceled cannot be cancelled again.
+
+    Args:
+        task_id: Task ID string (e.g., task_abc123)
+        current_user: The currently authenticated user
+
+    Returns:
+        API response confirming cancellation
+    """
+    try:
+        task = task_service.get_main_task_by_task_id(task_id)
+
+        if not task:
+            raise DetailedHTTPException(
+                status_code=404,
+                detail=ErrorDetail(
+                    code="TASK_NOT_FOUND",
+                    message=f"Task {task_id} not found"
+                )
+            )
+
+        if task.user_id != current_user.id:
+            raise DetailedHTTPException(
+                status_code=403,
+                detail=ErrorDetail(
+                    code="ACCESS_DENIED",
+                    message="You don't have permission to cancel this task"
+                )
+            )
+
+        success = task_service.cancel_main_task(task.id)
+        if not success:
+            raise DetailedHTTPException(
+                status_code=409,
+                detail=ErrorDetail(
+                    code="TASK_CANCEL_FAILED",
+                    message=f"Task {task_id} cannot be cancelled in its current state"
+                )
+            )
+
+        return APIResponse(
+            status=ResponseStatus.SUCCESS,
+            data=OperationResult(
+                operation=OperationType.CANCEL,
+                id=task_id,
+                success=True,
+                message=f"Task {task_id} has been canceled"
+            )
+        )
+    except DetailedHTTPException:
+        raise
+    except Exception as e:
+        raise DetailedHTTPException(
+            status_code=500,
+            detail=ErrorDetail(
+                code="TASK_CANCEL_FAILED",
+                message=str(e)
+            )
+        )
+
+
+@router_v1.get("/parser/{task_id}", response_model=APIResponse[MainTaskInfo])
 async def get_parser_task(
     task_id: str,
     current_user: Annotated[UserModel, Depends(get_current_active_user)]
-) -> APIResponse:
+) -> APIResponse[MainTaskInfo]:
     """
     Get parser task details by task ID.
     
@@ -94,8 +162,8 @@ async def get_parser_task(
             )
         
         return APIResponse(
-            status="success",
-            data=task
+            status=ResponseStatus.SUCCESS,
+            data=MainTaskInfo.from_entity(task, include_sub_tasks=True)
         )
     except DetailedHTTPException:
         raise
@@ -109,7 +177,7 @@ async def get_parser_task(
         )
 
 
-@router_v1.get("/parser", response_model=APIResponse)
+@router_v1.get("/parser", response_model=APIResponse[PaginatedResponse[MainTaskInfo]])
 async def list_parser_tasks(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     status: Optional[TaskStatus] = None,
@@ -117,7 +185,7 @@ async def list_parser_tasks(
     page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),
     order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order")
-) -> APIResponse:
+) -> APIResponse[PaginatedResponse[MainTaskInfo]]:
     """
     List parser tasks for the current user with optional status filter and pagination.
     
@@ -143,7 +211,7 @@ async def list_parser_tasks(
         )
         
         return APIResponse(
-            status="success",
+            status=ResponseStatus.SUCCESS,
             data=result
         )
     except Exception as e:

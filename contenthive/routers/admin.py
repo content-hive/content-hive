@@ -2,18 +2,26 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, status
 
-from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
-from contenthive.models.user import CreateUserRequest, UserModel, UserStatusUpdateRequest
+from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail, OperationResult
+from contenthive.models.enumerates import OperationType, ResponseStatus
+from contenthive.models.user import (
+    CreateUserRequest,
+    ResetPasswordResponse,
+    UserCreateResponse,
+    UserModel,
+    UserProfileResponse,
+    UserStatusUpdateRequest,
+)
 from contenthive.routers.user import get_current_admin_user
 from contenthive.services.user import user_service
 
 router_v1 = APIRouter(prefix="/v1/admin", tags=["admin"])
 
-@router_v1.post("/users")
+@router_v1.post("/users", response_model=APIResponse[UserCreateResponse])
 async def create_user(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
     user_request: CreateUserRequest
-) -> APIResponse:
+) -> APIResponse[UserCreateResponse]:
     """
     Create a new user (Admin only)
     """
@@ -26,7 +34,7 @@ async def create_user(
             is_admin=user_request.is_admin
         )
         return APIResponse(
-            status="success",
+            status=ResponseStatus.SUCCESS,
             data=user
         )
     except Exception as e:
@@ -38,17 +46,17 @@ async def create_user(
             )
         )
     
-@router_v1.get("/users")
+@router_v1.get("/users", response_model=APIResponse[list[UserProfileResponse]])
 async def list_users(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)]
-) -> APIResponse:
+) -> APIResponse[list[UserProfileResponse]]:
     """
     List all users (Admin only)
     """
     try:
         users = user_service.list_users()
         return APIResponse(
-            status="success",
+            status=ResponseStatus.SUCCESS,
             data=users
         )
     except Exception as e:
@@ -60,11 +68,11 @@ async def list_users(
             )
         )
     
-@router_v1.post("/users/{user_id}/reset-password")
+@router_v1.post("/users/{user_id}/reset-password", response_model=APIResponse[ResetPasswordResponse])
 async def reset_user_password(
     user_id: int,
     current_user: Annotated[UserModel, Depends(get_current_admin_user)]
-) -> APIResponse:
+) -> APIResponse[ResetPasswordResponse]:
     """
     Reset a user's password (Admin only)
     """
@@ -79,8 +87,8 @@ async def reset_user_password(
     try:
         new_password = user_service.reset_user_password(user_id)
         return APIResponse(
-            status="success",
-            data={"new_password": new_password}
+            status=ResponseStatus.SUCCESS,
+            data=ResetPasswordResponse(new_password=new_password)
         )
     except Exception as e:
         raise DetailedHTTPException(
@@ -91,12 +99,12 @@ async def reset_user_password(
             )
         )
     
-@router_v1.patch("/users/{user_id}/status")
+@router_v1.patch("/users/{user_id}/status", response_model=APIResponse[OperationResult])
 async def change_user_status(
     user_id: int,
     user_status: UserStatusUpdateRequest,
     current_user: Annotated[UserModel, Depends(get_current_admin_user)]
-) -> APIResponse:
+) -> APIResponse[OperationResult]:
     """
     Change a user's active status (Admin only)
     """
@@ -111,8 +119,13 @@ async def change_user_status(
     try:
         result = user_service.change_user_status(user_id, user_status.status)
         return APIResponse(
-            status="success",
-            data={"status_changed": result}
+            status=ResponseStatus.SUCCESS,
+            data=OperationResult(
+                operation=OperationType.UPDATE,
+                id=str(user_id),
+                success=result,
+                message=f"User {user_id} status updated successfully"
+            )
         )
     except Exception as e:
         raise DetailedHTTPException(

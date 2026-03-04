@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from contenthive.database.user_dao import UserDAO
-from contenthive.models.api import APIResponse, ErrorDetail, DetailedHTTPException
-from contenthive.models.user import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, UserModel
+from contenthive.models.api import APIResponse, ErrorDetail, DetailedHTTPException, OperationResult
+from contenthive.models.enumerates import OperationType, ResponseStatus, UserStatus
+from contenthive.models.user import ChangePasswordRequest, LoginRequest, LoginResponse, RefreshTokenRequest, RefreshTokenResponse, UserModel, UserProfileResponse
 from contenthive.services.token import token_service
 from contenthive.services.user import user_service
 from contenthive.core.secret import secret_manager
@@ -43,7 +44,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         raise credentials_exception
     
 async def get_current_active_user(current_user: Annotated[UserModel, Depends(get_current_user)]):
-    if current_user.status != 1: # active
+    if current_user.status != UserStatus.ACTIVE:
         raise DetailedHTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ErrorDetail(
@@ -92,8 +93,8 @@ async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         )
 
 
-@router_v1.post("/login")
-async def login(request: Request, data: LoginRequest) -> APIResponse:
+@router_v1.post("/login", response_model=APIResponse[LoginResponse])
+async def login(request: Request, data: LoginRequest) -> APIResponse[LoginResponse]:
     """"""
     try:
         result = token_service.authenticate_user(
@@ -102,7 +103,7 @@ async def login(request: Request, data: LoginRequest) -> APIResponse:
             request=request
         )
         return APIResponse(
-            status="success",
+            status=ResponseStatus.SUCCESS,
             data=result
         )
     except Exception as e:
@@ -115,8 +116,8 @@ async def login(request: Request, data: LoginRequest) -> APIResponse:
         )
     
 
-@router_v1.post("/refresh-token")
-async def refresh_token(request: Request, data: RefreshTokenRequest) -> APIResponse:
+@router_v1.post("/refresh-token", response_model=APIResponse[RefreshTokenResponse])
+async def refresh_token(request: Request, data: RefreshTokenRequest) -> APIResponse[RefreshTokenResponse]:
     """"""
     try:
         result = token_service.refresh_access_token(
@@ -124,7 +125,7 @@ async def refresh_token(request: Request, data: RefreshTokenRequest) -> APIRespo
             request=request
         )
         return APIResponse(
-            status="success",
+            status=ResponseStatus.SUCCESS,
             data=result
         )
     except Exception as e:
@@ -136,13 +137,13 @@ async def refresh_token(request: Request, data: RefreshTokenRequest) -> APIRespo
             )
         )
 
-@router_v1.get("/profile")
-async def read_users_me(current_user: Annotated[UserModel, Depends(get_current_active_user)]) -> APIResponse:
+@router_v1.get("/profile", response_model=APIResponse[UserProfileResponse])
+async def read_users_me(current_user: Annotated[UserModel, Depends(get_current_active_user)]) -> APIResponse[UserProfileResponse]:
     """"""
     try:
         user_profile = user_service.get_user_profile(current_user.id)
         return APIResponse(
-            status="success",
+            status=ResponseStatus.SUCCESS,
             data=user_profile
         )
     except DetailedHTTPException as http_exc:
@@ -156,14 +157,19 @@ async def read_users_me(current_user: Annotated[UserModel, Depends(get_current_a
             )
         )
     
-@router_v1.post("/change-password")
-async def change_password(current_user: Annotated[UserModel, Depends(get_current_active_user)], data: ChangePasswordRequest) -> APIResponse:
+@router_v1.post("/change-password", response_model=APIResponse[OperationResult])
+async def change_password(current_user: Annotated[UserModel, Depends(get_current_active_user)], data: ChangePasswordRequest) -> APIResponse[OperationResult]:
     """"""
     try:
         user_service.change_user_password(current_user.id, data.new_password)
         return APIResponse(
-            status="success",
-            data={"message": "Password changed successfully"}
+            status=ResponseStatus.SUCCESS,
+            data=OperationResult(
+                operation=OperationType.UPDATE,
+                id=str(current_user.id),
+                success=True,
+                message="Password changed successfully"
+            )
         )
     except DetailedHTTPException as http_exc:
         raise http_exc

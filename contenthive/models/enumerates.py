@@ -1,6 +1,20 @@
 
 from enum import Enum
 
+class UserStatus(str, Enum):
+    INACTIVE = "inactive"
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+class ResponseStatus(str, Enum):
+    SUCCESS = "success"
+    ERROR = "error"
+
+class OperationType(str, Enum):
+    DELETE = "delete"
+    CANCEL = "cancel"
+    UPDATE = "update"
+
 class TaskType(str, Enum):
     PARSE_CONTENT = "parse_content"
     MEDIA_DOWNLOAD = "media_download"
