@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Content Hive is a content parsing service built on **FastAPI + Python 3.12**, using SQLite as the database, Playwright for browser automation, and a extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
+Content Hive is a content parsing service built on **FastAPI + Python 3.12**, using SQLite as the database, Playwright for browser automation, and an extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
 
 ---
 
@@ -39,9 +39,11 @@ Router → Service → DAO (Data Access Object) → ORM Model
 - All API request/response models must inherit from `APIBaseModel` (in `contenthive/models/api.py`)
 - All endpoints must return the unified `APIResponse` model:
   ```python
-  class APIResponse(APIBaseModel):
-      status: Literal["success", "error"]
-      data: Optional[Any]
+  T = TypeVar("T")
+
+  class APIResponse(APIBaseModel, Generic[T]):
+      status: ResponseStatus
+      data: Optional[T]
       error: Optional[ErrorDetail]
       timestamp: datetime
   ```

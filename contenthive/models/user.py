@@ -158,7 +158,7 @@ class ChangePasswordRequest(APIBaseModel):
         return v
 
 class UserStatusUpdateRequest(APIBaseModel):
-    status: UserStatus  # INACTIVE=0, ACTIVE=1, DISABLED=2
+    status: UserStatus
 
 class ResetPasswordResponse(APIBaseModel):
     """Response model for password reset operation"""
