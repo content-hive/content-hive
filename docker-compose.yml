@@ -8,10 +8,7 @@ services:
     ports:
       - "6123:6123"
     volumes:
-      - ./data:/config/data
-      - ./logs:/config/logs
-      - ./plugins:/config/plugins
-      - ./ms-playwright:/config/ms-playwright
+      - ./runtime-data:/config
     environment:
       - TZ=Asia/Shanghai
       - ENVIRONMENT=${ENVIRONMENT}

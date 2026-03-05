@@ -2,10 +2,12 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, Any, Literal
+from typing import Optional, Any, Generic, TypeVar
+from contenthive.models.enumerates import OperationType, ResponseStatus
+
+T = TypeVar("T")
 
 # ERROR CODE CONSTANTS
-
 
 
 class APIBaseModel(BaseModel):
@@ -15,6 +17,15 @@ class APIBaseModel(BaseModel):
         }
     )
 
+
+class OperationResult(APIBaseModel):
+    """Unified response model for write operations (delete, cancel, etc.)"""
+
+    operation: OperationType = Field(..., description="Type of operation performed")
+    id: str = Field(..., description="ID of the affected resource")
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Human-readable result message")
+
 class ErrorDetail(APIBaseModel):
     """Error detail model"""
     
@@ -23,11 +34,11 @@ class ErrorDetail(APIBaseModel):
     details: Optional[dict[str, Any]] = Field(default=None, description="Detailed error information")
 
 
-class APIResponse(APIBaseModel):
+class APIResponse(APIBaseModel, Generic[T]):
     """API response model"""
     
-    status: Literal["success", "error"] = Field(..., description="Response status")
-    data: Optional[Any] = Field(default=None, description="Response data")
+    status: ResponseStatus = Field(..., description="Response status")
+    data: Optional[T] = Field(default=None, description="Response data")
     error: Optional[ErrorDetail] = Field(default=None, description="Error information")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Response timestamp")
 
@@ -36,7 +47,7 @@ class DetailedHTTPException(HTTPException):
     
     def __init__(self, status_code: int, detail: ErrorDetail, headers: Optional[dict[str, str]] = None):
         response = APIResponse(
-            status="error",
+            status=ResponseStatus.ERROR,
             error=detail
         )
         super().__init__(
@@ -55,7 +66,7 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=APIResponse(
-                status="error",
+                status=ResponseStatus.ERROR,
                 error=ErrorDetail(
                     code="INTERNAL_SERVER_ERROR",
                     message="An unexpected error occurred",

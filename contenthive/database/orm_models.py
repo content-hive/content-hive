@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import JSON, Enum as SQLEnum, Integer, String, Boolean, DateTime, ForeignKey, TypeDecorator, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship, Mapped, mapped_column
 
-from contenthive.models.enumerates import MediaStatus, MediaType, TaskRole, TaskStatus, TaskType
+from contenthive.models.enumerates import MediaStatus, MediaType, TaskRole, TaskStatus, TaskType, UserStatus
 
 Base = declarative_base()
 
@@ -38,7 +38,7 @@ class User(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     email: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[UserStatus] = mapped_column(SQLEnum(UserStatus), default=UserStatus.INACTIVE)
     force_password_change: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     token_version: Mapped[int] = mapped_column(Integer, default=0)

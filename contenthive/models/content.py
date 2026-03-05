@@ -279,6 +279,7 @@ class AuthorInfo(APIBaseModel):
             platform=PlatformInfo.from_entity(entity.platform)
         )
 
+
 class URLParserResult(APIBaseModel):
     """API response model for stored content (with downloaded media)"""
     id: int = Field(..., description="Parser result ID")

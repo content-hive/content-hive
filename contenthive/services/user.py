@@ -4,6 +4,7 @@ import os
 
 from contenthive.database.user_dao import UserDAO
 from contenthive.core.secret import secret_manager
+from contenthive.models.enumerates import UserStatus
 from contenthive.models.user import UserCreateResponse, UserProfileResponse
 
 class UserService:
@@ -121,7 +122,7 @@ class UserService:
             users = dao.list_all_users()
             return [UserProfileResponse.from_entities(user, profile) for user, profile in users]
 
-    def change_user_status(self, user_id: int, status: int) -> bool:
+    def change_user_status(self, user_id: int, status: UserStatus) -> bool:
         """Change the active status of a user"""
         with UserDAO() as dao:
             user = dao.get_user_by_id(user_id)

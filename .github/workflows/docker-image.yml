@@ -46,6 +46,14 @@ jobs:
           echo "TAGS<<EOF"
           echo "${GHCR}:${VERSION}"
           echo "${DH}:${VERSION}"
+          if [[ "$VERSION" == *"beta"* ]]; then
+            echo "${GHCR}:beta"
+            echo "${DH}:beta"
+          fi
+          if [[ "$VERSION" == *"dev"* ]]; then
+            echo "${GHCR}:dev"
+            echo "${DH}:dev"
+          fi
           if [[ "$VERSION" != *"dev"* && "$VERSION" != *"beta"* ]]; then
             echo "${GHCR}:latest"
             echo "${DH}:latest"

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from contenthive.database.database import get_engine, get_session_local
 from contenthive.database.orm_models import User, Profile, Session as SessionModel
+from contenthive.models.enumerates import UserStatus
 from contenthive.models.user import ProfileEntity, SessionEntity, UserEntity
 
 
@@ -68,7 +69,7 @@ class UserDAO:
                 username=username,
                 email=email,
                 password_hash=password_hash,
-                status=1,
+                status=UserStatus.ACTIVE,
                 is_admin=is_admin,
                 created_by=created_by
             )
@@ -309,7 +310,7 @@ class UserDAO:
         except Exception:
             raise ValueError("Database error occurred")
         
-    def update_user_status(self, user_id: int, status: int) -> bool:
+    def update_user_status(self, user_id: int, status: UserStatus) -> bool:
         """Update the active status of a user"""
         session = self._get_session()
         try:

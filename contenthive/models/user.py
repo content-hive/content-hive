@@ -1,12 +1,13 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import field_validator
 
 from contenthive.core.secret import secret_manager
 from contenthive.models.api import APIBaseModel
+from contenthive.models.enumerates import UserStatus
 
 # Database Models
 
@@ -16,7 +17,7 @@ class UserEntity:
     username: str
     password_hash: str
     email: Optional[str] = field(default=None)
-    status: int = field(default=0)
+    status: UserStatus = field(default=UserStatus.INACTIVE)
     force_password_change: bool = field(default=False)
     is_admin: bool = field(default=False)
     token_version: int = field(default=0)
@@ -103,7 +104,7 @@ class UserModel(APIBaseModel):
     username: str
     email: Optional[str] = None
     is_admin: bool
-    status: int
+    status: UserStatus
     force_password_change: bool
     last_login_at: Optional[datetime] = None
     created_by: int
@@ -157,14 +158,18 @@ class ChangePasswordRequest(APIBaseModel):
         return v
 
 class UserStatusUpdateRequest(APIBaseModel):
-    status: Literal[0, 1, 2]  # 0 = inactive, 1 = active, 2 = disabled
+    status: UserStatus
+
+class ResetPasswordResponse(APIBaseModel):
+    """Response model for password reset operation"""
+    new_password: str
 
 class UserProfileResponse(APIBaseModel):
     user_id: int
     username: str
     email: Optional[str] = None
     is_admin: bool
-    status: int
+    status: UserStatus
     last_login_at: Optional[datetime] = None
     full_name: Optional[str] = None
     bio: Optional[str] = None

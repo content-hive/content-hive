@@ -36,15 +36,16 @@ htmlcov/
 .coverage
 .tox/
 
-# Local
-data/
-logs/
-plugins/
-
 # Docker
 Dockerfile
 docker-compose*.yml
 .dockerignore
+
+# Runtime data (mounted as volumes, not needed in build context)
+runtime-data/
+
+# Docs
+docs/
 
 # System
 .DS_Store
