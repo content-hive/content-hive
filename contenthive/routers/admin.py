@@ -118,6 +118,14 @@ async def change_user_status(
         )
     try:
         result = user_service.change_user_status(user_id, user_status.status)
+        if not result:
+            raise DetailedHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorDetail(
+                    code="USER_NOT_FOUND",
+                    message=f"User {user_id} not found"
+                )
+            )
         return APIResponse(
             status=ResponseStatus.SUCCESS,
             data=OperationResult(
@@ -127,6 +135,8 @@ async def change_user_status(
                 message=f"User {user_id} status updated successfully"
             )
         )
+    except DetailedHTTPException:
+        raise
     except Exception as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, Query
-from contenthive.models.api import APIResponse, ErrorDetail, OperationResult
+from fastapi import APIRouter, Depends, Query, status
+from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail, OperationResult
 from contenthive.models.enumerates import OperationType, ResponseStatus
 from contenthive.models.content import (
     AuthorInfo,
@@ -123,6 +123,14 @@ async def delete_platform(
 ) -> APIResponse[OperationResult]:
     try:
         success = await content_service.delete_platform(current_user.id, platform_id)
+        if not success:
+            raise DetailedHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorDetail(
+                    code="PLATFORM_NOT_FOUND",
+                    message=f"Platform {platform_id} not found"
+                )
+            )
         return APIResponse(
             status=ResponseStatus.SUCCESS,
             data=OperationResult(
@@ -132,6 +140,8 @@ async def delete_platform(
                 message=f"Platform {platform_id} deleted successfully"
             )
         )
+    except DetailedHTTPException:
+        raise
     except Exception as e:
         return APIResponse(
             status=ResponseStatus.ERROR,
@@ -150,6 +160,14 @@ async def delete_author(
 ) -> APIResponse[OperationResult]:
     try:
         success = await content_service.delete_author(current_user.id, author_id)
+        if not success:
+            raise DetailedHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorDetail(
+                    code="AUTHOR_NOT_FOUND",
+                    message=f"Author {author_id} not found"
+                )
+            )
         return APIResponse(
             status=ResponseStatus.SUCCESS,
             data=OperationResult(
@@ -159,6 +177,8 @@ async def delete_author(
                 message=f"Author {author_id} deleted successfully"
             )
         )
+    except DetailedHTTPException:
+        raise
     except Exception as e:
         return APIResponse(
             status=ResponseStatus.ERROR,
@@ -177,6 +197,14 @@ async def delete_content(
 ) -> APIResponse[OperationResult]:
     try:
         success = await content_service.delete_parse_result(current_user.id, parse_result_id)
+        if not success:
+            raise DetailedHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorDetail(
+                    code="CONTENT_NOT_FOUND",
+                    message=f"Content {parse_result_id} not found"
+                )
+            )
         return APIResponse(
             status=ResponseStatus.SUCCESS,
             data=OperationResult(
@@ -186,6 +214,8 @@ async def delete_content(
                 message=f"Content {parse_result_id} deleted successfully"
             )
         )
+    except DetailedHTTPException:
+        raise
     except Exception as e:
         return APIResponse(
             status=ResponseStatus.ERROR,
