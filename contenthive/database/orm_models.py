@@ -162,7 +162,7 @@ class ParseResult(Base, TimestampMixin):
     )
     
     # Relationships
-    media_list: Mapped[list["ParseResultMedia"]] = relationship("ParseResultMedia", back_populates="parse_result", cascade="all, delete-orphan")
+    media_list: Mapped[list["ParseResultMedia"]] = relationship("ParseResultMedia", back_populates="parse_result", cascade="all, delete-orphan", order_by="ParseResultMedia.order")
     platform: Mapped["Platform"] = relationship("Platform", back_populates="parse_results")
     author: Mapped["Author"] = relationship("Author", back_populates="parse_results")
     users: Mapped[list["User"]] = relationship("User", secondary="user_parse_results", back_populates="parse_results")
@@ -173,6 +173,7 @@ class ParseResultMedia(Base):
     
     parse_result_id: Mapped[int] = mapped_column(Integer, ForeignKey("parse_results.id", ondelete="CASCADE"), primary_key=True)
     media_id: Mapped[int] = mapped_column(Integer, ForeignKey("media.id", ondelete="CASCADE"), primary_key=True)
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     
     # Relationships
     parse_result: Mapped["ParseResult"] = relationship("ParseResult", back_populates="media_list")
