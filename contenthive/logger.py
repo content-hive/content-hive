@@ -6,6 +6,11 @@ from contenthive.config import settings
 _logger = None
 _file_handler_added = False
 
+
+def _has_handler(logger: logging.Logger, handler_type: type[logging.Handler]) -> bool:
+    """Check whether a logger already has a handler of a given type."""
+    return any(isinstance(h, handler_type) for h in logger.handlers)
+
 def setup_logging():
     """
     Setup logging for the application (console only at module load time).
@@ -21,12 +26,14 @@ def setup_logging():
 
     app_logger = logging.getLogger("contenthive")
     app_logger.setLevel(logging.DEBUG)
+    app_logger.propagate = False
 
     # Console handler — always safe to create at import time
-    app_console_handler = logging.StreamHandler()
-    app_console_handler.setLevel(logging.INFO)
-    app_console_handler.setFormatter(formatting)
-    app_logger.addHandler(app_console_handler)
+    if not _has_handler(app_logger, logging.StreamHandler):
+        app_console_handler = logging.StreamHandler()
+        app_console_handler.setLevel(logging.INFO)
+        app_console_handler.setFormatter(formatting)
+        app_logger.addHandler(app_console_handler)
 
     _logger = app_logger
     return app_logger
@@ -57,10 +64,11 @@ def setup_file_logging():
     app_logger = logging.getLogger("contenthive")
     app_logger.addHandler(rotating_file_handler)
 
-    # Add file handler to uvicorn logger
-    uvicorn_logger = logging.getLogger("uvicorn")
-    uvicorn_logger.setLevel(logging.INFO)
-    uvicorn_logger.addHandler(rotating_file_handler)
+    # Capture key framework loggers into the same file.
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "alembic", ""):
+        target_logger = logging.getLogger(logger_name)
+        target_logger.setLevel(logging.INFO)
+        target_logger.addHandler(rotating_file_handler)
 
     _file_handler_added = True
     app_logger.info("File logging initialized.")
