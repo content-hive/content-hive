@@ -1,4 +1,7 @@
 """Database configuration and initialization"""
+import sys
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from alembic.config import Config
@@ -34,11 +37,14 @@ def get_session_local():
     return _SessionLocal
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _run_migrations() -> None:
     """Run Alembic migrations to bring database schema up to date."""
     logger.info("Running Alembic migrations...")
-    alembic_cfg = Config(settings.app_base / "alembic.ini")
-    alembic_cfg.set_main_option("script_location", str(settings.app_base / "alembic"))
+    alembic_cfg = Config(str(_REPO_ROOT / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
     command.upgrade(alembic_cfg, "head")
     logger.info("Alembic migrations completed")
 
@@ -88,8 +94,17 @@ def _write_admin_credentials(username: str, password: str) -> None:
         logger.warning("Please retrieve admin credentials and delete the credentials file")
         
     except Exception as e:
-        # If file write fails, we have no choice but to print to stderr
-        # This is a fallback and should be rare
         logger.exception("Could not write admin credentials file: %s", e)
-        logger.error("Admin credentials fallback - Username: %s", username)
-        logger.error("Please change the password immediately after first login")
+        # Print directly to stderr (bypasses rotating log files) so the
+        # password is not silently lost if the data directory is unavailable.
+        print(
+            "\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+            "  ADMIN CREDENTIALS (credentials file could not be written)\n"
+            "  Username : " + username + "\n"
+            "  Password : " + password + "\n"
+            "  Change this password immediately after first login.\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",
+            file=sys.stderr,
+            flush=True,
+        )

@@ -60,15 +60,16 @@ def setup_file_logging():
     rotating_file_handler.setLevel(logging.DEBUG)
     rotating_file_handler.setFormatter(formatting)
 
-    # Add file handler to app logger
+    # Add file handler to the app logger directly.
+    # contenthive has propagate=False so its records never reach the root logger.
     app_logger = logging.getLogger("contenthive")
     app_logger.addHandler(rotating_file_handler)
 
-    # Capture key framework loggers into the same file.
-    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "alembic", ""):
-        target_logger = logging.getLogger(logger_name)
-        target_logger.setLevel(logging.INFO)
-        target_logger.addHandler(rotating_file_handler)
+    # Attach once to the root logger so all framework loggers (uvicorn, alembic,
+    # etc.) are captured through normal propagation — no duplicates.
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(rotating_file_handler)
 
     _file_handler_added = True
     app_logger.info("File logging initialized.")
