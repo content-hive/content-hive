@@ -6,6 +6,11 @@ from contenthive.config import settings
 _logger = None
 _file_handler_added = False
 
+
+def _has_handler(logger: logging.Logger, handler_type: type[logging.Handler]) -> bool:
+    """Check whether a logger already has a handler of a given type."""
+    return any(isinstance(h, handler_type) for h in logger.handlers)
+
 def setup_logging():
     """
     Setup logging for the application (console only at module load time).
@@ -21,12 +26,14 @@ def setup_logging():
 
     app_logger = logging.getLogger("contenthive")
     app_logger.setLevel(logging.DEBUG)
+    app_logger.propagate = False
 
     # Console handler — always safe to create at import time
-    app_console_handler = logging.StreamHandler()
-    app_console_handler.setLevel(logging.INFO)
-    app_console_handler.setFormatter(formatting)
-    app_logger.addHandler(app_console_handler)
+    if not _has_handler(app_logger, logging.StreamHandler):
+        app_console_handler = logging.StreamHandler()
+        app_console_handler.setLevel(logging.INFO)
+        app_console_handler.setFormatter(formatting)
+        app_logger.addHandler(app_console_handler)
 
     _logger = app_logger
     return app_logger
@@ -53,14 +60,16 @@ def setup_file_logging():
     rotating_file_handler.setLevel(logging.DEBUG)
     rotating_file_handler.setFormatter(formatting)
 
-    # Add file handler to app logger
+    # Add file handler to the app logger directly.
+    # contenthive has propagate=False so its records never reach the root logger.
     app_logger = logging.getLogger("contenthive")
     app_logger.addHandler(rotating_file_handler)
 
-    # Add file handler to uvicorn logger
-    uvicorn_logger = logging.getLogger("uvicorn")
-    uvicorn_logger.setLevel(logging.INFO)
-    uvicorn_logger.addHandler(rotating_file_handler)
+    # Attach once to the root logger so all framework loggers (uvicorn, alembic,
+    # etc.) are captured through normal propagation — no duplicates.
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(rotating_file_handler)
 
     _file_handler_added = True
     app_logger.info("File logging initialized.")

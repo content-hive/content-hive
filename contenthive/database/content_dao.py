@@ -416,10 +416,11 @@ class ContentDAO:
         session = self._get_session()
         # Save media
         media_ids = self.save_medias(media, commit=False)
-        for media_id in media_ids:
+        for order, media_id in enumerate(media_ids):
             assoc = ParseResultMedia(
                 parse_result_id=parse_result_id,
-                media_id=media_id
+                media_id=media_id,
+                order=order
             )
             session.add(assoc)
         session.flush()

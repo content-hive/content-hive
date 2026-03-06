@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
@@ -13,17 +14,20 @@ from contenthive.services.task_queue import task_queue
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Startup step 1/8: ensuring directories")
     # 1. Ensure necessary directories exist FIRST
     ensure_directories()
 
+    logger.info("Startup step 2/8: enabling file logging")
     # 2. Now that directories exist, setup file logging
     setup_file_logging()
     
+    logger.info("Startup step 3/8: initializing restart manager")
     # 3. Initialize restart manager
     restart_manager = RestartManager(settings.data_dir)
     set_restart_manager(restart_manager)
     
-    # 4. Check restart flag (safe mode, etc.)
+    # Check restart flag (safe mode, etc.)
     restart_type = restart_manager.check_restart_flag()
     if restart_type == RestartType.SAFE_MODE:
         logger.warning("Starting in SAFE MODE - plugins disabled")
@@ -31,22 +35,33 @@ async def lifespan(app: FastAPI):
     else:
         skip_plugins = False
 
-    # 5. Initialize the database
+    logger.info("Startup step 4/8: initializing database")
+    # 4. Initialize database synchronously during startup.
+    # This avoids thread-related issues while Alembic configures logging.
     initialize_db()
 
-    # 6. Mount static files AFTER directories are created
+    logger.info("Startup step 5/8: mounting media static files")
+    # 5. Mount static files AFTER directories are created
     app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
-    # 7. Load plugins (unless in safe mode)
+    logger.info("Startup step 6/8: loading plugins")
+    # 6. Load plugins (unless in safe mode)
     if not skip_plugins:
-        await load_plugins_on_startup(app, settings.data_dir)
+        try:
+            await load_plugins_on_startup(app, settings.data_dir)
+        except asyncio.TimeoutError:
+            logger.exception("Plugin loading timed out; continuing without plugins")
+        except Exception:
+            logger.exception("Plugin loading failed; continuing without plugins")
     else:
         logger.warning("Plugins loading skipped (safe mode)")
 
 
-    # 8. Start task queue worker
+    logger.info("Startup step 7/8: starting task queue worker")
+    # 7. Start task queue worker
     await task_queue.start()
 
+    logger.info("Startup step 8/8: startup completed")
     logger.info("Application started successfully.")
     
     yield

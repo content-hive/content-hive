@@ -1,9 +1,15 @@
 """Database configuration and initialization"""
+import sys
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+from alembic.config import Config
+from alembic import command
 
 from contenthive.config import settings
 from contenthive.database.orm_models import Base
+from contenthive.logger import logger
 
 # SQLAlchemy engine and session factory
 _engine = None
@@ -31,21 +37,34 @@ def get_session_local():
     return _SessionLocal
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _run_migrations() -> None:
+    """Run Alembic migrations to bring database schema up to date."""
+    logger.info("Running Alembic migrations...")
+    alembic_cfg = Config(str(_REPO_ROOT / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
+    command.upgrade(alembic_cfg, "head")
+    logger.info("Alembic migrations completed")
+
+
 def initialize_db():
-    """Initialize database and create all tables"""
-    engine = get_engine()
-    
-    # Create all tables based on ORM models
-    Base.metadata.create_all(engine)
+    """Initialize database and run all pending Alembic migrations."""
+    logger.info("Database initialization started")
+    _run_migrations()
 
     # Create admin user if not exists
     from contenthive.services.user import user_service
     try:
+        logger.info("Checking initial admin user")
         result = user_service.create_admin_user()
         if result:
             _write_admin_credentials(result[0], result[1])
     except ValueError:
-        pass  # Admin user already exists
+        logger.info("Initial admin user already exists")
+
+    logger.info("Database initialization finished")
 
 
 def _write_admin_credentials(username: str, password: str) -> None:
@@ -69,18 +88,23 @@ def _write_admin_credentials(username: str, password: str) -> None:
         # Set restrictive permissions (owner read/write only)
         credentials_file.chmod(0o600)
         
-        # Print location only, not the password itself
-        print(f"\n{'='*60}")
-        print(f"Admin user created successfully!")
-        print(f"Credentials saved to: {credentials_file}")
-        print(f"File permissions: -rw------- (owner read/write only)")
-        print(f"Please retrieve the password from this file and delete it.")
-        print(f"{'='*60}\n")
+        logger.info("Admin user created successfully")
+        logger.info("Credentials saved to: %s", credentials_file)
+        logger.info("Credentials file permissions set to -rw-------")
+        logger.warning("Please retrieve admin credentials and delete the credentials file")
         
     except Exception as e:
-        # If file write fails, we have no choice but to print to stderr
-        # This is a fallback and should be rare
-        import sys
-        print(f"WARNING: Could not write credentials file: {e}", file=sys.stderr)
-        print(f"Admin credentials - Username: {username}, Password: {password}", file=sys.stderr)
-        print(f"Please change the password immediately after first login.", file=sys.stderr)
+        logger.exception("Could not write admin credentials file: %s", e)
+        # Print directly to stderr (bypasses rotating log files) so the
+        # password is not silently lost if the data directory is unavailable.
+        print(
+            "\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+            "  ADMIN CREDENTIALS (credentials file could not be written)\n"
+            "  Username : " + username + "\n"
+            "  Password : " + password + "\n"
+            "  Change this password immediately after first login.\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",
+            file=sys.stderr,
+            flush=True,
+        )

@@ -34,14 +34,14 @@ class TimestampMixin:
 class User(Base, TimestampMixin):
     __tablename__ = "users"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     email: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[UserStatus] = mapped_column(SQLEnum(UserStatus), default=UserStatus.INACTIVE)
-    force_password_change: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
-    token_version: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[UserStatus] = mapped_column(SQLEnum(UserStatus), default=UserStatus.INACTIVE, nullable=False)
+    force_password_change: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(AwareDatetime, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     
@@ -56,7 +56,7 @@ class User(Base, TimestampMixin):
 class Profile(Base, TimestampMixin):
     __tablename__ = "profiles"
     
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     bio: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -68,15 +68,15 @@ class Profile(Base, TimestampMixin):
 class Session(Base, TimestampMixin):
     __tablename__ = "sessions"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     device_id: Mapped[str] = mapped_column(String, nullable=False)
-    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     token_jti: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(AwareDatetime, nullable=False)
     ip_address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    last_accessed_at: Mapped[datetime] = mapped_column(AwareDatetime, default=lambda: datetime.now(timezone.utc))
+    last_accessed_at: Mapped[datetime] = mapped_column(AwareDatetime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Unique constraint
     __table_args__ = (
@@ -90,7 +90,7 @@ class Session(Base, TimestampMixin):
 class Platform(Base, TimestampMixin):
     __tablename__ = "platforms"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     code: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[str] = mapped_column(String, nullable=False)
@@ -105,7 +105,7 @@ class Platform(Base, TimestampMixin):
 class Author(Base, TimestampMixin):
     __tablename__ = "authors"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     platform_id: Mapped[int] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=False)
     uid: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -127,7 +127,7 @@ class Author(Base, TimestampMixin):
 class Media(Base, TimestampMixin):
     __tablename__ = "media"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     url: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     type: Mapped[Optional[MediaType]] = mapped_column(SQLEnum(MediaType), nullable=True)
     title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -146,7 +146,7 @@ class Media(Base, TimestampMixin):
 class ParseResult(Base, TimestampMixin):
     __tablename__ = "parse_results"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     pid: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[str] = mapped_column(String, nullable=False)
@@ -162,7 +162,7 @@ class ParseResult(Base, TimestampMixin):
     )
     
     # Relationships
-    media_list: Mapped[list["ParseResultMedia"]] = relationship("ParseResultMedia", back_populates="parse_result", cascade="all, delete-orphan")
+    media_list: Mapped[list["ParseResultMedia"]] = relationship("ParseResultMedia", back_populates="parse_result", cascade="all, delete-orphan", order_by="ParseResultMedia.order")
     platform: Mapped["Platform"] = relationship("Platform", back_populates="parse_results")
     author: Mapped["Author"] = relationship("Author", back_populates="parse_results")
     users: Mapped[list["User"]] = relationship("User", secondary="user_parse_results", back_populates="parse_results")
@@ -171,8 +171,9 @@ class ParseResult(Base, TimestampMixin):
 class ParseResultMedia(Base):
     __tablename__ = "parse_result_media"
     
-    parse_result_id: Mapped[int] = mapped_column(Integer, ForeignKey("parse_results.id", ondelete="CASCADE"), primary_key=True)
-    media_id: Mapped[int] = mapped_column(Integer, ForeignKey("media.id", ondelete="CASCADE"), primary_key=True)
+    parse_result_id: Mapped[int] = mapped_column(Integer, ForeignKey("parse_results.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    media_id: Mapped[int] = mapped_column(Integer, ForeignKey("media.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     
     # Relationships
     parse_result: Mapped["ParseResult"] = relationship("ParseResult", back_populates="media_list")
@@ -182,22 +183,22 @@ class ParseResultMedia(Base):
 class UserPlatform(Base, TimestampMixin):
     __tablename__ = "user_platforms"
     
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    platform_id: Mapped[int] = mapped_column(Integer, ForeignKey("platforms.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    platform_id: Mapped[int] = mapped_column(Integer, ForeignKey("platforms.id", ondelete="CASCADE"), primary_key=True, nullable=False)
 
 
 class UserAuthor(Base, TimestampMixin):
     __tablename__ = "user_authors"
     
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("authors.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("authors.id", ondelete="CASCADE"), primary_key=True, nullable=False)
 
 
 class UserParseResult(Base, TimestampMixin):
     __tablename__ = "user_parse_results"
     
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    parse_result_id: Mapped[int] = mapped_column(Integer, ForeignKey("parse_results.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    parse_result_id: Mapped[int] = mapped_column(Integer, ForeignKey("parse_results.id", ondelete="CASCADE"), primary_key=True, nullable=False)
 
     # Extension fields can be added here if needed, such as flags or notes related to the user's interaction with the parse result.
 
@@ -205,7 +206,7 @@ class UserParseResult(Base, TimestampMixin):
 class MainTask(Base, TimestampMixin):
     __tablename__ = "main_tasks"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     task_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
