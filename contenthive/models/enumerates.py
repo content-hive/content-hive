@@ -42,3 +42,8 @@ class MediaStatus(str, Enum):
 class MediaType(str, Enum):
     IMAGE = "image"
     VIDEO = "video"
+    LIVEPHOTO = "livephoto"
+
+class ParserResultStatus(str, Enum):
+    SUCCESS = "success"
+    ERROR = "error"

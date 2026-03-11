@@ -3,9 +3,9 @@ Models for parser operations.
 """
 
 from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional, Literal
+from typing import Optional
 
-from contenthive.models.enumerates import MediaType
+from contenthive.models.enumerates import MediaType, ParserResultStatus
 
 
 class ParserMediaInfo(BaseModel):
@@ -37,10 +37,11 @@ class ParserResult(BaseModel):
     """Raw parser result (before saving to database)"""
     pid: str = Field(..., description="Content ID")
     url: HttpUrl = Field(..., description="The URL that was parsed")
-    content: str = Field(..., description="Content text")
+    title: Optional[str] = Field(None, description="Content title")
+    content: Optional[str] = Field(None, description="Content text")
     media: list[ParserMediaInfo] = Field(default_factory=list, description="List of media items")
     author: ParserAuthorInfo = Field(..., description="Author information")
     platform: ParserPlatformInfo = Field(..., description="Platform information")
     post_time: Optional[int] = Field(None, description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
-    state: Literal["success", "error"] = Field(..., description="Parsing state")
+    state: ParserResultStatus = Field(..., description="Parsing state")
