@@ -83,7 +83,7 @@ class MediaService:
             media_dir.mkdir(parents=True, exist_ok=True)
 
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": settings.download_user_agent
             }
             async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
                 local_path = await self._download_single_media(
