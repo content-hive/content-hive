@@ -82,7 +82,10 @@ class MediaService:
             media_dir = self.media_dir / platform / author / content_id
             media_dir.mkdir(parents=True, exist_ok=True)
 
-            async with aiohttp.ClientSession(trust_env=True) as session:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
                 local_path = await self._download_single_media(
                     session,
                     str(media_url),
