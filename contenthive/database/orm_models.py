@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import JSON, Enum as SQLEnum, Integer, String, Boolean, DateTime, ForeignKey, TypeDecorator, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship, Mapped, mapped_column
 
-from contenthive.models.enumerates import MediaStatus, MediaType, TaskRole, TaskStatus, TaskType, UserStatus
+from contenthive.models.enumerates import MediaStatus, MediaType, ParserResultStatus, TaskRole, TaskStatus, TaskType, UserStatus
 
 Base = declarative_base()
 
@@ -149,12 +149,13 @@ class ParseResult(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     pid: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[str] = mapped_column(String, nullable=False)
-    content: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     author_id: Mapped[int] = mapped_column(Integer, ForeignKey("authors.id"), nullable=False)
     platform_id: Mapped[int] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=False)
     post_time: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     parser: Mapped[str] = mapped_column(String, nullable=False)
-    state: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[ParserResultStatus] = mapped_column(SQLEnum(ParserResultStatus), nullable=False)
     
     # Unique constraint
     __table_args__ = (

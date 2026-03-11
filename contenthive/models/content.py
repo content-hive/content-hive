@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from contenthive.database.orm_models import Author, Media, ParseResult, Platform
 from contenthive.models.api import APIBaseModel
-from contenthive.models.enumerates import MediaStatus, MediaType
+from contenthive.models.enumerates import MediaStatus, MediaType, ParserResultStatus
 
 T = TypeVar('T')
 
@@ -120,12 +120,13 @@ class ParseResultEntity:
     id: Optional[int] = None
     pid: str = ""
     url: str = ""
-    content: str = ""
+    title: Optional[str] = None
+    content: Optional[str] = None
     author_id: int = 0
     platform_id: int = 0
     post_time: Optional[int] = None
     parser: str = ""
-    state: str = ""
+    state: ParserResultStatus = ParserResultStatus.SUCCESS
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
@@ -149,6 +150,7 @@ class ParseResultEntity:
             id=orm.id,
             pid=orm.pid,
             url=orm.url,
+            title=orm.title,
             content=orm.content,
             author_id=orm.author_id,
             platform_id=orm.platform_id,
@@ -285,7 +287,8 @@ class URLParserResult(APIBaseModel):
     id: int = Field(..., description="Parser result ID")
     pid: str = Field(..., description="Content ID")
     url: HttpUrl = Field(..., description="The URL that was fetched")
-    content: str = Field(..., description="Content text")
+    title: Optional[str] = Field(None, description="Content title")
+    content: Optional[str] = Field(None, description="Content text")
     media: list[MediaInfo] = Field(default_factory=list, description="List of stored media items")
     author: AuthorInfo = Field(..., description="Author information")
     platform: PlatformInfo = Field(..., description="Platform information")
@@ -303,6 +306,7 @@ class URLParserResult(APIBaseModel):
             id=entity.id if entity.id else 0,
             pid=entity.pid,
             url=entity.url,  # type: ignore
+            title=entity.title,
             content=entity.content,
             media=[MediaInfo.from_entity(media) for media in entity.media],
             author=AuthorInfo.from_entity(entity.author),
