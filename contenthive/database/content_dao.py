@@ -343,6 +343,7 @@ class ContentDAO:
                 parse_result_id = existing_result.id
                 # Update existing parse result
                 existing_result.url = str(result.url)
+                existing_result.title = result.title
                 existing_result.content = result.content
                 existing_result.post_time = result.post_time
                 existing_result.parser = result.parser
@@ -363,6 +364,7 @@ class ContentDAO:
                 new_result = ParseResult(
                     pid=result.pid,
                     url=str(result.url),
+                    title=result.title,
                     content=result.content,
                     author_id=author_id,
                     platform_id=platform_id,

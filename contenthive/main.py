@@ -1,4 +1,5 @@
 import asyncio
+import mimetypes
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
@@ -42,6 +43,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("Startup step 5/8: mounting media static files")
     # 5. Mount static files AFTER directories are created
+    mimetypes.add_type("image/webp", ".webp")
+    mimetypes.add_type("image/avif", ".avif")
+    mimetypes.add_type("image/heic", ".heic")
     app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
     logger.info("Startup step 6/8: loading plugins")
