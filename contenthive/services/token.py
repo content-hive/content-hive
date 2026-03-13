@@ -188,9 +188,10 @@ class TokenService:
         user_agent = request.headers.get("User-Agent", "")
         accept_language = request.headers.get("Accept-Language", "")
         accept_encoding = request.headers.get("Accept-Encoding", "")
-        
+        device_id = request.headers.get("X-Device-ID", "")
+
         # Note: IP is NOT included in fingerprint for stability
-        fingerprint_data = f"{user_agent}|{accept_language}|{accept_encoding}"
+        fingerprint_data = f"{user_agent}|{accept_language}|{accept_encoding}|{device_id}"
         device_fingerprint = hashlib.sha256(fingerprint_data.encode()).hexdigest()
         return f"fp_{device_fingerprint[:16]}"
 
