@@ -87,19 +87,21 @@ class MediaService:
                 "User-Agent": settings.download_user_agent
             }
             async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-                local_path = await self._download_single_media(
+                local_path = await self._download_file(
                     session,
                     str(media_url),
                     media_dir,
-                    media_index
+                    media_index,
+                    file_type="media"
                 )
                 cover_path = None
                 if media_cover:
-                    cover_path = await self._download_single_media(
+                    cover_path = await self._download_file(
                         session, 
                         str(media_cover), 
                         media_dir, 
-                        media_index
+                        media_index,
+                        file_type="cover"
                     )
 
                 downloaded_media = DownloadedMediaInfo(
@@ -120,21 +122,23 @@ class MediaService:
             logger.error(f"Failed to create media directory: {e}")
             return None
 
-    async def _download_single_media(
+    async def _download_file(
         self, 
         session: aiohttp.ClientSession, 
         url: str, 
         save_dir: Path, 
-        index: int
+        index: int,
+        file_type: str = "media"
     ) -> Path:
         """
-        Download a single media file.
+        Download a single file.
         
         Args:
             session: aiohttp session
-            url: Media URL to download
-            save_dir: Directory to save the file
-            index: Index of the media in the list
+            url: URL of the file to download
+            save_dir: Directory to save the file to
+            index: File index used in the filename
+            file_type: File type used in the filename, e.g. "media" or "cover"
             
         Returns:
             Path to the saved file
@@ -146,9 +150,7 @@ class MediaService:
             content_type = response.headers.get('content-type', '')
             ext = self._get_file_extension(url, content_type)
             
-            # Generate filename using hash to avoid conflicts
-            url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-            filename = f"media_{index:03d}_{url_hash}{ext}"
+            filename = f"{index:03d}_{file_type}{ext}"
             filepath = save_dir / filename
             
             # Save file
