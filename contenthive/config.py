@@ -1,7 +1,5 @@
 import os
-import secrets
 from pathlib import Path
-from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import computed_field
 
@@ -36,7 +34,10 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     # HTTP download settings
-    download_user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    download_user_agent: str = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 "
+        "Safari/537.36 Edg/143.0.0.0"
+    )
 
 
     @computed_field
