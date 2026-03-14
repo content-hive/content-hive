@@ -1,3 +1,4 @@
+
 import asyncio
 import mimetypes
 from fastapi import FastAPI
@@ -12,6 +13,15 @@ from contenthive.logger import logger, setup_file_logging
 from contenthive.core.restart import RestartManager, RestartType, set_restart_manager
 from contenthive.models.api import DetailedHTTPException, http_exception_handler
 from contenthive.services.task_queue import task_queue
+
+def register_extra_mimetypes():
+    """
+    Register extra mimetypes/extensions not covered by the standard library.
+    """
+    mimetypes.add_type("image/webp", ".webp")
+    mimetypes.add_type("image/avif", ".avif")
+    mimetypes.add_type("image/heic", ".heic")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,9 +53,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Startup step 5/8: mounting media static files")
     # 5. Mount static files AFTER directories are created
-    mimetypes.add_type("image/webp", ".webp")
-    mimetypes.add_type("image/avif", ".avif")
-    mimetypes.add_type("image/heic", ".heic")
+    register_extra_mimetypes()
     app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
     logger.info("Startup step 6/8: loading plugins")

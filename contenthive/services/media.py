@@ -2,6 +2,7 @@
 Media service for downloading and managing media files.
 """
 
+import mimetypes
 import os
 from typing import Optional
 import aiohttp
@@ -213,16 +214,10 @@ class MediaService:
             return url_ext
         
         # Fallback to content-type
-        type_map = {
-            'image/jpeg': '.jpg',
-            'image/png': '.png',
-            'image/gif': '.gif',
-            'image/webp': '.webp',
-            'video/mp4': '.mp4',
-            'video/webm': '.webm',
-            'video/quicktime': '.mov',
-        }
-        return type_map.get(content_type.split(';')[0].strip(), '')
+        ext = mimetypes.guess_extension(content_type.split(';')[0].strip())
+        if ext:
+            return ext
+        return ''
 
     def delete_media_files(self, file_paths: list[str]) -> tuple[int, int]:
         """

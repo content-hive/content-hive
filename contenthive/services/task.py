@@ -559,10 +559,10 @@ class TaskService:
                 raise ValueError("Parse sub task returned None")
             
             media_count = len(parse_result.media) if parse_result.media else 0
-            platform = parse_result.platform.code if parse_result.platform else "unknown"
-            author = parse_result.author.username if parse_result.author else "unknown"
+            platform_code = parse_result.platform.code if parse_result.platform else "unknown"
+            author_uid = parse_result.author.uid if parse_result.author else "unknown"
             
-            logger.info(f"[{task.task_id}] Parse completed: platform={platform}, author={author}, media_count={media_count}")
+            logger.info(f"[{task.task_id}] Parse completed: platform={platform_code}, author={author_uid}, media_count={media_count}")
             
             # ========== Phase 3: Save Parse Result ==========
             logger.info(f"[{task.task_id}] Phase 2/4: Saving parse result to database")
@@ -601,8 +601,8 @@ class TaskService:
                     main_task_id=task.id,
                     task_type=TaskType.MEDIA_DOWNLOAD,
                     parameters={
-                        "platform": platform,
-                        "author": author,
+                        "platform": platform_code,
+                        "author": author_uid,
                         "content_id": content_id,
                         "media_url": str(media.url),
                         "media_type": media.type,
