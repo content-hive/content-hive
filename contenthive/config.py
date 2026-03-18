@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     plugins_repo_ref: str = os.getenv("PLUGINS_REPO_REF", "main")
 
     # Token settings
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "300"))
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     # HTTP download settings
