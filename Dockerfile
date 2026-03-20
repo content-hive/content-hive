@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libatspi2.0-0 \
     libxshmfence1 \
+    libheif1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
