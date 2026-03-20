@@ -8,6 +8,7 @@ Example: /media/xhs/author/content_id/004_media.jpg?format=webp&quality=75&width
 import asyncio
 import mimetypes
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -26,8 +27,15 @@ _transform_executor = ThreadPoolExecutor(
     thread_name_prefix="img-transform",
 )
 
-# Semaphore prevents unbounded queuing when every worker slot is busy.
+# Semaphore caps the number of requests that can wait for a free worker slot.
+# Requests that cannot acquire the semaphore within the configured timeout
+# receive a 503 rather than queuing indefinitely.
 _transform_semaphore = asyncio.Semaphore(settings.media_transform_max_workers)
+
+
+def shutdown_transform_executor(*, cancel_futures: bool = True) -> None:
+    """Shut down the image transform thread pool. Call from app lifespan teardown."""
+    _transform_executor.shutdown(wait=True, cancel_futures=cancel_futures)
 
 
 @router.get("/media/{file_path:path}")
@@ -85,14 +93,27 @@ async def serve_media(
     # Only transform images when at least one transform parameter is provided
     if (output_format or quality or width or height) and mime_type in IMAGE_MIME_TYPES:
         try:
-            async with _transform_semaphore:
+            try:
+                await asyncio.wait_for(
+                    _transform_semaphore.acquire(),
+                    timeout=settings.media_transform_queue_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Image transform queue is full; try again later.",
+                )
+            try:
                 loop = asyncio.get_running_loop()
                 image_bytes, out_mime = await loop.run_in_executor(
                     _transform_executor,
-                    lambda: media_service.transform_image(
-                        target, output_format, quality, width, height, mime_type
+                    partial(
+                        media_service.transform_image,
+                        target, output_format, quality, width, height, mime_type,
                     ),
                 )
+            finally:
+                _transform_semaphore.release()
             return Response(
                 content=image_bytes,
                 media_type=out_mime,

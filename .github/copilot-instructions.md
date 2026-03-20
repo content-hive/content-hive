@@ -95,6 +95,35 @@ Router → Service → DAO (Data Access Object) → ORM Model
 
 ---
 
+## Performance & Concurrency
+
+### Strictly Forbidden
+- **Never call blocking operations directly inside `async def`** (e.g. Pillow, `open()`, CPU-intensive work, or any synchronous I/O other than SQLAlchemy DB calls). Always offload to a thread pool via `run_in_executor` or `run_in_threadpool`.
+- **Never create an unbounded thread pool or submit tasks without limits at module level.** CPU-intensive work must use a dedicated `ThreadPoolExecutor(max_workers=N)`.
+
+### Concurrency Control (Required)
+- All CPU-intensive endpoints (image processing, compression, format conversion, etc.) **must** use both:
+  1. A **dedicated `ThreadPoolExecutor`** with `max_workers` sourced from `settings` and overridable via environment variable.
+  2. An **`asyncio.Semaphore`** sized to match `max_workers`, to prevent unbounded request queuing in the event loop.
+  ```python
+  _executor = ThreadPoolExecutor(max_workers=settings.xxx_max_workers)
+  _semaphore = asyncio.Semaphore(settings.xxx_max_workers)
+
+  async with _semaphore:
+      result = await loop.run_in_executor(_executor, blocking_fn, *args)
+  ```
+- Default `max_workers` values must be conservative for NAS / low-spec server deployments (generally ≤ 4).
+
+### Memory Control
+- Never read an entire large file into memory (`f.read()`) before returning a response. Use `FileResponse` for static files and `StreamingResponse` for streamed data.
+- Decoded image pixel data is far larger than the source file (e.g. a 1 MB JPEG ≈ 20 MB in memory). Concurrency limits directly determine peak memory usage — enforce them strictly.
+
+### Configuration Principles
+- All concurrency and performance-related parameters (`max_workers`, timeouts, retry counts, etc.) **must** be `settings` fields overridable via environment variables. Never hard-code them.
+- Provide conservative defaults in `docker-compose.yml` for resource-constrained environments (NAS, single-core VPS).
+
+---
+
 ## Plugin System
 
 Plugins live under `PLUGINS_DIR` (default: `/config/plugins`). Each plugin is a Python package and must contain:
