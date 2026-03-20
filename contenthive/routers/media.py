@@ -5,18 +5,29 @@ Supports URL query parameters for on-the-fly image conversion and compression.
 Example: /media/xhs/author/content_id/004_media.jpg?format=webp&quality=75&width=800
 """
 
+import asyncio
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, Response
-from starlette.concurrency import run_in_threadpool
 
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.services.media import media_service, IMAGE_MIME_TYPES
 
 router = APIRouter(tags=["media"])
+
+# Dedicated executor for CPU-bound Pillow work; keeps image transforms from
+# saturating the default asyncio thread pool used by the rest of the app.
+_transform_executor = ThreadPoolExecutor(
+    max_workers=settings.media_transform_max_workers,
+    thread_name_prefix="img-transform",
+)
+
+# Semaphore prevents unbounded queuing when every worker slot is busy.
+_transform_semaphore = asyncio.Semaphore(settings.media_transform_max_workers)
 
 
 @router.get("/media/{file_path:path}")
@@ -74,10 +85,14 @@ async def serve_media(
     # Only transform images when at least one transform parameter is provided
     if (output_format or quality or width or height) and mime_type in IMAGE_MIME_TYPES:
         try:
-            image_bytes, out_mime = await run_in_threadpool(
-                media_service.transform_image,
-                target, output_format, quality, width, height, mime_type,
-            )
+            async with _transform_semaphore:
+                loop = asyncio.get_running_loop()
+                image_bytes, out_mime = await loop.run_in_executor(
+                    _transform_executor,
+                    lambda: media_service.transform_image(
+                        target, output_format, quality, width, height, mime_type
+                    ),
+                )
             return Response(
                 content=image_bytes,
                 media_type=out_mime,

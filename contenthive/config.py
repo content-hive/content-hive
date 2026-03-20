@@ -40,6 +40,9 @@ class Settings(BaseSettings):
         "Safari/537.36 Edg/143.0.0.0"
     )
 
+    # Image transformation settings
+    media_transform_max_workers: int = Field(default=int(os.getenv("MEDIA_TRANSFORM_MAX_WORKERS", "4")), ge=1)
+
 
     @computed_field
     @property
