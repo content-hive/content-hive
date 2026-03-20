@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
 from contenthive.routers import admin, content, system, user, task, media
+from contenthive.routers.media import shutdown_transform_executor
 from contenthive.database.database import initialize_db
 from contenthive.config import settings, ensure_directories
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
@@ -84,6 +85,10 @@ async def lifespan(app: FastAPI):
 
     # Stop task queue worker gracefully
     await task_queue.stop()
+
+    # Shutdown image transform executor; cancel_futures drops queued work that
+    # hasn't started yet so threads drain quickly without serving stale requests.
+    shutdown_transform_executor()
 
     # Shutdown plugins gracefully
     await shutdown_plugins()

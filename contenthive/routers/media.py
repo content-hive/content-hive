@@ -5,18 +5,37 @@ Supports URL query parameters for on-the-fly image conversion and compression.
 Example: /media/xhs/author/content_id/004_media.jpg?format=webp&quality=75&width=800
 """
 
+import asyncio
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, Response
-from starlette.concurrency import run_in_threadpool
 
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.services.media import media_service, IMAGE_MIME_TYPES
 
 router = APIRouter(tags=["media"])
+
+# Dedicated executor for CPU-bound Pillow work; keeps image transforms from
+# saturating the default asyncio thread pool used by the rest of the app.
+_transform_executor = ThreadPoolExecutor(
+    max_workers=settings.media_transform_max_workers,
+    thread_name_prefix="img-transform",
+)
+
+# Semaphore caps the number of requests that can wait for a free worker slot.
+# Requests that cannot acquire the semaphore within the configured timeout
+# receive a 503 rather than queuing indefinitely.
+_transform_semaphore = asyncio.Semaphore(settings.media_transform_max_workers)
+
+
+def shutdown_transform_executor(*, cancel_futures: bool = True) -> None:
+    """Shut down the image transform thread pool. Call from app lifespan teardown."""
+    _transform_executor.shutdown(wait=True, cancel_futures=cancel_futures)
 
 
 @router.get("/media/{file_path:path}")
@@ -74,10 +93,27 @@ async def serve_media(
     # Only transform images when at least one transform parameter is provided
     if (output_format or quality or width or height) and mime_type in IMAGE_MIME_TYPES:
         try:
-            image_bytes, out_mime = await run_in_threadpool(
-                media_service.transform_image,
-                target, output_format, quality, width, height, mime_type,
-            )
+            try:
+                await asyncio.wait_for(
+                    _transform_semaphore.acquire(),
+                    timeout=settings.media_transform_queue_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Image transform queue is full; try again later.",
+                )
+            try:
+                loop = asyncio.get_running_loop()
+                image_bytes, out_mime = await loop.run_in_executor(
+                    _transform_executor,
+                    partial(
+                        media_service.transform_image,
+                        target, output_format, quality, width, height, mime_type,
+                    ),
+                )
+            finally:
+                _transform_semaphore.release()
             return Response(
                 content=image_bytes,
                 media_type=out_mime,

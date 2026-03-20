@@ -34,11 +34,16 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     # HTTP download settings
-    download_max_retries: int = Field(default=int(os.getenv("DOWNLOAD_MAX_RETRIES", "3")), ge=0)
+    download_max_retries: int = Field(default=3, ge=0)
     download_user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 "
         "Safari/537.36 Edg/143.0.0.0"
     )
+
+    # Image transformation settings
+    media_transform_max_workers: int = Field(default=4, ge=1)
+    # Seconds a request may wait to acquire a transform worker slot before returning 503.
+    media_transform_queue_timeout: float = Field(default=30.0, gt=0)
 
 
     @computed_field
