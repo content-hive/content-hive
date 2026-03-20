@@ -145,7 +145,7 @@ class MediaService:
 
                 return downloaded_media
         except Exception as e:
-            logger.error(f"Failed to create media directory: {e}")
+            logger.error(f"Failed to download media: {e}")
             return None
 
     async def _download_file(
@@ -172,7 +172,7 @@ class MediaService:
         last_error: Exception = Exception("Unknown error")
         for attempt in range(settings.download_max_retries + 1):
             try:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=settings.download_timeout_seconds)) as response:
                     response.raise_for_status()
 
                     # Get file extension from URL or content-type
@@ -345,22 +345,25 @@ class MediaService:
         for media_path in file_paths:
             try:
                 # Convert relative path to absolute path
-                if media_path.startswith('/media/'):
-                    abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
-                    resolved_path = abs_path.resolve()
-                    
-                    # Check if path is within media directory
-                    if not resolved_path.is_relative_to(media_root):
-                        failed_count += 1
-                        logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
-                        continue
+                if not media_path.startswith('/media/'):
+                    failed_count += 1
+                    logger.warning(f"Skipping media path with unexpected prefix: {media_path}")
+                    continue
+                abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
+                resolved_path = abs_path.resolve()
 
-                    if resolved_path.exists():
-                        resolved_path.unlink()
-                        deleted_count += 1
-                        logger.debug(f"Deleted media file: {resolved_path}")
-                    else:
-                        logger.debug(f"File does not exist: {resolved_path}")
+                # Check if path is within media directory
+                if not resolved_path.is_relative_to(media_root):
+                    failed_count += 1
+                    logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
+                    continue
+
+                if resolved_path.exists():
+                    resolved_path.unlink()
+                    deleted_count += 1
+                    logger.debug(f"Deleted media file: {resolved_path}")
+                else:
+                    logger.debug(f"File does not exist: {resolved_path}")
             except Exception as e:
                 failed_count += 1
                 logger.warning(f"Failed to delete media file {media_path}: {e}")
