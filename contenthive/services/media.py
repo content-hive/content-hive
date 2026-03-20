@@ -6,6 +6,7 @@ import asyncio
 import mimetypes
 import os
 from typing import Optional
+import aiofiles
 import aiohttp
 import hashlib
 from pathlib import Path
@@ -157,20 +158,29 @@ class MediaService:
                     filename = f"{index:03d}_{file_type}{ext}"
                     filepath = save_dir / filename
 
-                    # Save file
-                    with open(filepath, 'wb') as f:
-                        f.write(await response.read())
+                    # Stream response to disk in chunks to keep memory bounded
+                    async with aiofiles.open(filepath, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(65536):
+                            await f.write(chunk)
 
                     return filepath
-            except Exception as e:
+            except aiohttp.ClientResponseError as e:
+                # 4xx errors are client-side faults; retrying won't help
+                if 400 <= e.status < 500:
+                    raise
                 last_error = e
-                if attempt < settings.download_max_retries:
-                    wait = 2 ** attempt
-                    logger.warning(
-                        f"Download attempt {attempt + 1}/{settings.download_max_retries + 1} "
-                        f"failed for {url}, retrying in {wait}s: {e}"
-                    )
-                    await asyncio.sleep(wait)
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                # Transient network / timeout errors are safe to retry
+                last_error = e
+            # All other exceptions (OSError, CancelledError, etc.) propagate immediately
+
+            if attempt < settings.download_max_retries:
+                wait = 2 ** attempt
+                logger.warning(
+                    f"Download attempt {attempt + 1}/{settings.download_max_retries + 1} "
+                    f"failed for {url}, retrying in {wait}s: {last_error}"
+                )
+                await asyncio.sleep(wait)
 
         raise last_error
 
