@@ -3,7 +3,6 @@ Media service for downloading and managing media files.
 """
 
 import asyncio
-import io
 import mimetypes
 import os
 from typing import Optional
@@ -11,7 +10,6 @@ import aiofiles
 import aiohttp
 import hashlib
 from pathlib import Path
-from PIL import Image
 
 from pydantic import HttpUrl
 from contenthive.logger import logger
@@ -20,28 +18,6 @@ from contenthive.models.parser import ParserResult
 from contenthive.models.content import DownloadedMediaInfo
 from contenthive.config import settings
 from urllib.parse import quote
-
-# Image MIME types that support transformation via Pillow.
-# HEIC support requires pillow-heif to be installed and register_heif_opener() called at startup.
-IMAGE_MIME_TYPES: frozenset[str] = frozenset({
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/gif",
-    "image/bmp",
-    "image/tiff",
-    "image/avif",
-    "image/heic",
-})
-
-# Map output format name -> (Pillow format string, MIME type)
-_FORMAT_MAP: dict[str, tuple[str, str]] = {
-    "jpeg": ("JPEG", "image/jpeg"),
-    "jpg":  ("JPEG", "image/jpeg"),
-    "png":  ("PNG",  "image/png"),
-    "webp": ("WEBP", "image/webp"),
-    "avif": ("AVIF", "image/avif"),
-}
 
 class MediaService:
     """
@@ -269,60 +245,6 @@ class MediaService:
         if ext:
             return ext
         return ''
-
-    def transform_image(
-        self,
-        path: Path,
-        format: Optional[str],
-        quality: Optional[int],
-        width: Optional[int],
-        height: Optional[int],
-        original_mime: Optional[str],
-    ) -> tuple[bytes, str]:
-        """
-        Load an image with Pillow, apply resize and/or format conversion.
-
-        Args:
-            path:          Absolute path to the source image file.
-            format:        Requested output format (e.g. 'webp'). ``None`` keeps the original.
-            quality:       Compression quality 1-100 (applies to JPEG and WEBP). When ``None``,
-                           uses the format's own default (e.g. JPEG 75, WEBP 80).
-            width:         Target width in pixels; preserves aspect ratio when height is omitted.
-            height:        Target height in pixels; preserves aspect ratio when width is omitted.
-            original_mime: Original MIME type of the file.
-
-        Returns:
-            Tuple of ``(image_bytes, output_mime_type)``.
-        """
-        with Image.open(path) as img:
-            # Determine output format first so mode conversion can use it
-            if format:
-                out_format, out_mime = _FORMAT_MAP[format]
-            else:
-                out_format = img.format or "JPEG"
-                out_mime = original_mime or "image/jpeg"
-
-            # Convert palette/transparency modes for JPEG compatibility
-            if out_format == "JPEG" and img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-
-            # Resize while preserving aspect ratio
-            if width or height:
-                orig_w, orig_h = img.size
-                target_w = width or orig_w
-                target_h = height or orig_h
-                img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
-
-            buf = io.BytesIO()
-            save_kwargs: dict = {"format": out_format}
-            if out_format in ("JPEG", "WEBP") and quality is not None:
-                save_kwargs["quality"] = quality
-            if out_format == "WEBP":
-                save_kwargs["method"] = 4  # balanced speed/compression
-
-            img.save(buf, **save_kwargs)
-
-        return buf.getvalue(), out_mime
 
     def delete_media_files(self, file_paths: list[str]) -> tuple[int, int]:
         """
