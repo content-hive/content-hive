@@ -2,9 +2,11 @@
 Media service for downloading and managing media files.
 """
 
+import asyncio
 import mimetypes
 import os
 from typing import Optional
+import aiofiles
 import aiohttp
 import hashlib
 from pathlib import Path
@@ -131,7 +133,7 @@ class MediaService:
         file_type: str = "media"
     ) -> Path:
         """
-        Download a single file.
+        Download a single file with retry logic.
         
         Args:
             session: aiohttp session
@@ -143,21 +145,44 @@ class MediaService:
         Returns:
             Path to the saved file
         """
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
-            response.raise_for_status()
-            
-            # Get file extension from URL or content-type
-            content_type = response.headers.get('content-type', '')
-            ext = self._get_file_extension(url, content_type)
-            
-            filename = f"{index:03d}_{file_type}{ext}"
-            filepath = save_dir / filename
-            
-            # Save file
-            with open(filepath, 'wb') as f:
-                f.write(await response.read())
-            
-            return filepath
+        last_error: Exception = Exception("Unknown error")
+        for attempt in range(settings.download_max_retries + 1):
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                    response.raise_for_status()
+
+                    # Get file extension from URL or content-type
+                    content_type = response.headers.get('content-type', '')
+                    ext = self._get_file_extension(url, content_type)
+
+                    filename = f"{index:03d}_{file_type}{ext}"
+                    filepath = save_dir / filename
+
+                    # Stream response to disk in chunks to keep memory bounded
+                    async with aiofiles.open(filepath, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(65536):
+                            await f.write(chunk)
+
+                    return filepath
+            except aiohttp.ClientResponseError as e:
+                # 4xx errors are client-side faults; retrying won't help
+                if 400 <= e.status < 500:
+                    raise
+                last_error = e
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                # Transient network / timeout errors are safe to retry
+                last_error = e
+            # All other exceptions (OSError, CancelledError, etc.) propagate immediately
+
+            if attempt < settings.download_max_retries:
+                wait = 2 ** attempt
+                logger.warning(
+                    f"Download attempt {attempt + 1}/{settings.download_max_retries + 1} "
+                    f"failed for {url}, retrying in {wait}s: {last_error}"
+                )
+                await asyncio.sleep(wait)
+
+        raise last_error
 
     def _get_media_directory(self, result: ParserResult) -> Path:
         """
