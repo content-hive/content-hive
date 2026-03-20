@@ -2,10 +2,10 @@
 import asyncio
 import mimetypes
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
-from contenthive.routers import admin, content, system, user, task, media
-from contenthive.routers.media import shutdown_transform_executor
+from contenthive.routers import admin, content, system, user, task
 from contenthive.database.database import initialize_db
 from contenthive.config import settings, ensure_directories
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
@@ -14,19 +14,13 @@ from contenthive.core.restart import RestartManager, RestartType, set_restart_ma
 from contenthive.models.api import DetailedHTTPException, http_exception_handler
 from contenthive.services.task_queue import task_queue
 
-def register_extra_mimetypes() -> None:
+def register_extra_mimetypes():
     """
-    Register extra mimetypes/extensions not covered by the standard library,
-    and register pillow-heif so Pillow can open HEIC files.
+    Register extra mimetypes/extensions not covered by the standard library.
     """
     mimetypes.add_type("image/webp", ".webp")
     mimetypes.add_type("image/avif", ".avif")
     mimetypes.add_type("image/heic", ".heic")
-    try:
-        from pillow_heif import register_heif_opener
-        register_heif_opener()
-    except ImportError:
-        logger.warning("pillow-heif not installed; HEIC image transformation will not be available")
 
 
 @asynccontextmanager
@@ -57,9 +51,10 @@ async def lifespan(app: FastAPI):
     # This avoids thread-related issues while Alembic configures logging.
     initialize_db()
 
-    logger.info("Startup step 5/8: registering extra mimetypes")
-    # 5. Register extra MIME types (media is served via router, not StaticFiles)
+    logger.info("Startup step 5/8: mounting media static files")
+    # 5. Mount static files AFTER directories are created
     register_extra_mimetypes()
+    app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
     logger.info("Startup step 6/8: loading plugins")
     # 6. Load plugins (unless in safe mode)
@@ -86,10 +81,6 @@ async def lifespan(app: FastAPI):
     # Stop task queue worker gracefully
     await task_queue.stop()
 
-    # Shutdown image transform executor; cancel_futures drops queued work that
-    # hasn't started yet so threads drain quickly without serving stale requests.
-    await shutdown_transform_executor()
-
     # Shutdown plugins gracefully
     await shutdown_plugins()
 
@@ -110,4 +101,3 @@ app.include_router(content.router_v1)
 app.include_router(user.router_v1)
 app.include_router(admin.router_v1)
 app.include_router(system.router_v1)
-app.include_router(media.router)
