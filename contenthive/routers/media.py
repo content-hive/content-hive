@@ -122,6 +122,8 @@ async def serve_media(
                     "Content-Length": str(len(image_bytes)),
                 },
             )
+        except HTTPException:
+            raise
         except Exception:
             logger.exception("Image transformation failed for %s; serving original", file_path)
 

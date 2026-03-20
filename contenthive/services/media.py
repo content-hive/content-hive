@@ -273,7 +273,7 @@ class MediaService:
     def transform_image(
         self,
         path: Path,
-        format: Optional[str],
+        output_format: Optional[str],
         quality: Optional[int],
         width: Optional[int],
         height: Optional[int],
@@ -284,7 +284,7 @@ class MediaService:
 
         Args:
             path:          Absolute path to the source image file.
-            format:        Requested output format (e.g. 'webp'). ``None`` keeps the original.
+            output_format: Requested output format (e.g. 'webp'). ``None`` keeps the original.
             quality:       Compression quality 1-100 (applies to JPEG and WEBP). When ``None``,
                            uses the format's own default (e.g. JPEG 75, WEBP 80).
             width:         Target width in pixels; preserves aspect ratio when height is omitted.
@@ -296,8 +296,8 @@ class MediaService:
         """
         with Image.open(path) as img:
             # Determine output format first so mode conversion can use it
-            if format:
-                out_format, out_mime = _FORMAT_MAP[format]
+            if output_format:
+                out_format, out_mime = _FORMAT_MAP[output_format]
             else:
                 out_format = img.format or "JPEG"
                 out_mime = original_mime or "image/jpeg"
@@ -350,7 +350,7 @@ class MediaService:
                     resolved_path = abs_path.resolve()
                     
                     # Check if path is within media directory
-                    if resolved_path == media_root or media_root not in resolved_path.parents:
+                    if not resolved_path.is_relative_to(media_root):
                         failed_count += 1
                         logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
                         continue
