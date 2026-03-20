@@ -145,7 +145,7 @@ class MediaService:
 
                 return downloaded_media
         except Exception as e:
-            logger.error(f"Failed to download media: {e}")
+            logger.error(f"Failed to create media directory: {e}")
             return None
 
     async def _download_file(
@@ -172,7 +172,7 @@ class MediaService:
         last_error: Exception = Exception("Unknown error")
         for attempt in range(settings.download_max_retries + 1):
             try:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=settings.download_timeout_seconds)) as response:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
                     response.raise_for_status()
 
                     # Get file extension from URL or content-type
@@ -273,7 +273,7 @@ class MediaService:
     def transform_image(
         self,
         path: Path,
-        output_format: Optional[str],
+        format: Optional[str],
         quality: Optional[int],
         width: Optional[int],
         height: Optional[int],
@@ -284,7 +284,7 @@ class MediaService:
 
         Args:
             path:          Absolute path to the source image file.
-            output_format: Requested output format (e.g. 'webp'). ``None`` keeps the original.
+            format:        Requested output format (e.g. 'webp'). ``None`` keeps the original.
             quality:       Compression quality 1-100 (applies to JPEG and WEBP). When ``None``,
                            uses the format's own default (e.g. JPEG 75, WEBP 80).
             width:         Target width in pixels; preserves aspect ratio when height is omitted.
@@ -296,8 +296,8 @@ class MediaService:
         """
         with Image.open(path) as img:
             # Determine output format first so mode conversion can use it
-            if output_format:
-                out_format, out_mime = _FORMAT_MAP[output_format]
+            if format:
+                out_format, out_mime = _FORMAT_MAP[format]
             else:
                 out_format = img.format or "JPEG"
                 out_mime = original_mime or "image/jpeg"
@@ -345,25 +345,22 @@ class MediaService:
         for media_path in file_paths:
             try:
                 # Convert relative path to absolute path
-                if not media_path.startswith('/media/'):
-                    failed_count += 1
-                    logger.warning(f"Skipping media path with unexpected prefix: {media_path}")
-                    continue
-                abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
-                resolved_path = abs_path.resolve()
+                if media_path.startswith('/media/'):
+                    abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
+                    resolved_path = abs_path.resolve()
+                    
+                    # Check if path is within media directory
+                    if resolved_path == media_root or media_root not in resolved_path.parents:
+                        failed_count += 1
+                        logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
+                        continue
 
-                # Check if path is within media directory
-                if not resolved_path.is_relative_to(media_root):
-                    failed_count += 1
-                    logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
-                    continue
-
-                if resolved_path.exists():
-                    resolved_path.unlink()
-                    deleted_count += 1
-                    logger.debug(f"Deleted media file: {resolved_path}")
-                else:
-                    logger.debug(f"File does not exist: {resolved_path}")
+                    if resolved_path.exists():
+                        resolved_path.unlink()
+                        deleted_count += 1
+                        logger.debug(f"Deleted media file: {resolved_path}")
+                    else:
+                        logger.debug(f"File does not exist: {resolved_path}")
             except Exception as e:
                 failed_count += 1
                 logger.warning(f"Failed to delete media file {media_path}: {e}")

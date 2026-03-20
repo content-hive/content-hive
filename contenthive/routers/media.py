@@ -27,28 +27,15 @@ _transform_executor = ThreadPoolExecutor(
     thread_name_prefix="img-transform",
 )
 
-# _active_semaphore bounds concurrent in-progress transforms to max_workers.
-# _queue_semaphore bounds *total* in-flight requests (active + waiting) to
-# max_workers + queue_size.  A new request that cannot immediately acquire
-# _queue_semaphore is rejected with 503 "queue is full" — making that message
-# accurate rather than a timeout proxy.
-_active_semaphore = asyncio.Semaphore(settings.media_transform_max_workers)
-_queue_semaphore = asyncio.Semaphore(
-    settings.media_transform_max_workers + settings.media_transform_queue_size
-)
+# Semaphore caps the number of requests that can wait for a free worker slot.
+# Requests that cannot acquire the semaphore within the configured timeout
+# receive a 503 rather than queuing indefinitely.
+_transform_semaphore = asyncio.Semaphore(settings.media_transform_max_workers)
 
 
-async def shutdown_transform_executor(*, cancel_futures: bool = True) -> None:
-    """Shut down the image transform thread pool. Call from app lifespan teardown.
-
-    Offloads the blocking ThreadPoolExecutor.shutdown(wait=True) call to a worker
-    thread so the event loop is not blocked while in-flight transforms drain.
-    """
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(
-        None,
-        partial(_transform_executor.shutdown, wait=True, cancel_futures=cancel_futures),
-    )
+def shutdown_transform_executor(*, cancel_futures: bool = True) -> None:
+    """Shut down the image transform thread pool. Call from app lifespan teardown."""
+    _transform_executor.shutdown(wait=True, cancel_futures=cancel_futures)
 
 
 @router.get("/media/{file_path:path}")
@@ -106,40 +93,27 @@ async def serve_media(
     # Only transform images when at least one transform parameter is provided
     if (output_format or quality or width or height) and mime_type in IMAGE_MIME_TYPES:
         try:
-            # Reject immediately once the bounded pending queue is exhausted.
             try:
-                await asyncio.wait_for(_queue_semaphore.acquire(), timeout=0)
+                await asyncio.wait_for(
+                    _transform_semaphore.acquire(),
+                    timeout=settings.media_transform_queue_timeout,
+                )
             except asyncio.TimeoutError:
                 raise HTTPException(
                     status_code=503,
                     detail="Image transform queue is full; try again later.",
                 )
             try:
-                # Wait for an active worker slot.  Should normally succeed quickly
-                # because total in-flight is already capped by _queue_semaphore.
-                try:
-                    await asyncio.wait_for(
-                        _active_semaphore.acquire(),
-                        timeout=settings.media_transform_queue_timeout,
-                    )
-                except asyncio.TimeoutError:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Image transform worker unavailable; try again later.",
-                    )
-                try:
-                    loop = asyncio.get_running_loop()
-                    image_bytes, out_mime = await loop.run_in_executor(
-                        _transform_executor,
-                        partial(
-                            media_service.transform_image,
-                            target, output_format, quality, width, height, mime_type,
-                        ),
-                    )
-                finally:
-                    _active_semaphore.release()
+                loop = asyncio.get_running_loop()
+                image_bytes, out_mime = await loop.run_in_executor(
+                    _transform_executor,
+                    partial(
+                        media_service.transform_image,
+                        target, output_format, quality, width, height, mime_type,
+                    ),
+                )
             finally:
-                _queue_semaphore.release()
+                _transform_semaphore.release()
             return Response(
                 content=image_bytes,
                 media_type=out_mime,
@@ -148,8 +122,6 @@ async def serve_media(
                     "Content-Length": str(len(image_bytes)),
                 },
             )
-        except HTTPException:
-            raise
         except Exception:
             logger.exception("Image transformation failed for %s; serving original", file_path)
 

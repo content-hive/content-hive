@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown image transform executor; cancel_futures drops queued work that
     # hasn't started yet so threads drain quickly without serving stale requests.
-    await shutdown_transform_executor()
+    shutdown_transform_executor()
 
     # Shutdown plugins gracefully
     await shutdown_plugins()
