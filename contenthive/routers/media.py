@@ -8,9 +8,9 @@ Example: /media/xhs/author/content_id/004_media.jpg?format=webp&quality=75&width
 import mimetypes
 from typing import Optional
 
-import aiofiles
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from contenthive.config import settings
 from contenthive.logger import logger
@@ -22,8 +22,9 @@ router = APIRouter(tags=["media"])
 @router.get("/media/{file_path:path}")
 async def serve_media(
     file_path: str,
-    format: Optional[str] = Query(
+    output_format: Optional[str] = Query(
         None,
+        alias="format",
         pattern="^(jpeg|jpg|png|webp|avif)$",
         description="Target image format for conversion",
     ),
@@ -62,7 +63,7 @@ async def serve_media(
     # --- Path traversal protection ---
     media_root = settings.media_dir.resolve()
     target = (settings.media_dir / file_path).resolve()
-    if not str(target).startswith(str(media_root)):
+    if not target.is_relative_to(media_root):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     if not target.exists() or not target.is_file():
@@ -71,10 +72,11 @@ async def serve_media(
     mime_type, _ = mimetypes.guess_type(str(target))
 
     # Only transform images when at least one transform parameter is provided
-    if (format or width or height) and mime_type in IMAGE_MIME_TYPES:
+    if (output_format or quality or width or height) and mime_type in IMAGE_MIME_TYPES:
         try:
-            image_bytes, out_mime = await media_service.transform_image(
-                target, format, quality, width, height, mime_type
+            image_bytes, out_mime = await run_in_threadpool(
+                media_service.transform_image,
+                target, output_format, quality, width, height, mime_type,
             )
             return Response(
                 content=image_bytes,
@@ -87,15 +89,9 @@ async def serve_media(
         except Exception:
             logger.exception("Image transformation failed for %s; serving original", file_path)
 
-    # Serve file as-is
-    async with aiofiles.open(target, "rb") as f:
-        content = await f.read()
-
-    return Response(
-        content=content,
+    # Serve file as-is — FileResponse streams the file and supports range requests
+    return FileResponse(
+        target,
         media_type=mime_type or "application/octet-stream",
-        headers={
-            "Cache-Control": "public, max-age=86400",
-            "Content-Length": str(len(content)),
-        },
+        headers={"Cache-Control": "public, max-age=86400"},
     )

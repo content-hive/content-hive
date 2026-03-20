@@ -270,7 +270,7 @@ class MediaService:
             return ext
         return ''
 
-    async def transform_image(
+    def transform_image(
         self,
         path: Path,
         format: Optional[str],
@@ -295,8 +295,15 @@ class MediaService:
             Tuple of ``(image_bytes, output_mime_type)``.
         """
         with Image.open(path) as img:
+            # Determine output format first so mode conversion can use it
+            if format:
+                out_format, out_mime = _FORMAT_MAP[format]
+            else:
+                out_format = img.format or "JPEG"
+                out_mime = original_mime or "image/jpeg"
+
             # Convert palette/transparency modes for JPEG compatibility
-            if format in ("jpeg", "jpg") and img.mode not in ("RGB", "L"):
+            if out_format == "JPEG" and img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
 
             # Resize while preserving aspect ratio
@@ -305,13 +312,6 @@ class MediaService:
                 target_w = width or orig_w
                 target_h = height or orig_h
                 img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
-
-            # Determine output format
-            if format:
-                out_format, out_mime = _FORMAT_MAP[format]
-            else:
-                out_format = img.format or "JPEG"
-                out_mime = original_mime or "image/jpeg"
 
             buf = io.BytesIO()
             save_kwargs: dict = {"format": out_format}

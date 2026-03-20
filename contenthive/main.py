@@ -3,7 +3,6 @@ import asyncio
 import mimetypes
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from pillow_heif import register_heif_opener
 
 from contenthive.routers import admin, content, system, user, task, media
 from contenthive.database.database import initialize_db
@@ -23,6 +22,7 @@ def register_extra_mimetypes() -> None:
     mimetypes.add_type("image/avif", ".avif")
     mimetypes.add_type("image/heic", ".heic")
     try:
+        from pillow_heif import register_heif_opener
         register_heif_opener()
     except ImportError:
         logger.warning("pillow-heif not installed; HEIC image transformation will not be available")
