@@ -80,11 +80,11 @@ class TaskService:
             # Check if the running PRIMARY task was created by the current user
             if running_primary.user_id == user_id:
                 # Same user - return existing task directly
-                logger.info(f"Found running PRIMARY task (ID: {running_primary.id}) for URL: {url} created by current user (user_id: {user_id}). Returning existing task.")
+                logger.debug(f"Returning existing PRIMARY task {running_primary.id} to user {user_id} (URL: {url})")
                 return MainTaskInfo.from_entity(running_primary)
             else:
                 # Different user - create LINKED task
-                logger.info(f"Found running PRIMARY task (ID: {running_primary.id}) for URL: {url} created by different user. Creating LINKED task for user {user_id}.")
+                logger.debug(f"Creating LINKED task for user {user_id}, linked to PRIMARY task {running_primary.id} (URL: {url})")
                 task_entity = await self.create_main_task(
                     user_id=user_id,
                     task_type=TaskType.PARSE_CONTENT,
@@ -97,7 +97,7 @@ class TaskService:
                 # No need to enqueue
         else:
             # No running PRIMARY task - create new PRIMARY task
-            logger.info(f"No running PRIMARY task for URL: {url}. Creating PRIMARY task.")
+            logger.debug(f"No running PRIMARY task for URL: {url}, creating new PRIMARY task")
             task_entity = await self.create_main_task(
                 user_id=user_id,
                 task_type=TaskType.PARSE_CONTENT,
@@ -109,7 +109,6 @@ class TaskService:
             # Enqueue the task for execution
             if task_entity:
                 task_queue.enqueue(task_entity.id, priority=0)
-                logger.info(f"Task {task_entity.id} enqueued for execution")
         
         if task_entity:
             return MainTaskInfo.from_entity(task_entity)
@@ -159,10 +158,10 @@ class TaskService:
                 )
                 
                 task = dao.get_main_task_by_id(id, include_sub_tasks=True)
-                logger.info(f"Created main task {task_id} (ID: {id}) for user {user_id}")
+                logger.debug(f"Created main task {task_id} (ID: {id}) for user {user_id}")
                 return task
         except Exception as e:
-            logger.error(f"Failed to create main task: {e}")
+            logger.exception(f"Failed to create main task")
             raise
 
     def get_main_task(self, id: int, include_sub_tasks: bool = False) -> Optional[MainTaskEntity]:
@@ -326,7 +325,7 @@ class TaskService:
                 )
             )
         except Exception as e:
-            logger.error(f"Error listing main tasks for user {user_id}: {e}")
+            logger.exception(f"Error listing main tasks for user {user_id}")
             raise
 
     # Sub Task Methods
@@ -365,10 +364,10 @@ class TaskService:
                 )
                 
                 sub_task = dao.get_sub_task_by_id(sub_task_db_id)
-                logger.info(f"Created sub task {sub_task_id} (ID: {sub_task_db_id}) for main task {main_task_id}")
+                logger.debug(f"Created sub task {sub_task_id} (ID: {sub_task_db_id}) for main task {main_task_id}")
                 return sub_task
         except Exception as e:
-            logger.error(f"Failed to create sub task: {e}")
+            logger.exception(f"Failed to create sub task")
             raise
 
     def get_sub_task(self, id: int) -> Optional[SubTaskEntity]:
@@ -494,7 +493,7 @@ class TaskService:
 
         except Exception as e:
             error_msg = f"Task execution failed: {str(e)}"
-            logger.error(f"Main task {task.task_id} (ID: {id}) failed: {error_msg}")
+            logger.exception(f"Main task {task.task_id} (ID: {id}) failed")
             self.update_main_task_status(id, TaskStatus.FAILED, error_message=error_msg)
             raise
 
@@ -521,7 +520,7 @@ class TaskService:
         Returns:
             Task result with parse_result_id, media statistics, and sub task details
         """
-        logger.info(f"[{task.task_id}] ========== Starting parse content task (SubTask mode) ==========")
+        logger.info(f"[{task.task_id}] Starting parse content task")
         
         parse_result = None
         parse_result_id = None
@@ -536,10 +535,7 @@ class TaskService:
             if not url:
                 raise ValueError("URL parameter is required")
             
-            logger.info(f"[{task.task_id}] Task parameters: URL={url}, plugin_id={plugin_id or 'auto-detect'}")
-            
             # ========== Phase 2: Parse Content ==========
-            logger.info(f"[{task.task_id}] Phase 1/4: Creating parse sub task")
             parse_subtask = self.create_sub_task(
                 main_task_id=task.id,
                 task_type=TaskType.PARSE_CONTENT,
@@ -552,7 +548,6 @@ class TaskService:
             if not parse_subtask:
                 raise ValueError("Failed to create parse sub task")
             
-            logger.info(f"[{task.task_id}] Executing parse sub task: {parse_subtask.sub_task_id}")
             parse_result = await self._execute_parse_content_sub_task(parse_subtask)
             
             if not parse_result:
@@ -565,13 +560,11 @@ class TaskService:
             logger.info(f"[{task.task_id}] Parse completed: platform={platform_code}, author={author_uid}, media_count={media_count}")
             
             # ========== Phase 3: Save Parse Result ==========
-            logger.info(f"[{task.task_id}] Phase 2/4: Saving parse result to database")
             try:
                 with ContentDAO() as content_dao:
                     parse_result_id = content_dao.save_parse_result(parse_result, user_id=task.user_id)
-                    logger.info(f"[{task.task_id}] Parse result saved with ID: {parse_result_id}")
             except Exception as e:
-                logger.error(f"[{task.task_id}] Failed to save parse result: {e}")
+                logger.exception(f"[{task.task_id}] Failed to save parse result")
                 raise ValueError(f"Failed to save parse result to database: {e}")
             
             # ========== Phase 4: Handle Media Downloads ==========
@@ -589,14 +582,10 @@ class TaskService:
                     saved_media_ids=[]
                 )
             
-            logger.info(f"[{task.task_id}] Phase 3/4: Creating {media_count} download sub tasks")
-            
             # Create download sub tasks
             content_id = parse_result.pid if parse_result.pid else hashlib.md5(str(parse_result.url).encode()).hexdigest()[:16]
             
             for idx, media in enumerate(parse_result.media):
-                logger.debug(f"[{task.task_id}] Creating download task {idx+1}/{media_count}: {media.url} (type: {media.type})")
-                
                 download_subtask = self.create_sub_task(
                     main_task_id=task.id,
                     task_type=TaskType.MEDIA_DOWNLOAD,
@@ -618,11 +607,9 @@ class TaskService:
                 else:
                     logger.warning(f"[{task.task_id}] Failed to create download sub task for media {idx}")
             
-            logger.info(f"[{task.task_id}] Successfully created {len(download_subtasks)}/{media_count} download sub tasks")
-            
             # Execute downloads with concurrency control
             if not download_subtasks:
-                logger.warning(f"[{task.task_id}] No download sub tasks created, skipping download phase")
+                logger.warning(f"[{task.task_id}] No download sub tasks created")
                 return self._build_task_result(
                     task_id=task.task_id,
                     parse_result_id=parse_result_id,
@@ -635,7 +622,7 @@ class TaskService:
                     saved_media_ids=[]
                 )
             
-            logger.info(f"[{task.task_id}] Phase 4/4: Executing {len(download_subtasks)} download sub tasks (max 5 concurrent)")
+            logger.info(f"[{task.task_id}] Executing {len(download_subtasks)}/{media_count} downloads")
             
             MAX_CONCURRENT_DOWNLOADS = 5
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
@@ -659,7 +646,6 @@ class TaskService:
             logger.info(f"[{task.task_id}] Download phase completed: {len(success_downloads)} succeeded, {len(failed_downloads)} failed")
             
             # ========== Phase 6: Save Downloaded Media ==========
-            logger.info(f"[{task.task_id}] Saving {len(download_results)} media records to database")
             saved_media_ids = []
             saved_media_count = 0
             
@@ -668,13 +654,9 @@ class TaskService:
                     with ContentDAO() as content_dao:
                         saved_media_ids = content_dao.save_downloaded_medias(download_results, commit=True)
                         saved_media_count = len(saved_media_ids)
-                    logger.info(f"[{task.task_id}] Successfully saved {saved_media_count} media records (IDs: {saved_media_ids[:5]}{'...' if len(saved_media_ids) > 5 else ''})")
-                else:
-                    logger.warning(f"[{task.task_id}] No media results to save")
             except Exception as e:
-                logger.error(f"[{task.task_id}] Failed to save media records: {e}")
+                logger.exception(f"[{task.task_id}] Failed to save media records")
                 # Don't raise here - parse result is already saved, partial success
-                logger.warning(f"[{task.task_id}] Continuing despite media save failure")
             
             # ========== Phase 7: Build and Return Result ==========
             result = self._build_task_result(
@@ -689,16 +671,15 @@ class TaskService:
                 saved_media_ids=saved_media_ids
             )
             
-            logger.info(f"[{task.task_id}] ========== Parse content task completed successfully ==========")
-            logger.info(f"[{task.task_id}] Summary: parse_result_id={parse_result_id}, "
+            logger.info(f"[{task.task_id}] Parse content task completed: parse_result_id={parse_result_id}, "
                        f"media={media_count}, downloaded={len(success_downloads)}, "
                        f"failed={len(failed_downloads)}, saved={saved_media_count}")
             
             return result
             
         except Exception as e:
-            logger.error(f"[{task.task_id}] ========== Parse content task failed: {e} ==========")
-            logger.error(f"[{task.task_id}] Failure context: parse_result_id={parse_result_id}, "
+            logger.exception(f"[{task.task_id}] Parse content task failed")
+            logger.debug(f"[{task.task_id}] Failure context: parse_result_id={parse_result_id}, "
                         f"parse_subtask={'created' if parse_subtask else 'not created'}, "
                         f"download_subtasks={len(download_subtasks)}")
             raise
@@ -728,7 +709,6 @@ class TaskService:
             
             if result.status == MediaStatus.COMPLETED:
                 success_downloads.append(result)
-                logger.debug(f"[{task_id}] Download [{idx+1}/{len(download_results)}] succeeded: {subtask_id}")
             elif result.status == MediaStatus.FAILED:
                 logger.warning(f"[{task_id}] Download [{idx+1}/{len(download_results)}] failed: {subtask_id} - {result.url}")
                 failed_downloads.append({
@@ -807,8 +787,6 @@ class TaskService:
         Returns:
             ParserResult object containing parsed content metadata and media list
         """
-        logger.info(f"Executing parse content sub task {sub_task.sub_task_id}")
-        
         try:
             # Extract parameters
             url = sub_task.parameters.get("url")
@@ -824,7 +802,6 @@ class TaskService:
 
             # Update sub task status to RUNNING
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
-            logger.info(f"Parse sub task {sub_task.sub_task_id} status updated to RUNNING")
 
             # Parse content
             parse_result = await content_service.parser_content(
@@ -848,13 +825,11 @@ class TaskService:
                 "url": str(parse_result.url) if parse_result.url else None
             }
             self.update_sub_task_result(sub_task.id, result_data)
-            
-            logger.info(f"Parse sub task {sub_task.sub_task_id} completed successfully. Found {result_data['media_count']} media items")
             return parse_result
             
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Parse content sub task {sub_task.sub_task_id} failed: {error_msg}")
+            logger.exception(f"Parse sub task {sub_task.sub_task_id} failed")
             
             # Update sub task status to FAILED
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
@@ -877,8 +852,6 @@ class TaskService:
         Returns:
             DownloadedMediaInfo with status indicating success or failure
         """
-        logger.info(f"Executing media download sub task {sub_task.sub_task_id}")
-        
         # Extract parameters
         media_url = sub_task.parameters.get("media_url")
         media_type = sub_task.parameters.get("media_type")
@@ -941,12 +914,11 @@ class TaskService:
                     cover_path=None
                 )
             
-            logger.info(f"Media download sub task {sub_task.sub_task_id} completed successfully")
             return result
             
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Media download sub task {sub_task.sub_task_id} failed: {error_msg}")
+            logger.exception(f"Media download sub task {sub_task.sub_task_id} failed")
             
             # Update sub task status to FAILED
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
@@ -982,7 +954,7 @@ class TaskService:
         Note:
             This method should be implemented with actual analysis logic.
         """
-        logger.info(f"Executing content analysis sub task {sub_task.sub_task_id}")
+        logger.debug(f"Executing content analysis sub task {sub_task.sub_task_id}")
         
         # TODO: Implement actual analysis logic for sub task
         
@@ -1030,7 +1002,7 @@ class TaskService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to cancel main task {id}: {e}")
+            logger.exception(f"Failed to cancel main task {id}")
             raise
 
     def retry_main_task(self, id: int) -> bool:
@@ -1068,7 +1040,7 @@ class TaskService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to retry main task {id}: {e}")
+            logger.exception(f"Failed to retry main task {id}")
             raise
 
     # Task Monitoring and Completion
@@ -1085,7 +1057,7 @@ class TaskService:
             # Get the primary task
             primary_task = self.get_main_task(primary_task_id)
             if not primary_task:
-                logger.error(f"Primary task {primary_task_id} not found")
+                logger.warning(f"Primary task {primary_task_id} not found")
                 return
 
             if primary_task.status != TaskStatus.COMPLETED:
@@ -1105,7 +1077,7 @@ class TaskService:
             waiting_tasks = [task for task in linked_tasks if task.primary_task_id == primary_task_id]
 
             if not waiting_tasks:
-                logger.info(f"No linked tasks waiting for primary task {primary_task_id}")
+                logger.debug(f"No linked tasks waiting for primary task {primary_task_id}")
                 return
 
             logger.info(f"Completing {len(waiting_tasks)} linked tasks for primary task {primary_task_id}")
@@ -1130,12 +1102,12 @@ class TaskService:
                             },
                             commit=True
                         )
-                    logger.info(f"Completed linked task {linked_task.task_id} (ID: {linked_task.id})")
+                    logger.debug(f"Completed linked task {linked_task.task_id} (ID: {linked_task.id})")
                 except Exception as e:
-                    logger.error(f"Failed to complete linked task {linked_task.id}: {e}")
+                    logger.exception(f"Failed to complete linked task {linked_task.id}")
 
         except Exception as e:
-            logger.error(f"Failed to monitor linked tasks for primary {primary_task_id}: {e}")
+            logger.exception(f"Failed to monitor linked tasks for primary {primary_task_id}")
 
     async def fail_linked_tasks(self, primary_task_id: int) -> None:
         """
@@ -1149,7 +1121,7 @@ class TaskService:
             # Get the primary task
             primary_task = self.get_main_task(primary_task_id)
             if not primary_task:
-                logger.error(f"Primary task {primary_task_id} not found")
+                logger.warning(f"Primary task {primary_task_id} not found")
                 return
 
             if primary_task.status not in (TaskStatus.FAILED, TaskStatus.CANCELED):
@@ -1169,7 +1141,7 @@ class TaskService:
             waiting_tasks = [task for task in linked_tasks if task.primary_task_id == primary_task_id]
 
             if not waiting_tasks:
-                logger.info(f"No linked tasks waiting for primary task {primary_task_id}")
+                logger.debug(f"No linked tasks waiting for primary task {primary_task_id}")
                 return
 
             logger.info(f"Marking {len(waiting_tasks)} linked tasks as {primary_task.status.value} for primary task {primary_task_id}")
@@ -1186,12 +1158,12 @@ class TaskService:
                             error_message=error_message,
                             commit=True
                         )
-                    logger.info(f"Marked linked task {linked_task.task_id} (ID: {linked_task.id}) as {primary_task.status.value}")
+                    logger.debug(f"Marked linked task {linked_task.task_id} (ID: {linked_task.id}) as {primary_task.status.value}")
                 except Exception as e:
-                    logger.error(f"Failed to update linked task {linked_task.id}: {e}")
+                    logger.exception(f"Failed to update linked task {linked_task.id}")
 
         except Exception as e:
-            logger.error(f"Failed to fail linked tasks for primary {primary_task_id}: {e}")
+            logger.exception(f"Failed to fail linked tasks for primary {primary_task_id}")
 
 
 # Singleton instance

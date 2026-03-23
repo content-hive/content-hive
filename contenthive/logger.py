@@ -1,78 +1,115 @@
 import logging
-from logging.handlers import RotatingFileHandler
+import logging.config
+from typing import Optional
 
 from contenthive.config import settings
 
-_logger = None
-_file_handler_added = False
+# Shared formatter spec used in every dictConfig call.
+_FORMATTER_SPEC = {
+    "standard": {
+        "format": "%(asctime)s %(levelname)s:\t  %(message)s",
+        "datefmt": "%Y-%m-%d %H:%M:%S",
+    }
+}
 
 
-def _has_handler(logger: logging.Logger, handler_type: type[logging.Handler]) -> bool:
-    """Check whether a logger already has a handler of a given type."""
-    return any(isinstance(h, handler_type) for h in logger.handlers)
-
-def setup_logging():
+def _build_config(log_file: Optional[str] = None) -> dict:
     """
-    Setup logging for the application (console only at module load time).
+    Build a logging dictConfig dict.
+
+    Args:
+        log_file: Absolute path to the rotating log file. When None, only the
+                  console handler is included (safe for use at import time).
+
+    Returns:
+        A dict suitable for passing to ``logging.config.dictConfig()``.
     """
-    global _logger
-    if _logger is not None:
-        return _logger
+    handlers: dict = {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+            "level": "INFO",
+        }
+    }
+    root_handlers = ["console"]
+    app_handlers = ["console"]
 
-    formatting = logging.Formatter(
-        '%(asctime)s %(levelname)s:\t  %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    if log_file:
+        handlers["file"] = {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "standard",
+            "level": "DEBUG",
+            "filename": log_file,
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+            "encoding": "utf-8",
+        }
+        root_handlers.append("file")
+        app_handlers.append("file")
 
-    app_logger = logging.getLogger("contenthive")
-    app_logger.setLevel(logging.DEBUG)
-    app_logger.propagate = False
+    return {
+        "version": 1,
+        # Preserve loggers that are not explicitly listed here
+        # (e.g., third-party libraries added after startup).
+        "disable_existing_loggers": False,
+        "formatters": _FORMATTER_SPEC,
+        "handlers": handlers,
+        "loggers": {
+            # Application logger: owns its own handlers, does not propagate to root.
+            "contenthive": {
+                "handlers": app_handlers,
+                "level": "DEBUG",
+                "propagate": False,
+            },
+            # Uvicorn loggers: clear any handlers uvicorn installed by default
+            # and propagate to root so a single handler set covers everything.
+            # This is equivalent to starting uvicorn with log_config=None.
+            "uvicorn": {
+                "handlers": [],
+                "level": "INFO",
+                "propagate": True,
+            },
+            "uvicorn.error": {
+                "handlers": [],
+                "level": "INFO",
+                "propagate": True,
+            },
+            "uvicorn.access": {
+                "handlers": [],
+                "level": "INFO",
+                "propagate": True,
+            },
+        },
+        "root": {
+            "level": "INFO",
+            "handlers": root_handlers,
+        },
+    }
 
-    # Console handler — always safe to create at import time
-    if not _has_handler(app_logger, logging.StreamHandler):
-        app_console_handler = logging.StreamHandler()
-        app_console_handler.setLevel(logging.INFO)
-        app_console_handler.setFormatter(formatting)
-        app_logger.addHandler(app_console_handler)
 
-    _logger = app_logger
-    return app_logger
-
-
-def setup_file_logging():
+def setup_logging() -> logging.Logger:
     """
-    Setup file-based logging. Must be called AFTER ensure_directories().
+    Apply console-only logging config. Safe to call at module import time
+    because it does not touch the filesystem.
+
+    Returns:
+        The ``contenthive`` application logger.
     """
-    global _file_handler_added
-    if _file_handler_added:
-        return
+    logging.config.dictConfig(_build_config())
+    return logging.getLogger("contenthive")
 
-    formatting = logging.Formatter(
-        '%(asctime)s %(levelname)s:\t  %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
 
-    rotating_file_handler = RotatingFileHandler(
-        filename=settings.logs_dir / "contenthive.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5
-    )
-    rotating_file_handler.setLevel(logging.DEBUG)
-    rotating_file_handler.setFormatter(formatting)
+def setup_file_logging() -> None:
+    """
+    Apply the full logging config (console + rotating file).
+    Must be called AFTER ``ensure_directories()`` so the log directory exists.
 
-    # Add file handler to the app logger directly.
-    # contenthive has propagate=False so its records never reach the root logger.
-    app_logger = logging.getLogger("contenthive")
-    app_logger.addHandler(rotating_file_handler)
-
-    # Attach once to the root logger so all framework loggers (uvicorn, alembic,
-    # etc.) are captured through normal propagation — no duplicates.
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(rotating_file_handler)
-
-    _file_handler_added = True
-    app_logger.info("File logging initialized.")
+    Additionally reconfigures uvicorn loggers to propagate to root, effectively
+    replacing uvicorn's default log_config with the unified configuration.
+    """
+    log_file = str(settings.logs_dir / "contenthive.log")
+    logging.config.dictConfig(_build_config(log_file=log_file))
+    logging.getLogger("contenthive").info("File logging initialized.")
 
 
 logger = setup_logging()

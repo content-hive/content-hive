@@ -42,29 +42,22 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _run_migrations() -> None:
     """Run Alembic migrations to bring database schema up to date."""
-    logger.info("Running Alembic migrations...")
     alembic_cfg = Config(str(_REPO_ROOT / "alembic.ini"))
     alembic_cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
     command.upgrade(alembic_cfg, "head")
-    logger.info("Alembic migrations completed")
 
 
 def initialize_db():
     """Initialize database and run all pending Alembic migrations."""
-    logger.info("Database initialization started")
     _run_migrations()
 
-    # Create admin user if not exists
     from contenthive.services.user import user_service
     try:
-        logger.info("Checking initial admin user")
         result = user_service.create_admin_user()
         if result:
             _write_admin_credentials(result[0], result[1])
     except ValueError:
-        logger.info("Initial admin user already exists")
-
-    logger.info("Database initialization finished")
+        logger.debug("Initial admin user already exists")
 
 
 def _write_admin_credentials(username: str, password: str) -> None:
@@ -88,9 +81,7 @@ def _write_admin_credentials(username: str, password: str) -> None:
         # Set restrictive permissions (owner read/write only)
         credentials_file.chmod(0o600)
         
-        logger.info("Admin user created successfully")
-        logger.info("Credentials saved to: %s", credentials_file)
-        logger.info("Credentials file permissions set to -rw-------")
+        logger.info("Admin credentials saved to: %s", credentials_file)
         logger.warning("Please retrieve admin credentials and delete the credentials file")
         
     except Exception as e:

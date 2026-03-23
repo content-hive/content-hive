@@ -48,7 +48,7 @@ class MediaService:
             parts = [quote(part) for part in relative_path.parts]
             return "/media/" + "/".join(parts)
         except Exception as e:
-            logger.error(f"Failed to generate relative media path: {e}")
+            logger.exception(f"Failed to generate relative media path")
             return ""
 
 
@@ -121,7 +121,7 @@ class MediaService:
 
                 return downloaded_media
         except Exception as e:
-            logger.error(f"Failed to create media directory: {e}")
+            logger.exception(f"Failed to download media for content {content_id}")
             return None
 
     async def _download_file(

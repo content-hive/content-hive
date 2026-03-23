@@ -20,9 +20,8 @@ async def load_plugins_on_startup(app, data_dir):
     )
 
     # 2. Download official plugins from repository
-    logger.info(f"Downloading plugins from official repository: {settings.plugins_repo_url}")
     downloader = GitHubPluginDownloader()
-    
+
     try:
         results = await downloader.download_plugins(
             repo_url=settings.plugins_repo_url,
@@ -30,20 +29,15 @@ async def load_plugins_on_startup(app, data_dir):
             ref_type=settings.plugins_repo_ref_type,
             force_reinstall=False  # Only download if not already installed
         )
-        
+
         if results:
             success_count = sum(1 for v in results.values() if v)
             total_count = len(results)
-            logger.info(f"Plugin download complete: {success_count}/{total_count} plugins installed")
-            
             if success_count < total_count:
                 failed = [k for k, v in results.items() if not v]
                 logger.warning(f"Failed to install plugins: {', '.join(failed)}")
-        else:
-            logger.info("No plugins found in official repository")
     except Exception:
         logger.exception("Failed to download plugins from repository")
-        logger.info("Continuing with existing plugins...")
     finally:
         # Cleanup temporary files
         downloader.cleanup_temp()
@@ -58,14 +52,10 @@ async def load_plugins_on_startup(app, data_dir):
     context.register_service = plugin_manager.register_service
 
     # 5. Discover plugins
-    logger.info("Starting plugin discovery...")
     await plugin_manager.async_discover()
-    logger.info(f"Discovered {len(plugin_manager.plugins)} plugins")
 
     # 6. Setup and enable plugins
     for domain in plugin_manager.plugins:
-        logger.info(f"Setting up plugin: {domain}")
-
         # Get plugin configuration
         config = _get_plugin_config(domain)
         
@@ -73,7 +63,7 @@ async def load_plugins_on_startup(app, data_dir):
         success = await plugin_manager.async_setup(domain, config)
 
         if not success:
-            logger.error(f"Failed to setup plugin: {domain}")
+            logger.warning(f"Plugin setup failed: {domain}")
             continue
 
         # Create config entry
@@ -87,9 +77,9 @@ async def load_plugins_on_startup(app, data_dir):
         success = await plugin_manager.async_setup_entry(entry)
 
         if success:
-            logger.info(f"✓ Plugin enabled: {domain}")
+            logger.debug(f"Plugin enabled: {domain}")
         else:
-            logger.error(f"✗ Failed to enable plugin: {domain}")
+            logger.warning(f"Plugin enable failed: {domain}")
 
     # 7. Log summary
     enabled_count = sum(
@@ -122,11 +112,6 @@ async def shutdown_plugins():
     if not plugin_manager:
         return
     
-    logger.info("Shutting down plugins...")
-    
-    # Unload all config entries
     entries_to_unload = list(plugin_manager.config_entries.keys())
     for entry_id in entries_to_unload:
         await plugin_manager.async_unload_entry(entry_id)
-    
-    logger.info("All plugins unloaded")
