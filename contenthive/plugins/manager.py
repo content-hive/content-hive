@@ -7,6 +7,7 @@ import asyncio
 import subprocess
 
 from .registry import PluginRecord, PluginState
+from contenthive.logger import logger
 
 
 class PluginEntryData:
@@ -40,7 +41,7 @@ class EventBus:
                     else:
                         callback(data)
                 except Exception as e:
-                    print(f"Error in event listener: {e}")
+                    logger.warning(f"Error in event listener: {e}")
 
 
 class PluginManager:
@@ -92,14 +93,14 @@ class PluginManager:
             
             # Store module reference instead of instance
             self.plugins[domain] = PluginRecord(manifest, None)
-            self.context.logger.info(f"Plugins[Discovered]: {domain}")
+            self.context.logger.debug(f"Plugins[Discovered]: {domain}")
             
             await self.event_bus.fire("plugin_discovered", {
                 "domain": domain,
                 "manifest": manifest
             })
         except Exception as e:
-            self.context.logger.error(f"Plugins[Discovery Failed]: {plugin_dir.name} - {e}")
+            self.context.logger.warning(f"Plugins[Discovery Failed]: {plugin_dir.name} - {e}")
     
     async def async_setup(self, domain: str, config: Optional[Dict[str, Any]] = None) -> bool:
         """
@@ -108,11 +109,11 @@ class PluginManager:
         """
         record = self.plugins.get(domain)
         if not record:
-            self.context.logger.error(f"Plugins[Setup Failed]: {domain} - Not found")
+            self.context.logger.warning(f"Plugins[Setup Failed]: {domain} - Not found")
             return False
         
         if record.state not in [PluginState.INSTALLED, PluginState.DISABLED]:
-            self.context.logger.warning(f"Plugins[Setup]: {domain} - Already in state {record.state}")
+            self.context.logger.debug(f"Plugins[Setup]: {domain} - Already in state {record.state}")
             return True
         
         try:
@@ -135,7 +136,7 @@ class PluginManager:
                     raise Exception("async_setup returned False")
             
             record.state = PluginState.LOADED
-            self.context.logger.info(f"Plugins[Setup]: {domain} - Success")
+            self.context.logger.debug(f"Plugins[Setup]: {domain} - Success")
             
             await self.event_bus.fire("plugin_setup", {"domain": domain})
             return True
@@ -143,7 +144,7 @@ class PluginManager:
         except Exception as e:
             record.state = PluginState.FAILED
             record.error = str(e)
-            self.context.logger.error(f"Plugins[Setup Failed]: {domain} - {e}")
+            self.context.logger.warning(f"Plugins[Setup Failed]: {domain} - {e}")
             return False
     
     async def async_setup_entry(self, entry: PluginEntryData) -> bool:
@@ -155,7 +156,7 @@ class PluginManager:
         record = self.plugins.get(domain)
         
         if not record:
-            self.context.logger.error(f"Plugins[Setup Entry Failed]: {domain} - Not found")
+            self.context.logger.warning(f"Plugins[Setup Entry Failed]: {domain} - Not found")
             return False
         
         try:
@@ -177,14 +178,14 @@ class PluginManager:
             entry.state = PluginState.ENABLED
             record.state = PluginState.ENABLED
             
-            self.context.logger.info(f"Plugins[Setup Entry]: {domain} - Success")
+            self.context.logger.debug(f"Plugins[Setup Entry]: {domain} - Success")
             await self.event_bus.fire("plugin_enabled", {"domain": domain, "entry_id": entry.entry_id})
             return True
             
         except Exception as e:
             record.state = PluginState.FAILED
             record.error = str(e)
-            self.context.logger.error(f"Plugins[Setup Entry Failed]: {domain} - {e}")
+            self.context.logger.warning(f"Plugins[Setup Entry Failed]: {domain} - {e}")
             return False
     
     async def async_forward_entry_setup(
@@ -219,7 +220,7 @@ class PluginManager:
                     self._platforms[domain][platform] = []
                 
                 self._platforms[domain][platform].extend(entities)
-                self.context.logger.info(
+                self.context.logger.debug(
                     f"Registered {len(entities)} {platform} entities for {domain}"
                 )
             
@@ -234,9 +235,7 @@ class PluginManager:
             return True
             
         except Exception as e:
-            self.context.logger.error(f"Failed to setup {platform} platform for {domain}: {e}")
-            import traceback
-            self.context.logger.error(traceback.format_exc())
+            self.context.logger.warning(f"Failed to setup {platform} platform for {domain}: {e}", exc_info=True)
             return False
     
     async def async_unload_platforms(
@@ -260,7 +259,7 @@ class PluginManager:
                         try:
                             await entity.async_will_remove()
                         except Exception as e:
-                            self.context.logger.error(f"Error unloading entity: {e}")
+                            self.context.logger.warning(f"Error unloading entity: {e}")
                 
                 # Remove platform
                 del self._platforms[domain][platform]
@@ -301,12 +300,12 @@ class PluginManager:
             if not has_active:
                 record.state = PluginState.LOADED
             
-            self.context.logger.info(f"Plugins[Unload Entry]: {domain} - Success")
+            self.context.logger.debug(f"Plugins[Unload Entry]: {domain} - Success")
             await self.event_bus.fire("plugin_disabled", {"domain": domain, "entry_id": entry_id})
             return True
             
         except Exception as e:
-            self.context.logger.error(f"Plugins[Unload Entry Failed]: {domain} - {e}")
+            self.context.logger.warning(f"Plugins[Unload Entry Failed]: {domain} - {e}")
             return False
     
     async def _async_load_module(self, domain: str):
@@ -325,7 +324,7 @@ class PluginManager:
             return module
             
         except Exception as e:
-            self.context.logger.error(f"Plugins[Load Module Failed]: {domain} - {e}")
+            self.context.logger.warning(f"Plugins[Load Module Failed]: {domain} - {e}")
             return None
     
     async def _async_load_platform_module(self, domain: str, platform: str):
@@ -347,7 +346,7 @@ class PluginManager:
             platform_path = self.plugins_dir / domain / f"{platform}.py"
             
             if not platform_path.exists():
-                self.context.logger.error(f"Platform file not found: {platform_path}")
+                self.context.logger.warning(f"Platform file not found: {platform_path}")
                 return None
             
             module_name = f"{parent_module_name}.{platform}"
@@ -358,7 +357,7 @@ class PluginManager:
             )
             
             if spec is None or spec.loader is None:
-                self.context.logger.error(f"Failed to create module spec for {platform_path}")
+                self.context.logger.warning(f"Failed to create module spec for {platform_path}")
                 return None
             
             module = importlib.util.module_from_spec(spec)
@@ -369,13 +368,11 @@ class PluginManager:
             
             spec.loader.exec_module(module)
             
-            self.context.logger.info(f"Loaded platform module: {module_name}")
+            self.context.logger.debug(f"Loaded platform module: {module_name}")
             return module
             
         except Exception as e:
-            self.context.logger.error(f"Failed to load {platform} platform for {domain}: {e}")
-            import traceback
-            self.context.logger.error(traceback.format_exc())
+            self.context.logger.warning(f"Failed to load {platform} platform for {domain}: {e}", exc_info=True)
             return None
     
     async def _async_install_dependencies(self, domain: str) -> bool:
@@ -398,11 +395,11 @@ class PluginManager:
                 requirements
             )
             
-            self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installed successfully")
+            self.context.logger.debug(f"Plugins[Dependencies]: {domain} - Installed successfully")
             return True
             
         except Exception as e:
-            self.context.logger.error(f"Plugins[Dependencies Failed]: {domain} - {e}")
+            self.context.logger.warning(f"Plugins[Dependencies Failed]: {domain} - {e}")
             return False
     
     def _install_packages(self, requirements: list[str]):
@@ -420,7 +417,7 @@ class PluginManager:
             self.services[domain] = {}
         
         self.services[domain][service] = callback
-        self.context.logger.info(f"Plugins[Service Registered]: {domain}.{service}")
+        self.context.logger.debug(f"Plugins[Service Registered]: {domain}.{service}")
     
     async def call_service(self, domain: str, service: str, data: Dict[str, Any]):
         """Call a registered service (HA-style)"""

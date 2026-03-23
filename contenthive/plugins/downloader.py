@@ -45,27 +45,27 @@ class GitHubPluginDownloader:
             True if domain is valid, False otherwise
         """
         if not domain or not isinstance(domain, str):
-            logger.error("Domain is empty or not a string")
+            logger.warning("Domain is empty or not a string")
             return False
         
         # Check length
         if len(domain) < 1 or len(domain) > 100:
-            logger.error(f"Domain length invalid: {len(domain)} (must be 1-100)")
+            logger.warning(f"Domain length invalid: {len(domain)} (must be 1-100)")
             return False
         
         # Check for path separators
         if '/' in domain or '\\' in domain:
-            logger.error(f"Domain contains path separators: {domain}")
+            logger.warning(f"Domain contains path separators: {domain}")
             return False
         
         # Check for special path components
         if domain in ('.', '..') or domain.startswith('.'):
-            logger.error(f"Domain is a special path component: {domain}")
+            logger.warning(f"Domain is a special path component: {domain}")
             return False
         
         # Check against allowed pattern
         if not self.VALID_DOMAIN_PATTERN.match(domain):
-            logger.error(f"Domain contains invalid characters: {domain} (allowed: a-z, 0-9, -, _)")
+            logger.warning(f"Domain contains invalid characters: {domain} (allowed: a-z, 0-9, -, _)")
             return False
         
         return True
@@ -93,7 +93,7 @@ class GitHubPluginDownloader:
             Manifest dict if valid, None otherwise
         """
         if not manifest_path.exists():
-            logger.error(f"Manifest not found: {manifest_path}")
+            logger.warning(f"Manifest not found: {manifest_path}")
             return None
         
         try:
@@ -101,20 +101,20 @@ class GitHubPluginDownloader:
             domain = manifest.get("domain")
             
             if not domain:
-                logger.error(f"Manifest missing 'domain' field: {manifest_path}")
+                logger.warning(f"Manifest missing 'domain' field: {manifest_path}")
                 return None
             
             if not self._validate_domain(domain):
-                logger.error(f"Invalid domain in manifest: {domain}")
+                logger.warning(f"Invalid domain in manifest: {domain}")
                 return None
             
             return manifest
             
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in manifest {manifest_path}: {e}")
+            logger.warning(f"Invalid JSON in manifest {manifest_path}: {e}")
             return None
         except Exception as e:
-            logger.error(f"Failed to load manifest {manifest_path}: {e}")
+            logger.warning(f"Failed to load manifest {manifest_path}: {e}")
             return None
     
     def _validate_path_safety(self, target_path: Path, base_path: Path, entity_name: str = "Path") -> bool:
@@ -249,10 +249,10 @@ class GitHubPluginDownloader:
                 
                 # Skip if not in selected list
                 if selected_plugins and domain not in selected_plugins:
-                    logger.info(f"Plugin {domain} not in selected list, skipping...")
+                    logger.debug(f"Plugin {domain} not in selected list, skipping...")
                     return results
                 
-                logger.info(f"Found standalone plugin: {domain}")
+                logger.debug(f"Found standalone plugin: {domain}")
                 success = await self._install_plugin_directory(
                     repo_root,
                     domain,
@@ -285,11 +285,11 @@ class GitHubPluginDownloader:
                     
                     # Check if already installed
                     if not force_reinstall and (self.plugins_dir / domain).exists():
-                        logger.info(f"Plugin {domain} already installed, skipping...")
+                        logger.debug(f"Plugin {domain} already installed, skipping...")
                         results[domain] = True
                         continue
                     
-                    logger.info(f"Installing plugin: {domain}")
+                    logger.debug(f"Installing plugin: {domain}")
                     success = await self._install_plugin_directory(
                         plugin_path,
                         domain,
@@ -326,51 +326,51 @@ class GitHubPluginDownloader:
         try:
             manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
         except FileNotFoundError:
-            logger.error(f"Plugins manifest not found: {manifest_path}")
+            logger.warning(f"Plugins manifest not found: {manifest_path}")
             return results
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in plugins manifest {manifest_path}: {e}")
+            logger.warning(f"Invalid JSON in plugins manifest {manifest_path}: {e}")
             return results
         
         if not isinstance(manifest, dict):
-            logger.error(f"Invalid plugins manifest format: expected dict at root")
+            logger.warning("Invalid plugins manifest format: expected dict at root")
             return results
         
-        logger.info(f"Found {len(manifest.get('plugins', []))} plugins in manifest")
+        logger.debug(f"Found {len(manifest.get('plugins', []))} plugins in manifest")
         
         for plugin_info in manifest.get("plugins", []):
             domain = plugin_info.get("domain")
             
             if not domain:
-                logger.error("Plugin missing 'domain' field, skipping...")
+                logger.warning("Plugin missing 'domain' field, skipping...")
                 continue
             
             # Validate domain
             if not self._validate_domain(domain):
-                logger.error(f"Invalid plugin domain: {domain}, skipping...")
+                logger.warning(f"Invalid plugin domain: {domain}, skipping...")
                 results[domain] = False
                 continue
             
             # Skip if not in selected list
             if selected_plugins and domain not in selected_plugins:
-                logger.info(f"Plugin {domain} not in selected list, skipping...")
+                logger.debug(f"Plugin {domain} not in selected list, skipping...")
                 continue
             
             # Skip if disabled (unless explicitly selected)
             if not plugin_info.get("enabled", True) and not selected_plugins:
-                logger.info(f"Plugin {domain} is disabled, skipping...")
+                logger.debug(f"Plugin {domain} is disabled, skipping...")
                 continue
             
             # Install plugin
             plugin_rel_path = plugin_info.get("path")
             if not plugin_rel_path:
-                logger.error(f"Plugin {domain} missing 'path' in manifest, skipping...")
+                logger.warning(f"Plugin {domain} missing 'path' in manifest, skipping...")
                 results[domain] = False
                 continue
             
             plugin_rel_path = Path(plugin_rel_path)
             if plugin_rel_path.is_absolute():
-                logger.error(f"Plugin {domain} has absolute path in manifest, skipping...")
+                logger.warning(f"Plugin {domain} has absolute path in manifest, skipping...")
                 results[domain] = False
                 continue
             
@@ -381,11 +381,11 @@ class GitHubPluginDownloader:
                 continue
 
             if not plugin_path.exists():
-                logger.error(f"Plugin path not found: {plugin_path}")
+                logger.warning(f"Plugin path not found: {plugin_path}")
                 results[domain] = False
                 continue
             
-            logger.info(f"Installing plugin: {domain} ({plugin_info.get('name', domain)})")
+            logger.debug(f"Installing plugin: {domain} ({plugin_info.get('name', domain)})")
             success = await self._install_plugin_directory(
                 plugin_path,
                 domain,
@@ -395,9 +395,9 @@ class GitHubPluginDownloader:
             results[domain] = success
             
             if success:
-                logger.info(f"✓ Successfully installed: {domain}")
+                logger.info(f"Plugin installed: {domain}")
             else:
-                logger.error(f"✗ Failed to install: {domain}")
+                logger.warning(f"Plugin install failed: {domain}")
         
         return results
     
@@ -488,11 +488,11 @@ class GitHubPluginDownloader:
         try:
             # Re-validate domain for safety (defense in depth)
             if not self._validate_domain(domain):
-                logger.error(f"Invalid plugin domain: {domain}")
+                logger.warning(f"Invalid plugin domain: {domain}")
                 return False
             
             if not source_dir.exists():
-                logger.error(f"Source directory does not exist: {source_dir}")
+                logger.warning(f"Source directory does not exist: {source_dir}")
                 return False
             
             target_dir = self.plugins_dir / domain
@@ -525,11 +525,11 @@ class GitHubPluginDownloader:
             # Copy plugin files
             shutil.copytree(source_dir, target_dir)
             
-            logger.info(f"Plugin installed to: {target_dir}")
+            logger.debug(f"Plugin installed to: {target_dir}")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to install plugin {domain}: {e}", exc_info=True)
+            logger.warning(f"Failed to install plugin {domain}: {e}", exc_info=True)
             return False
     
     def _parse_github_url(self, url: str) -> tuple[str, str]:

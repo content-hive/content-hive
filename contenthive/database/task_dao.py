@@ -93,13 +93,12 @@ class TaskDAO:
             
             if commit:
                 session.commit()
-                logger.info(f"Created main task {task_id} with ID {task_db_id}")
             
             return task_db_id
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to create main task {task_id}: {e}")
+            logger.exception(f"Failed to create main task {task_id}")
             raise
 
     def create_reused_main_task(
@@ -152,13 +151,12 @@ class TaskDAO:
             
             if commit:
                 session.commit()
-                logger.info(f"Created REUSED main task {task_id} with ID {task_db_id}")
             
             return task_db_id
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to create REUSED main task {task_id}: {e}")
+            logger.exception(f"Failed to create REUSED main task {task_id}")
             raise
 
     def get_main_task_by_id(self, id: int, include_sub_tasks: bool = False) -> Optional[MainTaskEntity]:
@@ -182,7 +180,7 @@ class TaskDAO:
             result = session.execute(stmt).unique().scalar_one_or_none()
             return MainTaskEntity.from_orm(result) if result else None
         except Exception as e:
-            logger.error(f"Failed to get main task by ID {id}: {e}")
+            logger.exception(f"Failed to get main task by ID {id}")
             raise
 
     def get_main_task_by_task_id(self, task_id: str, include_sub_tasks: bool = False) -> Optional[MainTaskEntity]:
@@ -206,7 +204,7 @@ class TaskDAO:
             result = session.execute(stmt).unique().scalar_one_or_none()
             return MainTaskEntity.from_orm(result) if result else None
         except Exception as e:
-            logger.error(f"Failed to get main task by task_id {task_id}: {e}")
+            logger.exception(f"Failed to get main task by task_id {task_id}")
             raise
 
     def update_main_task_status(
@@ -249,13 +247,12 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Updated main task {id} status to {status}")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to update main task {id} status: {e}")
+            logger.exception(f"Failed to update main task {id} status")
             raise
 
     def update_main_task_result(
@@ -287,13 +284,12 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Updated main task {id} result")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to update main task {id} result: {e}")
+            logger.exception(f"Failed to update main task {id} result")
             raise
 
     def update_main_task_parse_result_id(
@@ -325,13 +321,12 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Updated main task {id} parse_result_id to {parse_result_id}")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to update main task {id} parse_result_id: {e}")
+            logger.exception(f"Failed to update main task {id} parse_result_id")
             raise
 
     def list_main_tasks(
@@ -412,7 +407,7 @@ class TaskDAO:
             result = session.execute(stmt).unique().scalars().all()
             return [MainTaskEntity.from_orm(task) for task in result], total
         except Exception as e:
-            logger.error(f"Failed to list main tasks: {e}")
+            logger.exception(f"Failed to list main tasks")
             raise
 
     def find_running_primary_task_by_url(self, url: str, task_type: TaskType = TaskType.PARSE_CONTENT) -> Optional[MainTaskEntity]:
@@ -443,7 +438,7 @@ class TaskDAO:
             result = session.execute(stmt).scalar_one_or_none()
             return MainTaskEntity.from_orm(result) if result else None
         except Exception as e:
-            logger.error(f"Failed to find running primary task for URL {url}: {e}")
+            logger.exception(f"Failed to find running primary task for URL {url}")
             raise
 
     def delete_main_task(self, id: int, commit: bool = True) -> bool:
@@ -469,13 +464,13 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Deleted main task {id}")
+                logger.debug(f"Deleted main task {id}")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to delete main task {id}: {e}")
+            logger.exception(f"Failed to delete main task {id}")
             raise
 
     # SubTask Methods
@@ -522,13 +517,12 @@ class TaskDAO:
             
             if commit:
                 session.commit()
-                logger.info(f"Created sub task {sub_task_id} with ID {sub_task_db_id}")
             
             return sub_task_db_id
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to create sub task {sub_task_id}: {e}")
+            logger.exception(f"Failed to create sub task {sub_task_id}")
             raise
 
     def get_sub_task_by_id(self, id: int) -> Optional[SubTaskEntity]:
@@ -547,7 +541,7 @@ class TaskDAO:
             result = session.execute(stmt).scalar_one_or_none()
             return SubTaskEntity.from_orm(result) if result else None
         except Exception as e:
-            logger.error(f"Failed to get sub task by ID {id}: {e}")
+            logger.exception(f"Failed to get sub task by ID {id}")
             raise
 
     def get_sub_task_by_sub_task_id(self, sub_task_id: str) -> Optional[SubTaskEntity]:
@@ -566,7 +560,7 @@ class TaskDAO:
             result = session.execute(stmt).scalar_one_or_none()
             return SubTaskEntity.from_orm(result) if result else None
         except Exception as e:
-            logger.error(f"Failed to get sub task by sub_task_id {sub_task_id}: {e}")
+            logger.exception(f"Failed to get sub task by sub_task_id {sub_task_id}")
             raise
 
     def get_sub_tasks_by_main_task_id(self, main_task_id: int) -> List[SubTaskEntity]:
@@ -591,7 +585,7 @@ class TaskDAO:
             result = session.execute(stmt).scalars().all()
             return [SubTaskEntity.from_orm(task) for task in result]
         except Exception as e:
-            logger.error(f"Failed to get sub tasks for main task {main_task_id}: {e}")
+            logger.exception(f"Failed to get sub tasks for main task {main_task_id}")
             raise
 
     def update_sub_task_status(
@@ -636,13 +630,12 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Updated sub task {id} status to {status}")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to update sub task {id} status: {e}")
+            logger.exception(f"Failed to update sub task {id} status")
             raise
 
     def update_sub_task_progress(
@@ -675,13 +668,12 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Updated sub task {id} progress to {progress}%")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to update sub task {id} progress: {e}")
+            logger.exception(f"Failed to update sub task {id} progress")
             raise
 
     def update_sub_task_result(
@@ -713,13 +705,12 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Updated sub task {id} result")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to update sub task {id} result: {e}")
+            logger.exception(f"Failed to update sub task {id} result")
             raise
 
     def list_sub_tasks(
@@ -761,7 +752,7 @@ class TaskDAO:
             result = session.execute(stmt).scalars().all()
             return [SubTaskEntity.from_orm(task) for task in result]
         except Exception as e:
-            logger.error(f"Failed to list sub tasks: {e}")
+            logger.exception(f"Failed to list sub tasks")
             raise
 
     def delete_sub_task(self, id: int, soft_delete: bool = True, commit: bool = True) -> bool:
@@ -791,11 +782,11 @@ class TaskDAO:
 
             if commit:
                 session.commit()
-                logger.info(f"Deleted sub task {id} (soft={soft_delete})")
+                logger.debug(f"Deleted sub task {id} (soft={soft_delete})")
             
             return True
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Failed to delete sub task {id}: {e}")
+            logger.exception(f"Failed to delete sub task {id}")
             raise

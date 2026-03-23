@@ -87,6 +87,15 @@ Router → Service → DAO (Data Access Object) → ORM Model
 
 - Use the project-wide logger: `from contenthive.logger import logger`
 - Never use `print` as a substitute for logging
+- Log level guidelines:
+  - `DEBUG` — Internal flow details visible only in the log file (e.g., module loaded, entity registered, cache hit). Not shown in console.
+  - `INFO` — Meaningful lifecycle events a user or operator should see in the console: application started/stopped, network I/O initiated (downloads, external requests), plugin summary, long-running operations starting.
+  - `WARNING` — Recoverable, non-fatal conditions: validation failures, skipped items, plugin install failures, degraded-mode startup. Process continues normally.
+  - `ERROR` — Unrecoverable failures that require attention and may affect functionality (use `logger.exception()` inside `except` blocks to include the stack trace automatically).
+- Prefer `logger.exception(...)` over `logger.error(..., exc_info=True)` inside `except` blocks — they are equivalent but `exception` is more idiomatic.
+- Do not manually call `traceback.format_exc()` and log it separately; set `exc_info=True` or use `logger.exception()` instead.
+- Do not use Unicode symbols (✓ ✗) in log messages — use plain text for reliable log parsing.
+- Avoid logging inside tight loops or per-item success paths at `INFO`; use `DEBUG` instead and emit a single summary line at `INFO` after the loop.
 
 ### Async Conventions
 

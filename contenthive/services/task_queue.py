@@ -81,7 +81,7 @@ class TaskQueue:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to enqueue task {task_id}: {e}")
+            logger.exception(f"Failed to enqueue task {task_id}")
             return False
     
     def get_queue_status(self) -> Dict[str, Any]:
@@ -110,11 +110,11 @@ class TaskQueue:
         except asyncio.CancelledError:
             logger.warning(f"Task {task_id} was cancelled")
         except Exception as e:
-            logger.error(f"Unexpected error retrieving task {task_id} result: {e}")
+            logger.exception(f"Unexpected error retrieving task {task_id} result")
     
     async def _worker(self):
         """Background worker that processes tasks from the queue."""
-        logger.info("Task queue worker started processing")
+        logger.debug("Task queue worker started processing")
         
         while not self._shutdown:
             try:
@@ -131,7 +131,7 @@ class TaskQueue:
                     except asyncio.CancelledError:
                         logger.warning(f"Task {tid} was cancelled")
                     except Exception as e:
-                        logger.error(f"Unexpected error retrieving task {tid} result: {e}")
+                        logger.exception(f"Unexpected error retrieving task {tid} result")
                     finally:
                         del self._running_tasks[tid]
                 
@@ -152,10 +152,10 @@ class TaskQueue:
                 await asyncio.sleep(1)
                 
             except Exception as e:
-                logger.error(f"Task queue worker error: {e}")
+                logger.exception(f"Task queue worker error")
                 await asyncio.sleep(5)  # Wait longer on error
         
-        logger.info("Task queue worker stopped processing")
+        logger.debug("Task queue worker stopped processing")
     
     async def _execute_task(self, task_id: int):
         """
@@ -187,7 +187,7 @@ class TaskQueue:
                 if task and task.role == TaskRole.PRIMARY:
                     await task_service.fail_linked_tasks(task_id)
             except Exception as linked_error:
-                logger.error(f"Failed to update linked tasks for failed primary task {task_id}: {linked_error}")
+                logger.exception(f"Failed to update linked tasks for failed primary task {task_id}")
             
             raise
 

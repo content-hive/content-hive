@@ -791,7 +791,7 @@ class ContentDAO:
             )
             author_ids = session.execute(stmt).scalars().all()
             
-            logger.info(f"Soft deleting user {user_id}'s platform {platform_id} with {len(author_ids)} authors")
+            logger.debug(f"Soft deleting user {user_id}'s platform {platform_id} with {len(author_ids)} authors")
             
             # Soft delete each author association
             for author_id in author_ids:
@@ -804,14 +804,13 @@ class ContentDAO:
             
             if commit:
                 session.commit()
-                logger.info(f"Successfully soft deleted user {user_id}'s platform {platform_id} association")
             
             return True, all_file_paths
             
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Database error when soft deleting platform {platform_id} for user {user_id}: {e}")
+            logger.exception(f"Database error when soft deleting platform {platform_id} for user {user_id}")
             raise Exception(f"Failed to soft delete platform association: {e}")
 
     def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
@@ -855,7 +854,7 @@ class ContentDAO:
             )
             parse_result_ids = session.execute(stmt).scalars().all()
             
-            logger.info(f"Soft deleting user {user_id}'s author {author_id} with {len(parse_result_ids)} parse results")
+            logger.debug(f"Soft deleting user {user_id}'s author {author_id} with {len(parse_result_ids)} parse results")
 
             # Soft delete each parse result association
             for pr_id in parse_result_ids:
@@ -868,14 +867,13 @@ class ContentDAO:
             
             if commit:
                 session.commit()
-                logger.info(f"Successfully soft deleted user {user_id}'s author {author_id} association")
             
             return True, all_file_paths
             
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Database error when soft deleting author {author_id} for user {user_id}: {e}")
+            logger.exception(f"Database error when soft deleting author {author_id} for user {user_id}")
             raise Exception(f"Failed to soft delete author association: {e}")
 
     def delete_parse_result(self, user_id: int, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
@@ -926,7 +924,7 @@ class ContentDAO:
             
             # If parse result becomes orphaned, collect media paths and clean up
             if other_users_count == 0:
-                logger.info(f"Parse result {parse_result_id} will be orphaned, collecting media")
+                logger.debug(f"Parse result {parse_result_id} will be orphaned, collecting media")
                 
                 # Get orphaned media IDs (only used by this parse result and not by other active results)
                 orphaned_media_ids = []
@@ -974,12 +972,11 @@ class ContentDAO:
             
             if commit:
                 session.commit()
-                logger.info(f"Soft deleted user {user_id}'s parse result {parse_result_id} association")
 
             return True, file_paths
 
         except Exception as e:
             if commit:
                 session.rollback()
-            logger.error(f"Unexpected error when soft deleting parse result {parse_result_id} for user {user_id}: {e}")
+            logger.exception(f"Unexpected error when soft deleting parse result {parse_result_id} for user {user_id}")
             raise

@@ -25,20 +25,12 @@ def register_extra_mimetypes():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Startup step 1/8: ensuring directories")
-    # 1. Ensure necessary directories exist FIRST
     ensure_directories()
-
-    logger.info("Startup step 2/8: enabling file logging")
-    # 2. Now that directories exist, setup file logging
     setup_file_logging()
-    
-    logger.info("Startup step 3/8: initializing restart manager")
-    # 3. Initialize restart manager
+
     restart_manager = RestartManager(settings.data_dir)
     set_restart_manager(restart_manager)
-    
-    # Check restart flag (safe mode, etc.)
+
     restart_type = restart_manager.check_restart_flag()
     if restart_type == RestartType.SAFE_MODE:
         logger.warning("Starting in SAFE MODE - plugins disabled")
@@ -46,18 +38,11 @@ async def lifespan(app: FastAPI):
     else:
         skip_plugins = False
 
-    logger.info("Startup step 4/8: initializing database")
-    # 4. Initialize database synchronously during startup.
-    # This avoids thread-related issues while Alembic configures logging.
     initialize_db()
 
-    logger.info("Startup step 5/8: mounting media static files")
-    # 5. Mount static files AFTER directories are created
     register_extra_mimetypes()
     app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
-    logger.info("Startup step 6/8: loading plugins")
-    # 6. Load plugins (unless in safe mode)
     if not skip_plugins:
         try:
             await load_plugins_on_startup(app, settings.data_dir)
@@ -68,23 +53,14 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Plugins loading skipped (safe mode)")
 
-
-    logger.info("Startup step 7/8: starting task queue worker")
-    # 7. Start task queue worker
     await task_queue.start()
 
-    logger.info("Startup step 8/8: startup completed")
     logger.info("Application started successfully.")
-    
+
     yield
 
-    # Stop task queue worker gracefully
     await task_queue.stop()
-
-    # Shutdown plugins gracefully
     await shutdown_plugins()
-
-    # Application shutdown logic
     logger.info("Shutting down application.")
 
 

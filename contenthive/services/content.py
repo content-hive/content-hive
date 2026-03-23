@@ -48,7 +48,7 @@ class ContentService:
                 if await manager.call_service(preferred_domain, "can_parse", {"url": url}):
                     return preferred_domain
             except Exception as e:
-                logger.error(f"Error checking preferred parser {preferred_domain}: {e}")
+                logger.exception(f"Error checking preferred parser {preferred_domain}")
         
         # Try all parsers
         for domain in parser_domains:
@@ -59,7 +59,7 @@ class ContentService:
                 if await manager.call_service(domain, "can_parse", {"url": url}):
                     return domain
             except Exception as e:
-                logger.error(f"Error checking {domain}: {e}")
+                logger.exception(f"Error checking parser {domain}")
         
         return None
 
@@ -91,7 +91,7 @@ class ContentService:
             if not domain:
                 raise Exception(f"No parser found for URL: {url}")
             
-            logger.info(f"Using parser plugin: {domain} for URL: {url}")
+            logger.debug(f"Using parser plugin: {domain} for URL: {url}")
             
             # Parse content
             result = await manager.call_service(domain, "parse", {"url": str(url)})
@@ -99,10 +99,9 @@ class ContentService:
             if not result:
                 raise Exception(f"Parser returned empty result for URL: {url}")
             
-            logger.info(f"Successfully parsed content from URL: {url} using plugin: {domain}")
             return result
         except Exception as e:
-            logger.error(f"Error fetching content from URL {url}: {e}")
+            logger.exception(f"Error fetching content from URL {url}")
             raise ValueError(f"Failed to parse URL content: {e}")
 
 
@@ -155,7 +154,7 @@ class ContentService:
                 )
             )
         except Exception as e:
-            logger.error(f"Error fetching contents from the database: {e}")
+            logger.exception("Error fetching contents from the database")
             raise
     
     async def list_platforms(
@@ -201,7 +200,7 @@ class ContentService:
                 )
             )
         except Exception as e:
-            logger.error(f"Error fetching platforms from the database: {e}")
+            logger.exception("Error fetching platforms from the database")
             raise
 
     async def list_authors(
@@ -250,7 +249,7 @@ class ContentService:
                 )
             )
         except Exception as e:
-            logger.error(f"Error fetching authors from the database: {e}")
+            logger.exception("Error fetching authors from the database")
             raise
 
     async def delete_platform(self, user_id: int, platform_id: int) -> bool:
@@ -265,8 +264,6 @@ class ContentService:
             True if deletion was successful
         """
         try:
-            logger.info(f"Deleting platform {platform_id}")
-            
             with ContentDAO() as dao:
                 success, file_paths = dao.delete_platform(user_id, platform_id, commit=True)
             
@@ -276,7 +273,7 @@ class ContentService:
             
             return success
         except Exception as e:
-            logger.error(f"Error deleting platform {platform_id}: {e}")
+            logger.exception(f"Error deleting platform {platform_id}")
             raise
 
     async def delete_author(self, user_id: int, author_id: int) -> bool:
@@ -291,8 +288,6 @@ class ContentService:
             True if deletion was successful
         """
         try:
-            logger.info(f"Deleting author {author_id}")
-            
             with ContentDAO() as dao:
                 success, file_paths = dao.delete_author(user_id, author_id, commit=True)
             
@@ -302,7 +297,7 @@ class ContentService:
             
             return success
         except Exception as e:
-            logger.error(f"Error deleting author {author_id}: {e}")
+            logger.exception(f"Error deleting author {author_id}")
             raise
 
     async def delete_parse_result(self, user_id: int, parse_result_id: int) -> bool:
@@ -317,8 +312,6 @@ class ContentService:
             True if deletion was successful
         """
         try:
-            logger.info(f"Deleting parse result {parse_result_id}")
-            
             with ContentDAO() as dao:
                 success, file_paths = dao.delete_parse_result(user_id, parse_result_id, commit=True)
             
@@ -328,7 +321,7 @@ class ContentService:
             
             return success
         except Exception as e:
-            logger.error(f"Error deleting parse result {parse_result_id}: {e}")
+            logger.exception(f"Error deleting parse result {parse_result_id}")
             raise
     
     async def increment_sync(
@@ -377,7 +370,7 @@ class ContentService:
                 sync_timestamp=sync_timestamp
             )
         except Exception as e:
-            logger.error(f"Error syncing content for user {user_id}: {e}")
+            logger.exception(f"Error syncing content for user {user_id}")
             raise
 
 content_service = ContentService()
