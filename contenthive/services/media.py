@@ -9,6 +9,7 @@ from typing import Optional
 import aiofiles
 import aiohttp
 import hashlib
+import magic
 from pathlib import Path
 
 from pydantic import HttpUrl
@@ -121,7 +122,7 @@ class MediaService:
 
                 return downloaded_media
         except Exception as e:
-            logger.exception(f"Failed to download media for content {content_id}")
+            logger.exception(f"Failed to download media for content {content_id}: {media_url}")
             return None
 
     async def _download_file(
@@ -151,18 +152,24 @@ class MediaService:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
                     response.raise_for_status()
 
-                    # Get file extension from URL or content-type
+                    # Read first chunk to detect MIME type from magic bytes
+                    first_chunk = await response.content.read(4096)
+                    if not first_chunk:
+                        raise aiohttp.ClientError("Empty response body")
+
                     content_type = response.headers.get('content-type', '')
-                    ext = self._get_file_extension(url, content_type)
+                    ext = self._detect_extension(first_chunk, url, content_type)
 
                     filename = f"{index:03d}_{file_type}{ext}"
                     filepath = save_dir / filename
 
-                    # Stream response to disk in chunks to keep memory bounded
+                    # Write first chunk then stream the rest to disk
                     async with aiofiles.open(filepath, 'wb') as f:
+                        await f.write(first_chunk)
                         async for chunk in response.content.iter_chunked(65536):
                             await f.write(chunk)
 
+                    logger.debug(f"Downloaded {file_type} from {url} -> {filepath}")
                     return filepath
             except aiohttp.ClientResponseError as e:
                 # 4xx errors are client-side faults; retrying won't help
@@ -223,27 +230,47 @@ class MediaService:
             name = name.replace(char, '_')
         return name.strip()[:100]  # Limit length
 
-    @staticmethod
-    def _get_file_extension(url: str, content_type: str) -> str:
+    # Normalise extensions that mimetypes.guess_extension returns inconsistently
+    # across platforms (e.g. .jpe / .jpeg → .jpg on some systems).
+    _EXT_NORMALISE: dict[str, str] = {
+        ".jpe": ".jpg",
+        ".jpeg": ".jpg",
+    }
+
+    @classmethod
+    def _detect_extension(cls, data: bytes, url: str, content_type: str) -> str:
         """
-        Get file extension from URL or content-type.
-        
+        Determine the file extension using magic bytes first, then URL, then
+        Content-Type header as successive fallbacks.
+
         Args:
-            url: File URL
-            content_type: HTTP content-type header
-            
+            data: First bytes of the downloaded file (used for magic detection).
+            url: Source URL of the file.
+            content_type: HTTP Content-Type header value.
+
         Returns:
-            File extension with leading dot
+            File extension with leading dot, or empty string if undetermined.
         """
-        # Try to get extension from URL
+        # 1. Magic-byte detection — most reliable
+        try:
+            mime = magic.from_buffer(data, mime=True)
+            if mime:
+                ext = mimetypes.guess_extension(mime)
+                if ext:
+                    return cls._EXT_NORMALISE.get(ext, ext)
+        except Exception:
+            pass
+
+        # 2. Extension embedded in the URL path
         url_ext = os.path.splitext(url.split('?')[0])[1]
         if url_ext and len(url_ext) <= 5:
             return url_ext
-        
-        # Fallback to content-type
+
+        # 3. Content-Type header
         ext = mimetypes.guess_extension(content_type.split(';')[0].strip())
         if ext:
-            return ext
+            return cls._EXT_NORMALISE.get(ext, ext)
+
         return ''
 
     def delete_media_files(self, file_paths: list[str]) -> tuple[int, int]:
