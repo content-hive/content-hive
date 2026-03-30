@@ -14,6 +14,9 @@ class ParserMediaInfo(BaseModel):
     type: Optional[MediaType] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
     cover: Optional[HttpUrl] = Field(None, description="Video cover URL")
+    duration: Optional[int] = Field(None, description="Video duration in seconds")
+    width: Optional[int] = Field(None, description="Media width in pixels")
+    height: Optional[int] = Field(None, description="Media height in pixels")
 
 
 class ParserPlatformInfo(BaseModel):
