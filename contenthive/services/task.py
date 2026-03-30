@@ -597,6 +597,9 @@ class TaskService:
                         "media_type": media.type,
                         "media_cover": str(media.cover) if media.cover else None,
                         "media_description": media.title,
+                        "media_duration": media.duration,
+                        "media_width": media.width,
+                        "media_height": media.height,
                         "media_index": idx
                     },
                     depends_on_id=parse_subtask.id
@@ -857,6 +860,9 @@ class TaskService:
         media_type = sub_task.parameters.get("media_type")
         media_cover = sub_task.parameters.get("media_cover")
         media_description = sub_task.parameters.get("media_description")
+        media_duration = sub_task.parameters.get("media_duration")
+        media_width = sub_task.parameters.get("media_width")
+        media_height = sub_task.parameters.get("media_height")
         
         try:
             # Validate required parameters
@@ -888,6 +894,9 @@ class TaskService:
                 media_type=media_type,
                 media_cover=HttpUrl(media_cover) if media_cover else None,
                 media_description=media_description,
+                media_duration=media_duration,
+                media_width=media_width,
+                media_height=media_height,
                 media_index=media_index
             )
             
@@ -907,9 +916,9 @@ class TaskService:
                     type=media_type,
                     title=media_description,
                     cover=media_cover if media_cover else None,
-                    duration=None,
-                    width=None,
-                    height=None,
+                    duration=media_duration,
+                    width=media_width,
+                    height=media_height,
                     media_path=None,
                     cover_path=None
                 )
@@ -934,9 +943,9 @@ class TaskService:
                 type=media_type,
                 title=media_description,
                 cover=media_cover if media_cover else None,
-                duration=None,
-                width=None,
-                height=None,
+                duration=media_duration,
+                width=media_width,
+                height=media_height,
                 media_path=None,
                 cover_path=None
             )

@@ -62,6 +62,9 @@ class MediaService:
         media_type: MediaType,
         media_cover: Optional[HttpUrl] = None,
         media_description: Optional[str] = None,
+        media_duration: Optional[int] = None,
+        media_width: Optional[int] = None,
+        media_height: Optional[int] = None,
         media_index: int = 0
     ) -> Optional[DownloadedMediaInfo]:
         """
@@ -74,6 +77,9 @@ class MediaService:
             media_type: Type of the media (e.g., image, video)
             media_cover: Optional URL of the cover image
             media_description: Optional description of the media
+            media_duration: Optional duration of the media in seconds (for videos)
+            media_width: Optional width of the media in pixels
+            media_height: Optional height of the media in pixels
             media_index: Index of the media in the list
         Returns:
             DownloadedMediaInfo object or None if download failed
@@ -113,9 +119,9 @@ class MediaService:
                     type=media_type,
                     title=media_description,
                     cover=media_cover,
-                    duration=0,
-                    width=0,
-                    height=0,
+                    duration=media_duration,
+                    width=media_width,
+                    height=media_height,
                     media_path=self.get_relative_media_path(local_path),
                     cover_path=self.get_relative_media_path(cover_path) if cover_path else None
                 )
