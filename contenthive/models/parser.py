@@ -31,7 +31,8 @@ class ParserAuthorInfo(BaseModel):
     username: str = Field(..., description="Username")
     avatar: Optional[HttpUrl] = Field(None, description="Avatar URL")
     url: Optional[HttpUrl] = Field(None, description="Author profile URL")
-
+    banner: Optional[HttpUrl] = Field(None, description="Author banner URL")
+    description: Optional[str] = Field(None, description="Author description")
 
 class ParserResult(BaseModel):
     """Raw parser result (before saving to database)"""

@@ -50,6 +50,8 @@ class AuthorEntity:
     username: str = ""
     avatar: Optional[str] = None
     url: Optional[str] = None
+    banner: Optional[str] = None
+    description: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -71,6 +73,8 @@ class AuthorEntity:
             username=orm.username,
             avatar=orm.avatar,
             url=orm.url,
+            banner=orm.banner,
+            description=orm.description,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
             platform=PlatformEntity.from_orm(orm.platform)
@@ -266,6 +270,8 @@ class AuthorInfo(APIBaseModel):
     username: str = Field(..., description="Username")
     avatar: Optional[HttpUrl] = Field(None, description="Avatar URL")
     url: Optional[HttpUrl] = Field(None, description="Author profile URL")
+    banner: Optional[HttpUrl] = Field(None, description="Author banner URL")
+    description: Optional[str] = Field(None, description="Author description")
     platform: PlatformInfo = Field(..., description="Platform information")
 
     @classmethod
@@ -278,6 +284,8 @@ class AuthorInfo(APIBaseModel):
             username=entity.username,
             avatar=entity.avatar, # type: ignore
             url=entity.url, # type: ignore
+            banner=entity.banner, # type: ignore
+            description=entity.description,
             platform=PlatformInfo.from_entity(entity.platform)
         )
 

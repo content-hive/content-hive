@@ -142,6 +142,8 @@ class ContentDAO:
                 existing_author.username = author.username
                 existing_author.avatar = str(author.avatar) if author.avatar else None
                 existing_author.url = str(author.url) if author.url else None
+                existing_author.banner = str(author.banner) if author.banner else None
+                existing_author.description = author.description
                 # Restore if soft-deleted
                 if existing_author.deleted_at is not None:
                     existing_author.deleted_at = None
@@ -156,7 +158,9 @@ class ContentDAO:
                     name=author.name,
                     username=author.username,
                     avatar=str(author.avatar) if author.avatar else None,
-                    url=str(author.url) if author.url else None
+                    url=str(author.url) if author.url else None,
+                    banner=str(author.banner) if author.banner else None,
+                    description=author.description
                 )
                 session.add(new_author)
                 session.flush()
