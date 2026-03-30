@@ -112,6 +112,8 @@ class Author(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String, nullable=False)
     avatar: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    banner: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     
     # Unique constraint
     __table_args__ = (
