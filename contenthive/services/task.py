@@ -916,9 +916,9 @@ class TaskService:
                     type=media_type,
                     title=media_description,
                     cover=media_cover if media_cover else None,
-                    duration=None,
-                    width=None,
-                    height=None,
+                    duration=media_duration,
+                    width=media_width,
+                    height=media_height,
                     media_path=None,
                     cover_path=None
                 )
@@ -943,9 +943,9 @@ class TaskService:
                 type=media_type,
                 title=media_description,
                 cover=media_cover if media_cover else None,
-                duration=None,
-                width=None,
-                height=None,
+                duration=media_duration,
+                width=media_width,
+                height=media_height,
                 media_path=None,
                 cover_path=None
             )
