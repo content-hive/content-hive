@@ -1,8 +1,10 @@
 import importlib.util
+import inspect
 import sys
 import json
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable
 import asyncio
 import subprocess
 
@@ -12,7 +14,7 @@ from contenthive.logger import logger
 
 class PluginEntryData:
     """Plugin configuration entry data"""
-    def __init__(self, entry_id: str, domain: str, data: Dict[str, Any]):
+    def __init__(self, entry_id: str, domain: str, data: dict[str, Any]):
         self.entry_id = entry_id
         self.domain = domain
         self.data = data
@@ -23,7 +25,7 @@ class PluginEntryData:
 class EventBus:
     """Simple event bus for plugin communication"""
     def __init__(self):
-        self._listeners: Dict[str, list[Callable]] = {}
+        self._listeners: dict[str, list[Callable]] = {}
     
     def listen(self, event_type: str, callback: Callable):
         """Register event listener"""
@@ -31,12 +33,12 @@ class EventBus:
             self._listeners[event_type] = []
         self._listeners[event_type].append(callback)
     
-    async def fire(self, event_type: str, data: Dict[str, Any]):
+    async def fire(self, event_type: str, data: dict[str, Any]):
         """Fire event to all listeners"""
         if event_type in self._listeners:
             for callback in self._listeners[event_type]:
                 try:
-                    if asyncio.iscoroutinefunction(callback):
+                    if inspect.iscoroutinefunction(callback):
                         await callback(data)
                     else:
                         callback(data)
@@ -53,18 +55,22 @@ class PluginManager:
     def __init__(self, plugins_dir: Path, context):
         self.plugins_dir = plugins_dir
         self.context = context
-        self.plugins: Dict[str, PluginRecord] = {}
-        self.config_entries: Dict[str, PluginEntryData] = {}
+        self.plugins: dict[str, PluginRecord] = {}
+        self.config_entries: dict[str, PluginEntryData] = {}
         self.event_bus = EventBus()
         
         # Plugin data storage (like hass.data[DOMAIN])
-        self.data: Dict[str, Any] = {}
-        
+        self.data: dict[str, Any] = {}
+
         # Service registry
-        self.services: Dict[str, Dict[str, Callable]] = {}
-        
+        self.services: dict[str, dict[str, Callable]] = {}
+
         # Platform registry (domain -> platform -> entities)
-        self._platforms: Dict[str, Dict[str, list[Any]]] = {}
+        self._platforms: dict[str, dict[str, list[Any]]] = {}
+
+        # Update check cache: domain -> latest version string if update available, else None
+        self._available_updates: dict[str, str | None] = {}
+        self._last_update_check: datetime | None = None
     
     async def async_discover(self):
         """Discover plugins asynchronously from the plugins directory."""
@@ -72,29 +78,28 @@ class PluginManager:
         for plugin_dir in self.plugins_dir.iterdir():
             if not plugin_dir.is_dir():
                 continue
-            
+
             manifest_path = plugin_dir / "manifest.json"
             if not manifest_path.exists():
                 continue
-            
+
             tasks.append(self._async_load_manifest(plugin_dir, manifest_path))
-        
+
         await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         await self.event_bus.fire("plugins_discovered", {
             "count": len(self.plugins)
         })
-    
+
     async def _async_load_manifest(self, plugin_dir: Path, manifest_path: Path):
         """Load plugin manifest"""
         try:
             manifest = json.loads(manifest_path.read_text())
             domain = manifest['domain']
-            
-            # Store module reference instead of instance
+
             self.plugins[domain] = PluginRecord(manifest, None)
             self.context.logger.debug(f"Plugins[Discovered]: {domain}")
-            
+
             await self.event_bus.fire("plugin_discovered", {
                 "domain": domain,
                 "manifest": manifest
@@ -102,7 +107,7 @@ class PluginManager:
         except Exception as e:
             self.context.logger.warning(f"Plugins[Discovery Failed]: {plugin_dir.name} - {e}")
     
-    async def async_setup(self, domain: str, config: Optional[Dict[str, Any]] = None) -> bool:
+    async def async_setup(self, domain: str, config: dict[str, Any] | None = None) -> bool:
         """
         Setup plugin from configuration (HA-style).
         Calls the plugin module's async_setup function.
@@ -166,7 +171,9 @@ class PluginManager:
                     return False
             
             module = record.instance
-            
+            if not module:
+                raise Exception("Plugin module not loaded")
+
             # Call module-level async_setup_entry function
             if hasattr(module, "async_setup_entry"):
                 result = await module.async_setup_entry(self.context, entry)
@@ -314,9 +321,11 @@ class PluginManager:
             module_path = self.plugins_dir / domain / "__init__.py"
             
             spec = importlib.util.spec_from_file_location(
-                f"plugin_{domain}", 
+                f"plugin_{domain}",
                 module_path
             )
+            if spec is None or spec.loader is None:
+                raise Exception(f"Cannot create module spec for {module_path}")
             module = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = module
             spec.loader.exec_module(module)
@@ -339,6 +348,8 @@ class PluginManager:
                     init_path,
                     submodule_search_locations=[str(self.plugins_dir / domain)]
                 )
+                if parent_spec is None or parent_spec.loader is None:
+                    raise Exception(f"Cannot create module spec for {init_path}")
                 parent_module = importlib.util.module_from_spec(parent_spec)
                 sys.modules[parent_module_name] = parent_module
                 parent_spec.loader.exec_module(parent_module)
@@ -388,7 +399,7 @@ class PluginManager:
         try:
             self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installing {len(requirements)} packages")
             
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None,
                 self._install_packages,
@@ -419,14 +430,14 @@ class PluginManager:
         self.services[domain][service] = callback
         self.context.logger.debug(f"Plugins[Service Registered]: {domain}.{service}")
     
-    async def call_service(self, domain: str, service: str, data: Dict[str, Any]):
+    async def call_service(self, domain: str, service: str, data: dict[str, Any]):
         """Call a registered service (HA-style)"""
         if domain not in self.services or service not in self.services[domain]:
             raise ValueError(f"Service {domain}.{service} not found")
         
         callback = self.services[domain][service]
         
-        if asyncio.iscoroutinefunction(callback):
+        if inspect.iscoroutinefunction(callback):
             return await callback(data)
         else:
             return callback(data)
@@ -441,6 +452,85 @@ class PluginManager:
         
         return parsers
     
+    async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, str | None]:
+        """
+        Check for available plugin updates by comparing local versions against the remote manifest.
+
+        Fetches plugins-manifest.json from the remote repository and compares each plugin's
+        version with the locally installed version. Results are cached on the manager.
+
+        Args:
+            repo_url: GitHub repository URL
+            ref: Git reference (branch name, tag, or commit SHA)
+
+        Returns:
+            Dict mapping domain to the latest remote version string if an update is available,
+            or None if already up to date or the plugin is not found in the remote manifest.
+
+        Raises:
+            Exception: If the remote manifest could not be fetched
+        """
+        from contenthive.plugins.downloader import GitHubPluginDownloader
+
+        downloader = GitHubPluginDownloader()
+        remote_manifest = await downloader.fetch_remote_manifest(repo_url, ref)
+
+        if remote_manifest is None:
+            raise Exception("Failed to fetch remote plugins manifest")
+
+        results: dict[str, str | None] = {}
+
+        for plugin_info in remote_manifest.get("plugins", []):
+            domain = plugin_info.get("domain")
+            remote_version_str = plugin_info.get("version")
+
+            if not domain or not remote_version_str:
+                continue
+
+            local_record = self.plugins.get(domain)
+            if not local_record:
+                continue
+
+            try:
+                from packaging.version import Version
+                results[domain] = remote_version_str if Version(remote_version_str) > Version(local_record.version) else None
+            except Exception:
+                self.context.logger.warning(
+                    f"Plugins[Update Check]: {domain} - invalid version string "
+                    f"(local={local_record.version}, remote={remote_version_str})"
+                )
+                results[domain] = None
+
+        # Cache results
+        self._available_updates = results
+        self._last_update_check = datetime.now()
+
+        return results
+
+    async def async_activate(self, domain: str) -> bool:
+        """
+        Discover, setup, and enable a newly installed plugin.
+        Used after installing a plugin that was not previously known to the manager.
+        """
+        plugin_dir = self.plugins_dir / domain
+        manifest_path = plugin_dir / "manifest.json"
+
+        await self._async_load_manifest(plugin_dir, manifest_path)
+
+        if domain not in self.plugins:
+            self.context.logger.warning(f"Plugins[Activate Failed]: {domain} - manifest not loaded")
+            return False
+
+        if not await self.async_setup(domain):
+            return False
+
+        entry = PluginEntryData(
+            entry_id=f"{domain}_default",
+            domain=domain,
+            data={},
+        )
+        return await self.async_setup_entry(entry)
+
     async def async_reload(self, domain: str) -> bool:
         """Reload a plugin."""
         entries = [
@@ -465,13 +555,13 @@ class PluginManager:
 
 
 # Singleton instance
-_plugin_manager: Optional[PluginManager] = None
+_plugin_manager: PluginManager | None = None
 
 def set_plugin_manager(manager: PluginManager):
     """Set global plugin manager instance"""
     global _plugin_manager
     _plugin_manager = manager
 
-def get_plugin_manager() -> Optional[PluginManager]:
+def get_plugin_manager() -> PluginManager | None:
     """Get global plugin manager instance"""
     return _plugin_manager

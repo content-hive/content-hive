@@ -340,42 +340,42 @@ class GitHubPluginDownloader:
         
         for plugin_info in manifest.get("plugins", []):
             domain = plugin_info.get("domain")
-            
+
             if not domain:
                 logger.warning("Plugin missing 'domain' field, skipping...")
                 continue
-            
+
             # Validate domain
             if not self._validate_domain(domain):
                 logger.warning(f"Invalid plugin domain: {domain}, skipping...")
                 results[domain] = False
                 continue
-            
+
             # Skip if not in selected list
             if selected_plugins and domain not in selected_plugins:
                 logger.debug(f"Plugin {domain} not in selected list, skipping...")
                 continue
-            
+
             # Skip if disabled (unless explicitly selected)
             if not plugin_info.get("enabled", True) and not selected_plugins:
                 logger.debug(f"Plugin {domain} is disabled, skipping...")
                 continue
-            
+
             # Install plugin
             plugin_rel_path = plugin_info.get("path")
             if not plugin_rel_path:
                 logger.warning(f"Plugin {domain} missing 'path' in manifest, skipping...")
                 results[domain] = False
                 continue
-            
+
             plugin_rel_path = Path(plugin_rel_path)
             if plugin_rel_path.is_absolute():
                 logger.warning(f"Plugin {domain} has absolute path in manifest, skipping...")
                 results[domain] = False
                 continue
-            
+
             plugin_path = (repo_root / plugin_rel_path).resolve()
-            
+
             if not self._validate_path_safety(plugin_path, repo_root, f"Plugin {domain} path"):
                 results[domain] = False
                 continue
@@ -384,23 +384,36 @@ class GitHubPluginDownloader:
                 logger.warning(f"Plugin path not found: {plugin_path}")
                 results[domain] = False
                 continue
-            
+
             logger.debug(f"Installing plugin: {domain} ({plugin_info.get('name', domain)})")
             success = await self._install_plugin_directory(
                 plugin_path,
                 domain,
                 force_reinstall=force_reinstall
             )
-            
+
             results[domain] = success
-            
+
             if success:
                 logger.info(f"Plugin installed: {domain}")
+                self._write_plugin_manifest(domain, plugin_info)
             else:
                 logger.warning(f"Plugin install failed: {domain}")
-        
+
         return results
     
+    def _write_plugin_manifest(self, domain: str, plugin_info: dict) -> None:
+        """Write manifest.json for an installed plugin, derived from the central manifest entry."""
+        target_path = self.plugins_dir / domain / "manifest.json"
+        try:
+            target_path.write_text(
+                json.dumps(plugin_info, ensure_ascii=False, indent=4),
+                encoding='utf-8'
+            )
+            logger.debug(f"Plugin manifest written: {domain}")
+        except Exception as e:
+            logger.warning(f"Failed to write manifest for {domain}: {e}")
+
     async def _download_archive(
         self, 
         owner: str, 
@@ -496,32 +509,20 @@ class GitHubPluginDownloader:
                 return False
             
             target_dir = self.plugins_dir / domain
-            
+
             # Validate target path safety
             if not self._validate_path_safety(target_dir, self.plugins_dir, "Target directory"):
                 return False
-            
+
             # Check if plugin already exists
             if target_dir.exists():
                 if not force_reinstall:
                     logger.warning(f"Plugin {domain} already exists, skipping...")
                     return True
-                
+
                 logger.warning(f"Plugin {domain} already exists, overwriting...")
                 shutil.rmtree(target_dir)
-            
-            # Verify and validate manifest
-            manifest_path = source_dir / "manifest.json"
-            manifest = self._load_and_validate_manifest(manifest_path)
-            if not manifest:
-                return False
-            
-            # Ensure manifest domain matches expected domain
-            manifest_domain = manifest.get("domain")
-            if manifest_domain != domain:
-                logger.error(f"Manifest domain mismatch: expected '{domain}', got '{manifest_domain}'")
-                return False
-            
+
             # Copy plugin files
             shutil.copytree(source_dir, target_dir)
             
@@ -566,6 +567,54 @@ class GitHubPluginDownloader:
         
         return parts[0], parts[1]
     
+    async def fetch_remote_manifest(
+        self,
+        repo_url: str,
+        ref: str = "main",
+    ) -> Optional[Dict]:
+        """
+        Fetch plugins-manifest.json from the remote repository without downloading the full archive.
+
+        Uses the raw.githubusercontent.com endpoint to retrieve only the manifest file.
+
+        Args:
+            repo_url: GitHub repository URL
+            ref: Git reference (branch name, tag, or commit SHA)
+
+        Returns:
+            Parsed manifest dict, or None if fetch or validation failed
+        """
+        try:
+            owner, repo = self._parse_github_url(repo_url)
+            url = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/plugins-manifest.json"
+
+            logger.debug(f"Fetching remote manifest from {url}")
+
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+                async with session.get(url) as response:
+                    if response.status == 404:
+                        logger.warning(f"plugins-manifest.json not found in remote repository ({url})")
+                        return None
+                    if response.status != 200:
+                        logger.warning(f"Failed to fetch remote manifest: HTTP {response.status}")
+                        return None
+                    text = await response.text()
+
+            manifest = json.loads(text)
+            if not isinstance(manifest, dict) or "plugins" not in manifest:
+                logger.warning("Remote manifest has unexpected format")
+                return None
+
+            return manifest
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse remote manifest JSON: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to fetch remote manifest: {e}")
+            return None
+
     def cleanup_temp(self):
         """Clean up temporary download directory"""
         if self.temp_dir.exists():

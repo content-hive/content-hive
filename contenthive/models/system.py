@@ -2,6 +2,7 @@
 Models for system-related operations.
 """
 
+from datetime import datetime
 from typing import Optional
 from pydantic import Field
 
@@ -40,6 +41,40 @@ class HealthPluginInfo(APIBaseModel):
     version: str = Field(..., description="Plugin version")
     name: str = Field(..., description="Plugin display name")
     error: Optional[str] = Field(None, description="Error message if plugin is in FAILED state")
+    update_available: Optional[str] = Field(None, description="Latest version if an update is available, otherwise null")
+
+
+class PluginUpdateInfo(APIBaseModel):
+    """Update status for a single plugin"""
+
+    current_version: str = Field(..., description="Currently installed version")
+    latest_version: Optional[str] = Field(None, description="Latest available version, null if fetch failed")
+    update_available: bool = Field(..., description="Whether a newer version is available")
+
+
+class CheckUpdatesResponse(APIBaseModel):
+    """Response model for plugin update check"""
+
+    checked_at: datetime = Field(..., description="Timestamp of the check")
+    plugins: dict[str, PluginUpdateInfo] = Field(
+        default_factory=dict, description="Per-plugin update status keyed by domain"
+    )
+
+
+class UpdatePluginsRequest(APIBaseModel):
+    """Request body for plugin update operation"""
+
+    domains: list[str] = Field(
+        default_factory=list,
+        description="List of plugin domains to update. Empty list means update all installed plugins."
+    )
+
+
+class UpdatePluginsResponse(APIBaseModel):
+    """Response model for plugin update operation"""
+
+    updated: list[str] = Field(default_factory=list, description="Plugins successfully updated and reloaded")
+    failed: list[str] = Field(default_factory=list, description="Plugins that failed to download or reload")
 
 
 class HealthResponse(APIBaseModel):
