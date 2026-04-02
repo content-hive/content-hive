@@ -1,5 +1,4 @@
 from contenthive.plugins.registry import PluginState
-from contenthive.database.database import get_engine
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
@@ -7,17 +6,12 @@ from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.logger import logger
 
 
-async def load_plugins_on_startup(app, data_dir):
+async def load_plugins_on_startup():
     """
     Load and enable plugins on application startup using HA-style workflow.
     """
     # 1. Create plugin context
-    context = PluginContext(
-        app=app,
-        data_dir=data_dir,
-        db_factory=get_engine,
-        logger=logger
-    )
+    context = PluginContext(logger=logger)
 
     # 2. Download official plugins from repository
     downloader = GitHubPluginDownloader()

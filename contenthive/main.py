@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
     if not skip_plugins:
         try:
-            await load_plugins_on_startup(app, settings.data_dir)
+            await load_plugins_on_startup()
         except asyncio.TimeoutError:
             logger.exception("Plugin loading timed out; continuing without plugins")
         except Exception:
