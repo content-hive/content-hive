@@ -6,6 +6,7 @@ from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDeta
 from contenthive.models.enumerates import ResponseStatus
 from contenthive.models.api import OperationResult
 from contenthive.models.plugin import (
+    AvailablePluginsResponse,
     CheckConfigResponse,
     CheckUpdatesResponse,
     PluginListResponse,
@@ -26,6 +27,22 @@ async def list_plugins(
 ) -> APIResponse[PluginListResponse]:
     """List all installed plugins with their current state and version info"""
     return APIResponse(status=ResponseStatus.SUCCESS, data=plugin_service.list_plugins())
+
+
+@router_v1.get("/available", response_model=APIResponse[AvailablePluginsResponse])
+async def list_available_plugins(
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[AvailablePluginsResponse]:
+    """List all plugins available in the remote repository, including uninstalled ones"""
+    try:
+        data = await plugin_service.list_available()
+    except Exception as e:
+        logger.warning(f"Failed to fetch available plugins: {e}")
+        raise DetailedHTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=ErrorDetail(code="REMOTE_MANIFEST_FETCH_FAILED", message=str(e))
+        )
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
 @router_v1.post("/reload", response_model=APIResponse[ReloadResponse])
