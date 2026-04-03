@@ -6,17 +6,20 @@ from datetime import datetime
 
 from contenthive.config import settings
 from contenthive.logger import logger
-from contenthive.models.system import (
+from contenthive.models.api import OperationResult
+from contenthive.models.enumerates import OperationType
+from contenthive.models.plugin import (
     CheckConfigResponse,
     CheckUpdatesResponse,
-    HealthPluginInfo,
-    HealthResponse,
+    PluginInfo,
+    PluginListResponse,
     PluginUpdateInfo,
     ReloadResponse,
     UpdatePluginsResponse,
 )
+from contenthive.plugins.config import get_plugin_config, set_plugin_field
 from contenthive.plugins.downloader import GitHubPluginDownloader
-from contenthive.plugins.manager import PluginManager, get_plugin_manager
+from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager
 from contenthive.plugins.registry import PluginState
 
 
@@ -135,13 +138,13 @@ class PluginService:
 
         return UpdatePluginsResponse(updated=updated, failed=failed)
 
-    def get_health(self) -> HealthResponse:
+    def list_plugins(self) -> PluginListResponse:
         plugin_manager = get_plugin_manager()
 
-        plugin_status: dict[str, HealthPluginInfo] = {}
+        plugin_status: dict[str, PluginInfo] = {}
         if plugin_manager:
             for domain, record in plugin_manager.plugins.items():
-                plugin_status[domain] = HealthPluginInfo(
+                plugin_status[domain] = PluginInfo(
                     state=record.state.value,
                     version=record.version,
                     name=record.name,
@@ -149,11 +152,46 @@ class PluginService:
                     update_available=plugin_manager._available_updates.get(domain),
                 )
 
-        return HealthResponse(
-            app=settings.app_name,
-            version=settings.app_version,
-            plugins=plugin_status,
-        )
+        return PluginListResponse(plugins=plugin_status)
+
+
+    async def disable(self, domain: str) -> OperationResult:
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        entry_id = f"{domain}_default"
+        if entry_id in plugin_manager.config_entries:
+            await plugin_manager.async_unload_entry(entry_id)
+
+        plugin_manager.plugins[domain].state = PluginState.DISABLED
+        set_plugin_field(domain, "disabled", True)
+
+        return OperationResult(operation=OperationType.DISABLE, id=domain, success=True, message=f"Plugin '{domain}' disabled")
+
+    async def enable(self, domain: str) -> OperationResult:
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        entry_id = f"{domain}_default"
+        if entry_id in plugin_manager.config_entries:
+            set_plugin_field(domain, "disabled", False)
+            return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' is already enabled")
+
+        set_plugin_field(domain, "disabled", False)
+
+        plugin_cfg = get_plugin_config(domain)
+        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
+
+        if not await plugin_manager.async_setup(domain):
+            raise RuntimeError(f"Plugin '{domain}' setup failed")
+
+        entry = PluginEntryData(entry_id=entry_id, domain=domain, data=config)
+        if not await plugin_manager.async_setup_entry(entry):
+            raise RuntimeError(f"Plugin '{domain}' enable failed")
+
+        return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' enabled")
 
 
 plugin_service = PluginService()

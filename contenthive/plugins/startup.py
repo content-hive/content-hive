@@ -2,6 +2,7 @@ from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
+from contenthive.plugins.config import load_plugins_config
 from contenthive.logger import logger
 
 
@@ -50,10 +51,18 @@ async def load_plugins_on_startup():
         logger.warning("Failed to check for plugin updates from remote manifest")
 
     # 6. Setup and enable plugins
+    plugins_config = load_plugins_config()
     for domain in plugin_manager.plugins:
-        # Get plugin configuration
-        config = _get_plugin_config(domain)
-        
+        plugin_cfg = plugins_config.get(domain, {})
+
+        if plugin_cfg.get("disabled", False):
+            plugin_manager.plugins[domain].state = PluginState.DISABLED
+            logger.info(f"Plugin skipped (disabled): {domain}")
+            continue
+
+        # Pass plugin-specific config, excluding internal fields like "disabled"
+        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
+
         # Setup plugin (load module, install dependencies)
         success = await plugin_manager.async_setup(domain, config)
 
@@ -65,7 +74,7 @@ async def load_plugins_on_startup():
         entry = PluginEntryData(
             entry_id=f"{domain}_default",
             domain=domain,
-            data=config or {},
+            data=config,
         )
 
         # Setup entry (enable plugin)
@@ -82,21 +91,6 @@ async def load_plugins_on_startup():
         if record.state == PluginState.ENABLED
     )
     logger.info(f"Plugin loading complete: {enabled_count}/{len(plugin_manager.plugins)} enabled")
-
-
-def _get_plugin_config(domain: str) -> dict:
-    """
-    Get plugin configuration from settings or config file.
-    In the future, this could load from database or config file.
-    """
-    configs = {
-        "youtube_parser": {
-            "api_key": "",
-        },
-        # Add more plugin configs as needed
-    }
-    
-    return configs.get(domain, {})
 
 
 async def shutdown_plugins():

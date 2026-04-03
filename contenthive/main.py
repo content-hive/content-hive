@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
-from contenthive.routers import admin, content, system, user, task
+from contenthive.routers import admin, content, plugin, system, user, task
 from contenthive.database.database import initialize_db
 from contenthive.config import settings, ensure_directories
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
@@ -76,4 +76,5 @@ app.include_router(task.router_v1)
 app.include_router(content.router_v1)
 app.include_router(user.router_v1)
 app.include_router(admin.router_v1)
+app.include_router(plugin.router_v1)
 app.include_router(system.router_v1)
