@@ -17,6 +17,9 @@ class PluginInfo(APIBaseModel):
     name: str = Field(..., description="Plugin display name")
     error: Optional[str] = Field(None, description="Error message if plugin is in FAILED state")
     update_available: Optional[str] = Field(None, description="Latest version if an update is available, otherwise null")
+    description: Optional[str] = Field(None, description="Plugin description")
+    author: Optional[list[str]] = Field(None, description="Plugin author")
+    requirements: Optional[list[str]] = Field(None, description="Plugin Python package requirements")
 
 
 class PluginUpdateInfo(APIBaseModel):
