@@ -541,6 +541,12 @@ class PluginManager:
         for entry in entries:
             await self.async_unload_entry(entry.entry_id)
         
+        stale_prefixes = (f"contenthive_plugin_{domain}.",)
+        stale_exact = {f"plugin_{domain}", f"contenthive_plugin_{domain}"}
+        for key in list(sys.modules.keys()):
+            if key in stale_exact or key.startswith(stale_prefixes):
+                del sys.modules[key]
+
         record = self.plugins.get(domain)
         if record:
             record.instance = None
