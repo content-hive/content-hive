@@ -11,6 +11,7 @@ import subprocess
 from packaging.version import Version
 
 from .registry import PluginRecord, PluginState
+from contenthive.plugins.config import get_plugin_config
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.logger import logger
 
@@ -110,7 +111,7 @@ class PluginManager:
         except Exception as e:
             self.context.logger.warning(f"Plugins[Discovery Failed]: {plugin_dir.name} - {e}")
     
-    async def async_setup(self, domain: str, config: dict[str, Any] | None = None) -> bool:
+    async def async_setup(self, domain: str) -> bool:
         """
         Setup plugin from configuration (HA-style).
         Calls the plugin module's async_setup function.
@@ -119,27 +120,29 @@ class PluginManager:
         if not record:
             self.context.logger.warning(f"Plugins[Setup Failed]: {domain} - Not found")
             return False
-        
+
         if record.state not in [PluginState.INSTALLED, PluginState.DISABLED]:
             self.context.logger.debug(f"Plugins[Setup]: {domain} - Already in state {record.state}")
             return True
-        
+
         try:
             # Install dependencies
             if not await self._async_install_dependencies(domain):
                 record.state = PluginState.FAILED
                 return False
-            
+
             # Load module
             module = await self._async_load_module(domain)
             if not module:
                 return False
-            
+
             record.instance = module  # Store module, not class instance
-            
+
             # Call module-level async_setup function
             if hasattr(module, "async_setup"):
-                result = await module.async_setup(self.context, config or {})
+                plugin_cfg = get_plugin_config(domain)
+                config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
+                result = await module.async_setup(self.context, config)
                 if not result:
                     raise Exception("async_setup returned False")
             

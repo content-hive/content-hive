@@ -60,17 +60,15 @@ async def load_plugins_on_startup():
             logger.info(f"Plugin skipped (disabled): {domain}")
             continue
 
-        # Pass plugin-specific config, excluding internal fields like "disabled"
-        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
-
         # Setup plugin (load module, install dependencies)
-        success = await plugin_manager.async_setup(domain, config)
+        success = await plugin_manager.async_setup(domain)
 
         if not success:
             logger.warning(f"Plugin setup failed: {domain}")
             continue
 
         # Create config entry
+        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
         entry = PluginEntryData(
             entry_id=f"{domain}_default",
             domain=domain,

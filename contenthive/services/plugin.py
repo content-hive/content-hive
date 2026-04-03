@@ -184,12 +184,11 @@ class PluginService:
 
         set_plugin_field(domain, "disabled", False)
 
-        plugin_cfg = get_plugin_config(domain)
-        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
-
         if not await plugin_manager.async_setup(domain):
             raise RuntimeError(f"Plugin '{domain}' setup failed")
-
+        
+        plugin_cfg = get_plugin_config(domain)
+        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
         entry = PluginEntryData(entry_id=entry_id, domain=domain, data=config)
         if not await plugin_manager.async_setup_entry(entry):
             raise RuntimeError(f"Plugin '{domain}' enable failed")
