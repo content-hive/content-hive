@@ -95,10 +95,41 @@ class PluginManager:
             "count": len(self.plugins)
         })
 
+    def _read_plugin_manifest(self, manifest_path: Path, domain: str) -> dict:
+        """Read and validate a single plugin's manifest.json.
+
+        Args:
+            manifest_path: Absolute path to the plugin's manifest.json.
+            domain: Expected plugin domain — must match the ``domain`` field in
+                    the manifest to guard against misplaced or stale files.
+
+        Returns:
+            Parsed manifest dict.
+
+        Raises:
+            ValueError: If the file cannot be parsed, is not a JSON object, or
+                        its ``domain`` field does not match *domain*.
+        """
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in manifest: {e}") from e
+
+        if not isinstance(data, dict):
+            raise ValueError("manifest.json must be a JSON object")
+
+        manifest_domain = data.get("domain")
+        if manifest_domain != domain:
+            raise ValueError(
+                f"manifest domain '{manifest_domain}' does not match plugin domain '{domain}'"
+            )
+
+        return data
+
     async def _async_load_manifest(self, plugin_dir: Path, manifest_path: Path):
         """Load plugin manifest"""
         try:
-            manifest = json.loads(manifest_path.read_text())
+            manifest = self._read_plugin_manifest(manifest_path, plugin_dir.name)
             domain = manifest['domain']
 
             self.plugins[domain] = PluginRecord(manifest, None)
@@ -554,7 +585,13 @@ class PluginManager:
         if record:
             record.instance = None
             record.state = PluginState.INSTALLED
-        
+            manifest_path = self.plugins_dir / domain / "manifest.json"
+            if manifest_path.exists():
+                try:
+                    record.manifest = self._read_plugin_manifest(manifest_path, domain)
+                except Exception as e:
+                    self.context.logger.warning(f"Plugins[Reload]: {domain} - Failed to re-read manifest: {e}")
+
         if await self.async_setup(domain):
             for entry in entries:
                 await self.async_setup_entry(entry)

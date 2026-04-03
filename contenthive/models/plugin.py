@@ -65,6 +65,26 @@ class CheckUpdatesResponse(APIBaseModel):
     )
 
 
+class AvailablePluginInfo(APIBaseModel):
+    """A plugin available in the remote repository"""
+
+    domain: str = Field(..., description="Plugin domain identifier")
+    name: str = Field(..., description="Plugin display name")
+    version: str = Field(..., description="Latest version in remote repository")
+    description: Optional[str] = Field(None, description="Plugin description")
+    author: Optional[list[str]] = Field(None, description="Plugin author")
+    installed: bool = Field(..., description="Whether the plugin is currently installed")
+    installed_version: Optional[str] = Field(None, description="Installed version, if installed")
+
+
+class AvailablePluginsResponse(APIBaseModel):
+    """Response model for listing all available plugins from remote repository"""
+
+    plugins: list[AvailablePluginInfo] = Field(
+        default_factory=list, description="List of plugins available in the remote repository"
+    )
+
+
 class UpdatePluginsRequest(APIBaseModel):
     """Request body for plugin update operation"""
 

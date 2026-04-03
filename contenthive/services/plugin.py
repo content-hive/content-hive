@@ -9,6 +9,8 @@ from contenthive.logger import logger
 from contenthive.models.api import OperationResult
 from contenthive.models.enumerates import OperationType
 from contenthive.models.plugin import (
+    AvailablePluginInfo,
+    AvailablePluginsResponse,
     CheckConfigResponse,
     CheckUpdatesResponse,
     PluginInfo,
@@ -177,6 +179,51 @@ class PluginService:
                 failed.append(domain)
 
         return UpdatePluginsResponse(updated=updated, failed=failed)
+
+    async def list_available(self) -> AvailablePluginsResponse:
+        """Fetch remote plugins-manifest.json and merge with local installation state.
+
+        Returns all plugins known to the remote repository, annotated with
+        whether each is installed locally and what version is installed.
+
+        Returns:
+            AvailablePluginsResponse with a list of AvailablePluginInfo entries,
+            each carrying domain, name, version, description, author, installed
+            flag, and installed_version (None if not installed locally).
+
+        Raises:
+            RuntimeError: If the remote manifest cannot be fetched.
+        """
+        plugin_manager = get_plugin_manager()
+
+        downloader = GitHubPluginDownloader()
+        remote_manifest = await downloader.fetch_remote_manifest(
+            repo_url=settings.plugins_repo_url,
+            ref=settings.plugins_repo_ref,
+        )
+        if remote_manifest is None:
+            raise RuntimeError("Failed to fetch remote plugins manifest")
+
+        installed = plugin_manager.plugins if plugin_manager else {}
+
+        result: list[AvailablePluginInfo] = []
+        for plugin in remote_manifest.get("plugins", []):
+            domain = plugin.get("domain")
+            version = plugin.get("version")
+            if not domain or not version:
+                continue
+            local = installed.get(domain)
+            result.append(AvailablePluginInfo(
+                domain=domain,
+                name=plugin.get("name", domain),
+                version=version,
+                description=plugin.get("description"),
+                author=plugin.get("author"),
+                installed=local is not None,
+                installed_version=local.version if local else None,
+            ))
+
+        return AvailablePluginsResponse(plugins=result)
 
     def list_plugins(self) -> PluginListResponse:
         """Return metadata and runtime state for all discovered plugins.
