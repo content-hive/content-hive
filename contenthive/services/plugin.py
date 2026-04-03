@@ -201,13 +201,13 @@ class PluginService:
 
         installed = {domain: record for domain, record in plugin_manager.plugins.items()} if plugin_manager else {}
 
-        result: dict[str, AvailablePluginInfo] = {}
+        result: list[AvailablePluginInfo] = []
         for plugin in remote_manifest.get("plugins", []):
             domain = plugin.get("domain")
             if not domain:
                 continue
             local = installed.get(domain)
-            result[domain] = AvailablePluginInfo(
+            result.append(AvailablePluginInfo(
                 domain=domain,
                 name=plugin.get("name", domain),
                 version=plugin.get("version", ""),
@@ -215,7 +215,7 @@ class PluginService:
                 author=plugin.get("author"),
                 installed=local is not None,
                 installed_version=local.version if local else None,
-            )
+            ))
 
         return AvailablePluginsResponse(plugins=result)
 

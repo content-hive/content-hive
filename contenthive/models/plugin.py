@@ -80,8 +80,8 @@ class AvailablePluginInfo(APIBaseModel):
 class AvailablePluginsResponse(APIBaseModel):
     """Response model for listing all available plugins from remote repository"""
 
-    plugins: dict[str, AvailablePluginInfo] = Field(
-        default_factory=dict, description="Available plugin map keyed by domain"
+    plugins: list[AvailablePluginInfo] = Field(
+        default_factory=list, description="List of plugins available in the remote repository"
     )
 
 
