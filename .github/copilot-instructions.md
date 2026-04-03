@@ -34,6 +34,14 @@ Router → Service → DAO (Data Access Object) → ORM Model
 
 ## Coding Conventions
 
+### Imports
+
+- All imports must be placed at the top of the file, grouped in the standard order: standard library → third-party → internal
+- **Do not use inline imports** (imports inside functions or methods) unless strictly necessary
+- Acceptable exceptions:
+  - Breaking a circular import that cannot be resolved by restructuring
+  - Optional/heavy dependencies that should not be loaded unless the code path is actually reached
+
 ### API Models
 
 - All API request/response models must inherit from `APIBaseModel` (in `contenthive/models/api.py`)

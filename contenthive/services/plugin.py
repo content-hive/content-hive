@@ -15,6 +15,7 @@ from contenthive.models.system import (
     ReloadResponse,
     UpdatePluginsResponse,
 )
+from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import PluginManager, get_plugin_manager
 from contenthive.plugins.registry import PluginState
 
@@ -90,8 +91,6 @@ class PluginService:
         )
 
     async def update_plugins(self, domains: list[str]) -> UpdatePluginsResponse:
-        from contenthive.plugins.downloader import GitHubPluginDownloader
-
         plugin_manager = _get_plugin_manager()
         selected = domains if domains else None
 

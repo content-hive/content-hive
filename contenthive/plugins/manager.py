@@ -8,7 +8,10 @@ from typing import Any, Callable
 import asyncio
 import subprocess
 
+from packaging.version import Version
+
 from .registry import PluginRecord, PluginState
+from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.logger import logger
 
 
@@ -470,8 +473,6 @@ class PluginManager:
         Raises:
             Exception: If the remote manifest could not be fetched
         """
-        from contenthive.plugins.downloader import GitHubPluginDownloader
-
         downloader = GitHubPluginDownloader()
         remote_manifest = await downloader.fetch_remote_manifest(repo_url, ref)
 
@@ -489,10 +490,11 @@ class PluginManager:
 
             local_record = self.plugins.get(domain)
             if not local_record:
+                # Plugin exists in remote manifest but is not installed locally
+                results[domain] = remote_version_str
                 continue
 
             try:
-                from packaging.version import Version
                 results[domain] = remote_version_str if Version(remote_version_str) > Version(local_record.version) else None
             except Exception:
                 self.context.logger.warning(
