@@ -554,7 +554,13 @@ class PluginManager:
         if record:
             record.instance = None
             record.state = PluginState.INSTALLED
-        
+            manifest_path = self.plugins_dir / domain / "manifest.json"
+            if manifest_path.exists():
+                try:
+                    record.manifest = json.loads(manifest_path.read_text())
+                except Exception as e:
+                    self.context.logger.warning(f"Plugins[Reload]: {domain} - Failed to re-read manifest: {e}")
+
         if await self.async_setup(domain):
             for entry in entries:
                 await self.async_setup_entry(entry)
