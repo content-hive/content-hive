@@ -1,6 +1,32 @@
 """
 Plugin downloader for fetching and installing plugins from GitHub repositories.
-Supports both standalone plugin repos and multi-plugin repositories.
+
+Required repository structure:
+
+    <repo-root>/
+    ├── plugins-manifest.json   # required — lists all available plugins
+    └── <plugin-path>/          # one directory per plugin (path defined in manifest)
+        ├── __init__.py
+        ├── manifest.json       # written by the downloader from plugins-manifest.json
+        └── ...
+
+plugins-manifest.json format:
+
+    {
+      "plugins": [
+        {
+          "domain": "my_parser",
+          "name": "My Parser",
+          "version": "1.2.0",
+          "path": "plugins/my_parser",
+          "enabled": true,
+          "requirements": ["aiohttp"]
+        }
+      ]
+    }
+
+Repositories that do not contain a plugins-manifest.json at their root are not
+supported and will raise an exception during download.
 """
 import aiohttp
 import zipfile
@@ -163,22 +189,29 @@ class GitHubPluginDownloader:
         force_reinstall: bool = False
     ) -> dict[str, bool]:
         """
-        Download and install plugins from any GitHub repository.
-        
-        Supports multiple repository structures:
-        - Single plugin: manifest.json in root
-        - Multi-plugin: plugins-manifest.json in root
-        - Legacy: plugins/ directory with individual manifests
-        
+        Download and install plugins from a GitHub repository.
+
+        The repository must contain a ``plugins-manifest.json`` at its root
+        (see module docstring for the required format). Raises an exception if
+        the file is missing.
+
         Args:
-            repo_url: GitHub repository URL (e.g., "github.com/user/repo")
-            ref: Git reference (branch name, tag, or commit SHA)
-            ref_type: Type of reference: "branch", "tag", or "commit"
-            selected_plugins: List of plugin IDs to install (None = all enabled)
-            force_reinstall: If True, reinstall even if plugin exists
-        
+            repo_url: GitHub repository URL (e.g., "github.com/user/repo").
+                      Accepts bare domain, https://, and .git suffix forms.
+            ref: Git reference — branch name, tag, or full commit SHA.
+            ref_type: One of "branch", "tag", or "commit".
+            selected_plugins: Domains to install. ``None`` installs all plugins
+                              with ``"enabled": true`` in plugins-manifest.json.
+            force_reinstall: Re-install even if the plugin directory already exists.
+
         Returns:
-            Dict mapping plugin ID to installation success status
+            Dict mapping each plugin domain to ``True`` (installed) or
+            ``False`` (skipped or failed).
+
+        Raises:
+            ValueError: If ``repo_url`` or ``ref`` fail validation.
+            Exception: If the archive cannot be downloaded or
+                       plugins-manifest.json is not found in the repository.
         """
         results = {}
         extract_dir = None

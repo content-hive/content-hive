@@ -2,7 +2,7 @@
 Plugin management service.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from contenthive.config import settings
 from contenthive.logger import logger
@@ -31,8 +31,23 @@ def _get_plugin_manager() -> PluginManager:
 
 
 class PluginService:
+    """Service layer for plugin lifecycle management.
+
+    Wraps PluginManager operations and exposes them as high-level methods
+    consumed by the HTTP router layer. All state mutations go through this
+    service to keep routing code free of business logic.
+    """
 
     async def reload_all(self) -> ReloadResponse:
+        """Hot-reload all discovered plugins without restarting the application.
+
+        Each plugin is unloaded, its module cache cleared, and then re-setup
+        and re-enabled. Failures are captured per-domain and do not abort the
+        remaining reloads.
+
+        Returns:
+            ReloadResponse with per-domain reload outcome ("reloaded" / "failed" / "error: ...").
+        """
         plugin_manager = _get_plugin_manager()
 
         results: dict[str, str] = {}
@@ -47,6 +62,14 @@ class PluginService:
         return ReloadResponse(message="Configuration reloaded", plugins=results)
 
     def check_config(self) -> CheckConfigResponse:
+        """Validate manifest fields for all discovered plugins.
+
+        Checks that each plugin manifest contains the required fields
+        (domain, name, version). Does not perform network calls or load modules.
+
+        Returns:
+            CheckConfigResponse with validation status, error list, and warning list.
+        """
         plugin_manager = _get_plugin_manager()
 
         errors: list[str] = []
@@ -68,6 +91,15 @@ class PluginService:
         )
 
     async def check_updates(self) -> CheckUpdatesResponse:
+        """Fetch the remote plugins-manifest.json and compare versions.
+
+        Performs a lightweight fetch (no full download) against the configured
+        GitHub repository. Results are cached on the PluginManager instance.
+
+        Returns:
+            CheckUpdatesResponse with per-plugin current/latest version and
+            update_available flag, plus the UTC timestamp of the check.
+        """
         plugin_manager = _get_plugin_manager()
 
         update_results = await plugin_manager.async_check_updates(
@@ -85,11 +117,23 @@ class PluginService:
             )
 
         return CheckUpdatesResponse(
-            checked_at=plugin_manager._last_update_check or datetime.now(),
+            checked_at=plugin_manager._last_update_check or datetime.now(timezone.utc),
             plugins=plugins_info,
         )
 
     async def update_plugins(self, domains: list[str]) -> UpdatePluginsResponse:
+        """Download and install plugins from the remote repository.
+
+        Downloads the repository archive, extracts the selected plugins, and
+        then either hot-reloads existing plugins or activates newly installed ones.
+
+        Args:
+            domains: Plugin domains to update. An empty list updates all enabled
+                     plugins listed in the remote plugins-manifest.json.
+
+        Returns:
+            UpdatePluginsResponse with lists of successfully updated and failed domains.
+        """
         plugin_manager = _get_plugin_manager()
         selected = domains if domains else None
 
@@ -135,6 +179,13 @@ class PluginService:
         return UpdatePluginsResponse(updated=updated, failed=failed)
 
     def list_plugins(self) -> PluginListResponse:
+        """Return metadata and runtime state for all discovered plugins.
+
+        Returns:
+            PluginListResponse mapping each domain to a PluginInfo snapshot
+            (state, version, name, description, author, error, update_available).
+            Returns an empty dict if the plugin manager is not yet initialized.
+        """
         plugin_manager = get_plugin_manager()
 
         plugin_status: dict[str, PluginInfo] = {}
@@ -154,6 +205,20 @@ class PluginService:
 
 
     async def disable(self, domain: str) -> OperationResult:
+        """Unload all active config entries for a plugin and mark it disabled.
+
+        Persists ``disabled: true`` to plugins.yaml so the plugin is skipped
+        on next application startup.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            OperationResult indicating success.
+
+        Raises:
+            ValueError: If the domain is not found.
+        """
         plugin_manager = _get_plugin_manager()
         if domain not in plugin_manager.plugins:
             raise ValueError(f"Plugin '{domain}' not found")
@@ -171,6 +236,22 @@ class PluginService:
         return OperationResult(operation=OperationType.DISABLE, id=domain, success=True, message=f"Plugin '{domain}' disabled")
 
     async def enable(self, domain: str) -> OperationResult:
+        """Set up and activate a previously disabled plugin.
+
+        Clears the ``disabled`` flag in plugins.yaml, runs async_setup, and
+        creates a default config entry via async_setup_entry. If the plugin
+        already has an active entry, returns success immediately.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            OperationResult indicating success.
+
+        Raises:
+            ValueError: If the domain is not found.
+            RuntimeError: If setup or entry activation fails.
+        """
         plugin_manager = _get_plugin_manager()
         if domain not in plugin_manager.plugins:
             raise ValueError(f"Plugin '{domain}' not found")

@@ -1,6 +1,7 @@
 import tempfile
 import threading
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -49,7 +50,7 @@ def get_plugin_config(domain: str) -> dict:
     return load_plugins_config().get(domain, {})
 
 
-def set_plugin_field(domain: str, key: str, value) -> None:
+def set_plugin_field(domain: str, key: str, value: Any) -> None:
     """Set a single field in a plugin's config block and persist."""
     with _config_lock:
         config = load_plugins_config()

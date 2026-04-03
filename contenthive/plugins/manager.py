@@ -2,7 +2,7 @@ import importlib.util
 import inspect
 import sys
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 import asyncio
@@ -506,7 +506,7 @@ class PluginManager:
 
         # Cache results
         self._available_updates = results
-        self._last_update_check = datetime.now()
+        self._last_update_check = datetime.now(timezone.utc)
 
         return results
 
