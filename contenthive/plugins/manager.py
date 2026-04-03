@@ -493,8 +493,6 @@ class PluginManager:
 
             local_record = self.plugins.get(domain)
             if not local_record:
-                # Plugin exists in remote manifest but is not installed locally
-                results[domain] = remote_version_str
                 continue
 
             try:

@@ -52,7 +52,9 @@ async def restart_application(
 async def health_check() -> APIResponse[HealthResponse]:
     """Health check"""
     plugin_manager = get_plugin_manager()
-    plugin_updates_available = bool(plugin_manager and plugin_manager._available_updates)
+    plugin_updates_available = bool(
+        plugin_manager and any(plugin_manager._available_updates.values())
+    )
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,

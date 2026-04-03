@@ -42,7 +42,7 @@ class PluginService:
                 results[domain] = "reloaded" if success else "failed"
             except Exception as e:
                 results[domain] = f"error: {str(e)}"
-                logger.error(f"Failed to reload {domain}: {e}")
+                logger.exception(f"Failed to reload {domain}: {e}")
 
         return ReloadResponse(message="Configuration reloaded", plugins=results)
 
@@ -58,10 +58,6 @@ class PluginService:
             for field in ("domain", "name", "version"):
                 if field not in manifest:
                     errors.append(f"{domain}: Missing required field '{field}'")
-
-            for dep in manifest.get("requirements", []):
-                if dep not in plugin_manager.plugins:
-                    warnings.append(f"{domain}: Dependency '{dep}' not found")
 
         is_valid = len(errors) == 0
         return CheckConfigResponse(
@@ -133,7 +129,7 @@ class PluginService:
                     else:
                         failed.append(domain)
             except Exception as e:
-                logger.error(f"Failed to activate plugin {domain} after update: {e}")
+                logger.exception(f"Failed to activate plugin {domain} after update: {e}")
                 failed.append(domain)
 
         return UpdatePluginsResponse(updated=updated, failed=failed)
@@ -162,9 +158,12 @@ class PluginService:
         if domain not in plugin_manager.plugins:
             raise ValueError(f"Plugin '{domain}' not found")
 
-        entry_id = f"{domain}_default"
-        if entry_id in plugin_manager.config_entries:
-            await plugin_manager.async_unload_entry(entry_id)
+        entries = [
+            entry for entry in plugin_manager.config_entries.values()
+            if entry.domain == domain
+        ]
+        for entry in entries:
+            await plugin_manager.async_unload_entry(entry.entry_id)
 
         plugin_manager.plugins[domain].state = PluginState.DISABLED
         set_plugin_field(domain, "disabled", True)

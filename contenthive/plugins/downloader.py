@@ -19,6 +19,7 @@ class GitHubPluginDownloader:
     VALID_DOMAIN_PATTERN = re.compile(r'^[a-z0-9_-]+$')
     # Valid git ref pattern: alphanumeric, hyphens, dots, underscores, slashes, and commit SHAs
     VALID_REF_PATTERN = re.compile(r'^[a-zA-Z0-9._/\-]+$')
+    _INVALID_REF_SEGMENTS = re.compile(r'(^/|//|/\./|/\.\./|\.\.$|^\.\./)')
     
     def __init__(self):
         """
@@ -81,6 +82,10 @@ class GitHubPluginDownloader:
         if not self.VALID_REF_PATTERN.match(ref):
             raise ValueError(
                 f"Invalid ref '{ref}': only alphanumeric characters, hyphens, dots, underscores, and slashes are allowed"
+            )
+        if self._INVALID_REF_SEGMENTS.search(ref):
+            raise ValueError(
+                f"Invalid ref '{ref}': must not start with '/', contain '//', or include path traversal segments"
             )
 
     def _sanitize_ref(self, ref: str) -> str:
@@ -476,7 +481,7 @@ class GitHubPluginDownloader:
         path = parsed.path.lstrip("/").removesuffix(".git").rstrip("/")
 
         parts = path.split("/")
-        if len(parts) < 2 or not parts[0] or not parts[1]:
+        if len(parts) != 2 or not parts[0] or not parts[1]:
             raise ValueError(f"Invalid GitHub URL: expected github.com/owner/repo, got '{url}'")
 
         return parts[0], parts[1]

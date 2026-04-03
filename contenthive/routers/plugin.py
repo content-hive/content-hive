@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Body, Depends, status
 
 from contenthive.logger import logger
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
@@ -126,7 +126,7 @@ async def enable_plugin(
 @router_v1.post("/update", response_model=APIResponse[UpdatePluginsResponse])
 async def update_plugins(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
-    body: UpdatePluginsRequest = UpdatePluginsRequest(),
+    body: UpdatePluginsRequest = Body(default_factory=UpdatePluginsRequest),
 ) -> APIResponse[UpdatePluginsResponse]:
     """
     Download and reload plugins from the remote repository.
