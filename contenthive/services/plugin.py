@@ -186,8 +186,13 @@ class PluginService:
         Returns all plugins known to the remote repository, annotated with
         whether each is installed locally and what version is installed.
 
+        Returns:
+            AvailablePluginsResponse with a list of AvailablePluginInfo entries,
+            each carrying domain, name, version, description, author, installed
+            flag, and installed_version (None if not installed locally).
+
         Raises:
-            Exception: If the remote manifest cannot be fetched.
+            RuntimeError: If the remote manifest cannot be fetched.
         """
         plugin_manager = get_plugin_manager()
 
@@ -197,20 +202,21 @@ class PluginService:
             ref=settings.plugins_repo_ref,
         )
         if remote_manifest is None:
-            raise Exception("Failed to fetch remote plugins manifest")
+            raise RuntimeError("Failed to fetch remote plugins manifest")
 
-        installed = {domain: record for domain, record in plugin_manager.plugins.items()} if plugin_manager else {}
+        installed = plugin_manager.plugins if plugin_manager else {}
 
         result: list[AvailablePluginInfo] = []
         for plugin in remote_manifest.get("plugins", []):
             domain = plugin.get("domain")
-            if not domain:
+            version = plugin.get("version")
+            if not domain or not version:
                 continue
             local = installed.get(domain)
             result.append(AvailablePluginInfo(
                 domain=domain,
                 name=plugin.get("name", domain),
-                version=plugin.get("version", ""),
+                version=version,
                 description=plugin.get("description"),
                 author=plugin.get("author"),
                 installed=local is not None,

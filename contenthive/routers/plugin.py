@@ -37,10 +37,14 @@ async def list_available_plugins(
     try:
         data = await plugin_service.list_available()
     except Exception as e:
-        logger.warning(f"Failed to fetch available plugins: {e}")
+        logger.exception("Failed to fetch available plugins")
         raise DetailedHTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=ErrorDetail(code="REMOTE_MANIFEST_FETCH_FAILED", message=str(e))
+            detail=ErrorDetail(
+                code="REMOTE_MANIFEST_FETCH_FAILED",
+                message="Failed to fetch remote plugin manifest",
+                details={"error": str(e)},
+            )
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
