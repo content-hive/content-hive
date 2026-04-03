@@ -2,7 +2,7 @@
 
 ## 系统概述
 
-ContentHive 的插件系统采用了 **Home Assistant 风格的架构**，设计目标是实现一个灵活、模块化、易于扩展的插件管理框架。系统通过插件发现、加载、配置、执行和卸载的完整生命周期来管理各种内容解析器和扩展功能。
+ContentHive 的插件系统采用了 **Home Assistant 风格的架构**，设计目标是实现一个灵活、模块化、易于扩展的插件管理框架。系统通过插件发现、加载、配置、执行和卸载的完整生命周期来管理各种内容解析器和扩展功能。插件通过 GitHub 仓库统一分发，支持版本检查、在线更新和热重载。
 
 ---
 
@@ -30,6 +30,17 @@ ContentHive 的插件系统采用了 **Home Assistant 风格的架构**，设计
    ▼                                   ▼
 PluginState              manifest.json + Module Code
 (状态管理)              (插件元数据 + 插件代码)
+
+┌──────────────────────────────────────────────────────────┐
+│                   PluginService                           │
+│   (服务层：更新、重载、健康检查、配置校验、启用/禁用)    │
+└───────────────────────┬──────────────────────────────────┘
+                        │
+              ┌─────────┴─────────┐
+              ▼                   ▼
+ GitHubPluginDownloader      config.py
+ (从 GitHub 仓库下载并      (plugins.yaml 读写，
+  安装插件)                  持久化插件配置)
 ```
 
 ---
@@ -46,22 +57,23 @@ PluginState              manifest.json + Module Code
 ```
 状态转移流程：
 INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
-    ▲                                                         │
-    │                                                         │
-    └────────────────── async_unload_entry ◄────────────────┘
-                                │
-                                ▼
-                            DISABLED
-                                │
-                                ▼
-                            FAILED
+    ▲                          ▲                              │
+    │                          │                              │
+    │                          └────── async_unload_entry ───┘
+    │                                  (无其他活跃条目时)
+    │
+    ├── (plugins.yaml: disabled: true)
+    │
+DISABLED                                               FAILED
+    │                                            (设置或运行时错误)
+    └── async_setup (enable API) ──> LOADED ──> ENABLED
 ```
 
 **每个状态的含义**：
 - **INSTALLED**：插件已被发现，`manifest.json` 已加载，但还未执行 `async_setup`
-- **LOADED**：模块已加载，依赖已安装，等待配置条目的激活
+- **LOADED**：模块已加载，依赖已安装，等待配置条目的激活；插件卸载后若无报错也回到此状态
 - **ENABLED**：配置条目已激活，插件正在运行
-- **DISABLED**：插件被显式禁用，但模块仍在内存中
+- **DISABLED**：在 `plugins.yaml` 中被标记为 `disabled: true`，启动时跳过，模块未加载
 - **FAILED**：设置或运行时发生错误
 
 #### PluginRecord 类
@@ -71,9 +83,17 @@ INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
 PluginRecord {
     domain: str              # 插件唯一标识符（来自 manifest.json）
     manifest: Dict           # 插件元数据（名称、版本、依赖等）
-    instance: Optional       # 加载的插件模块对象
+    instance: Optional       # 加载的插件模块对象（module，非类实例）
     state: PluginState       # 当前状态
     error: Optional[str]     # 错误信息（如果状态为 FAILED）
+
+    # 属性
+    name: str                # 来自 manifest 的显示名称
+    version: str             # 来自 manifest 的版本号
+    description: Optional[str]   # 来自 manifest 的描述
+    author: Optional[list[str]]  # 来自 manifest 的作者列表
+    is_loaded: bool          # instance 是否非空
+    is_enabled: bool         # state == ENABLED
 }
 ```
 
@@ -88,88 +108,30 @@ PluginRecord {
 
 ```python
 PluginContext {
-    app: FastAPI                          # FastAPI 应用实例
-    data_dir: Path                        # 数据目录
     logger: Logger                        # 日志记录器
-    _db_factory: Callable                 # 数据库连接工厂
     data: Dict[str, Any]                  # 插件数据存储（类似 hass.data）
     
-    # HA 风格的平台方法（由 PluginManager 注入）
+    # HA 风格的平台方法（由 PluginManager 在启动时注入）
     async_forward_entry_setup: Callable   # 转发平台设置
     async_unload_platforms: Callable      # 卸载平台
     register_service: Callable            # 注册服务
 }
 ```
 
-**关键方法**：
-- `get_db_connection()`：获取新的数据库连接
-
-**作用**：
-- 为插件提供统一的资源访问通道
-- 隔离插件与应用核心的直接耦合
-- 支持插件间的数据共享（通过 `data` 字典）
+> **注意**：`PluginContext` 不再持有 `app`、`data_dir` 或数据库连接工厂。这些资源由插件自行通过 `settings` 或依赖注入获取。
 
 ---
 
 ### 3. `manager.py` - 核心插件管理器
 
-**职责**：协调插件的发现、加载、设置、执行和卸载
+**职责**：协调插件的发现、加载、设置、执行、卸载、更新检查和热重载
 
-#### PluginManager 核心方法
+#### PluginEntryData
+配置条目数据，代表一个已激活的插件实例：
 
-##### 发现阶段
-```python
-async_discover()
-```
-- 扫描 `plugins/` 目录下的所有目录
-- 读取每个插件的 `manifest.json`
-- 创建 `PluginRecord` 对象并存储
-- 触发 `plugins_discovered` 事件
-
-##### 设置阶段
-```python
-async_setup(domain: str) -> bool
-```
-执行流程：
-1. 验证插件存在且状态正确
-2. 调用 `_async_install_dependencies()`：安装插件依赖
-3. 调用 `_async_load_module()`：导入插件模块
-4. 调用插件模块的 `async_setup(context, config)` 函数
-5. 更新状态为 `LOADED`
-
-##### 配置条目设置
-```python
-async_setup_entry(entry: PluginEntryData) -> bool
-```
-执行流程：
-1. 获取插件记录
-2. 确保插件已加载（调用 async_setup 如果需要）
-3. 调用插件模块的 `async_setup_entry(context, entry)` 函数
-4. 转发平台设置（如 "parser" 平台）
-5. 更新条目状态为 `ENABLED`
-
-##### 平台转发
-```python
-async_forward_entry_setup(entry: PluginEntryData, platform: str) -> bool
-```
-- 加载平台模块（如 `parser.py`）
-- 调用平台模块的 `async_setup_entry(context, entry, async_add_entities)`
-- 注册返回的实体到平台注册表
-
-##### 卸载阶段
-```python
-async_unload_entry(entry_id: str) -> bool
-```
-- 卸载平台（触发清理逻辑）
-- 调用插件的 `async_unload_entry(context, entry)`
-- 更新状态为 `DISABLED`
-
-#### 其他关键组件
-
-**PluginEntryData**：配置条目数据
 ```python
 PluginEntryData {
-    entry_id: str              # 条目唯一 ID
+    entry_id: str              # 条目唯一 ID（通常为 "{domain}_default"）
     domain: str                # 插件域（关联到某个插件）
     data: Dict[str, Any]       # 条目配置数据
     options: Dict              # 条目选项
@@ -177,109 +139,239 @@ PluginEntryData {
 }
 ```
 
-**EventBus**：事件总线
-- 插件间通信的轻量级机制
-- 支持事件监听和触发
-- 主要事件：`plugins_discovered`、`plugin_discovered`、`plugin_setup`
+#### EventBus - 事件总线
+插件间通信的轻量级机制，支持同步与异步监听器。
 
-**平台注册表** (`_platforms`)：
-- 存储已加载的平台实体
-- 结构：`{domain: {platform_name: [entities]}}`
-- 用于查找特定平台的实体（如所有解析器）
+主要事件：
+
+| 事件名             | 触发时机                     | 数据字段                        |
+|--------------------|------------------------------|---------------------------------|
+| `plugins_discovered` | 所有插件发现完成             | `count`                         |
+| `plugin_discovered`  | 单个插件被发现               | `domain`, `manifest`            |
+| `plugin_setup`       | 插件 setup 完成              | `domain`                        |
+| `plugin_enabled`     | 插件 entry 激活              | `domain`, `entry_id`            |
+| `plugin_disabled`    | 插件 entry 卸载              | `domain`, `entry_id`            |
+
+#### PluginManager 核心方法
+
+##### 发现阶段
+```python
+async async_discover()
+```
+- 并发扫描 `plugins/` 目录下的所有子目录
+- 读取每个插件的 `manifest.json`
+- 创建 `PluginRecord` 对象（state=INSTALLED）并存储
+- 触发 `plugins_discovered` 事件
+
+##### 设置阶段
+```python
+async async_setup(domain: str, config: dict | None = None) -> bool
+```
+执行流程：
+1. 验证插件存在且状态为 `INSTALLED` 或 `DISABLED`
+2. 调用 `_async_install_dependencies()`：在线程池中安装 pip 依赖
+3. 调用 `_async_load_module()`：动态导入插件的 `__init__.py` 模块
+4. 调用插件模块的 `async_setup(context, config)` 函数（若存在）
+5. 状态更新为 `LOADED`
+
+##### 配置条目设置
+```python
+async async_setup_entry(entry: PluginEntryData) -> bool
+```
+执行流程：
+1. 若插件仍为 `INSTALLED` 状态则先调用 `async_setup`
+2. 调用插件模块的 `async_setup_entry(context, entry)` 函数
+3. 存储条目，状态更新为 `ENABLED`
+
+##### 平台转发
+```python
+async async_forward_entry_setup(entry: PluginEntryData, platform: str) -> bool
+```
+- 加载平台模块（如 `parser.py`），并以插件包的子模块方式注入 `sys.modules`
+- 调用平台模块的 `async_setup_entry(context, entry, async_add_entities)`
+- 通过 `async_add_entities` 回调将实体注册到平台注册表 `_platforms`
+
+##### 卸载阶段
+```python
+async async_unload_entry(entry_id: str) -> bool
+```
+- 调用插件的 `async_unload_entry(context, entry)`
+- 删除条目记录
+- 若该插件无其他活跃条目，状态回退为 `LOADED`
+
+##### 版本检查
+```python
+async async_check_updates(repo_url: str, ref: str = "main") -> dict[str, str | None]
+```
+- 轻量操作：仅从远程仓库获取 `plugins-manifest.json`，不下载完整包
+- 使用 `packaging.version` 进行语义版本比较
+- 返回值：`{domain: latest_version}` — `None` 表示已是最新
+- 结果缓存在 `_available_updates` 和 `_last_update_check`
+
+##### 激活新插件
+```python
+async async_activate(domain: str) -> bool
+```
+用于安装后首次激活从未被发现的插件，相当于：`discover → setup → setup_entry`
+
+##### 热重载
+```python
+async async_reload(domain: str) -> bool
+```
+执行流程：
+1. 卸载所有该插件的活跃 entry
+2. 从 `sys.modules` 中清除 `plugin_{domain}` 和 `contenthive_plugin_{domain}.*` 等模块缓存
+3. 将 record 重置为 `INSTALLED`
+4. 重新 `async_setup` + `async_setup_entry`
+
+##### 其他方法
+
+| 方法 | 说明 |
+|------|------|
+| `register_service(domain, service, callback)` | 注册插件服务 |
+| `call_service(domain, service, data)` | 调用已注册的服务 |
+| `get_parser_entities()` | 获取所有已注册的解析器实体列表 |
+
+#### 全局单例
+
+```python
+set_plugin_manager(manager)   # 设置全局实例
+get_plugin_manager()          # 获取全局实例（可能为 None）
+```
 
 ---
 
-### 4. `__init__.py` - 插件入口（fxtwitter 示例）
+### 4. `downloader.py` - GitHub 插件下载器
 
-**职责**：定义插件的生命周期回调函数
+**职责**：从 GitHub 仓库安全地下载、解压并安装插件
 
-#### 核心函数
+#### GitHubPluginDownloader 类
 
-##### `async_setup(context: PluginContext, config: dict) -> bool`
-**何时调用**：插件首次加载时
+##### 远程仓库格式
+下载器要求远程仓库根目录存在 `plugins-manifest.json`：
 
-作用：
-- 执行插件基本初始化
-- 安装依赖、加载配置等
-
-fxtwitter 示例处理很简单：`只记录日志，返回 True`
-
-##### `async_setup_entry(context: PluginContext, entry: PluginEntryData) -> bool`
-**何时调用**：激活配置条目时
-
-作用：
-- 执行入口特定的初始化
-- 加载该条目关联的平台
-
-fxtwitter 实现：
-```python
-# 转发平台设置到 parser.py（加载 FXTwitterParser 类）
-await context.async_forward_entry_setup(entry, "parser")
+```json
+{
+  "plugins": [
+    {
+      "domain": "my_parser",
+      "name": "My Parser",
+      "version": "1.2.0",
+      "path": "plugins/my_parser",
+      "enabled": true,
+      "requirements": ["aiohttp"]
+    }
+  ]
+}
 ```
 
-这行代码会：
-1. 在 fxtwitter 包中查找 `parser.py`
-2. 调用 `parser.py` 的 `async_setup_entry(context, entry, async_add_entities)`
-3. 将返回的解析器实例注册到平台
+- `path`：插件目录相对于仓库根目录的路径
+- `enabled`：为 `false` 时不会被自动安装（除非显式指定）
+- 安装后此条目内容会被写入插件目录的 `manifest.json`
 
-##### `async_unload_entry(context: PluginContext, entry: PluginEntryData) -> bool`
-**何时调用**：禁用或卸载条目时
+##### 主要方法
 
-作用：
-- 清理资源
-- 触发平台卸载逻辑
-
-fxtwitter 实现：
 ```python
-success = await context.async_unload_platforms(entry, ["parser"])
+async download_plugins(
+    repo_url: str,
+    ref: str = "main",
+    ref_type: str = "branch",       # "branch" | "tag" | "commit"
+    selected_plugins: list[str] | None = None,
+    force_reinstall: bool = False
+) -> dict[str, bool]
 ```
+- 下载仓库 zip 包，解压后按 `plugins-manifest.json` 安装选定插件
+- 安装完毕后自动清理临时文件
 
-这行代码会：
-1. 查找所有平台实体
-2. 调用每个实体的 `async_will_remove()` 方法
-3. 清理会话、关闭连接等
+```python
+async fetch_remote_manifest(repo_url: str, ref: str = "main") -> dict | None
+```
+- 仅抓取 `raw.githubusercontent.com` 上的 `plugins-manifest.json`
+- 不下载完整包，用于轻量级版本检查
+
+##### URL 格式支持
+
+| 格式 | 示例 |
+|------|------|
+| 裸域名 | `github.com/owner/repo` |
+| HTTPS | `https://github.com/owner/repo` |
+| .git 后缀 | `https://github.com/owner/repo.git` |
+
+##### 安全机制
+
+| 机制 | 说明 |
+|------|------|
+| Domain 验证 | 仅允许 `[a-z0-9_-]`，防止路径穿越 |
+| Ref 验证 | 仅允许 `[a-zA-Z0-9._/\-]`，防止注入 |
+| Zip Slip 防护 | 解压时逐条验证路径不逃出目标目录 |
+| 路径安全检查 | `_validate_path_safety()` 确保目标在 `plugins_dir` 内 |
 
 ---
 
-### 5. `parser.py` - 平台实现（fxtwitter 示例）
+### 5. `config.py` - 插件配置文件工具
 
-**职责**：实现具体的内容解析功能
+**职责**：读写 `plugins_dir/plugins.yaml`，持久化每个插件的配置（包括启用/禁用状态）
 
-#### FXTwitterParser 类
+#### `plugins.yaml` 格式
 
-**初始化**：
-```python
-def __init__(self, context: PluginContext, entry: PluginEntryData):
-    self.context = context      # 获取应用资源
-    self.entry = entry          # 配置条目
-    self._session = None        # HTTP 会话
+```yaml
+fxtwitter:
+  disabled: true
+
+youtube_parser:
+  disabled: false
+  api_key: "xxx"
 ```
 
-**关键方法**：
+每个插件占一个独立配置块，`disabled` 是内置字段，其余字段作为插件专属配置传入 `async_setup`。
 
-##### `async_setup()`
-- 创建 aiohttp 会话
-- 记录初始化状态
+#### 主要函数
 
-##### `can_parse(url: str) -> bool`
-- 使用正则表达式检查 URL 是否匹配
-- 用于路由到正确的解析器
+| 函数 | 说明 |
+|------|------|
+| `load_plugins_config()` | 加载完整配置，返回 `dict[domain, config]`；文件不存在或解析失败时返回 `{}` |
+| `save_plugins_config(config)` | 将完整配置写回 `plugins.yaml` |
+| `get_plugin_config(domain)` | 获取单个插件的配置块，不存在时返回 `{}` |
+| `set_plugin_field(domain, key, value)` | 设置单个插件的某个配置字段并持久化 |
 
-##### `async parse(url: str) -> ParserResult`
-**主要解析流程**：
-1. 将 Twitter/X URL 转换为 fxtwitter API URL
-2. 调用 `_fetch_api_data()` 获取数据
-3. 调用 `_validate_response()` 验证响应
-4. 调用 `_build_result()` 构建结果对象
+---
 
-**数据提取方法**：
-- `_parse_media()`：提取图片和视频
-- `_parse_author()`：提取作者信息
-- `_get_platform_info()`：获取平台元数据
+### 6. `startup.py` - 启动与关闭
 
-##### `async_will_remove()`
-- 清理 HTTP 会话
-- 确保资源正确释放
+**职责**：应用启动时初始化插件系统，关闭时优雅卸载
+
+#### `load_plugins_on_startup()`
+
+启动流程：
+1. 创建 `PluginContext` 和 `PluginManager`，注入 HA 风格方法
+2. `async_discover()` 并发扫描本地插件目录
+3. `async_check_updates()` 轻量检查远程版本，日志记录可用更新和新插件（不自动安装）
+4. 读取 `plugins.yaml`，逐个处理已发现的插件：
+   - 若 `disabled: true`：状态设为 `DISABLED`，跳过加载
+   - 否则：`async_setup(config)` + `async_setup_entry`，插件专属配置（除 `disabled` 外的字段）传入 `async_setup`
+5. 汇总日志：`X/Y enabled`
+
+#### `shutdown_plugins()`
+
+遍历所有活跃 entry，逐一调用 `async_unload_entry` 完成资源清理。
+
+---
+
+### 7. `services/plugin.py` - 插件管理服务层
+
+**职责**：封装插件管理操作，供 HTTP 路由层调用
+
+#### PluginService 方法
+
+| 方法 | 说明 |
+|------|------|
+| `reload_all()` | 热重载所有插件，返回每个 domain 的结果 |
+| `check_config()` | 校验所有插件 manifest 的必填字段和依赖完整性 |
+| `check_updates()` | 查询远端版本，返回各插件的当前版本与最新版本 |
+| `update_plugins(domains)` | 下载并安装指定插件（或全部），已有插件热重载，新插件直接激活 |
+| `list_plugins()` | 返回所有插件的状态、版本、错误信息及更新可用性 |
+| `disable(domain)` | 卸载插件并在 `plugins.yaml` 中写入 `disabled: true`，重启后生效 |
+| `enable(domain)` | 从 `plugins.yaml` 移除禁用标记，动态加载并激活插件 |
 
 ---
 
@@ -290,164 +382,181 @@ def __init__(self, context: PluginContext, entry: PluginEntryData):
 ```
 1. 应用启动
    │
-   ├── manager.async_discover()
+   ├── PluginContext + PluginManager 初始化
+   │
+   ├── manager.async_discover()  [并发]
    │   ├── 扫描 plugins/ 目录
    │   ├── 读取所有 manifest.json
    │   └── 创建 PluginRecord (state=INSTALLED)
    │
-   ├── manager.async_setup(domain="fxtwitter")
-   │   ├── 安装依赖
-   │   ├── 导入模块
-   │   ├── 调用 __init__.async_setup(context, config)
-   │   └── state → LOADED
+   ├── manager.async_check_updates()  [仅拉取 plugins-manifest.json]
+   │   └── 日志记录新插件 / 可用更新，不自动安装
    │
-   ├── 创建配置条目 entry.domain="fxtwitter"
+   ├── 读取 plugins.yaml
    │
-   └── manager.async_setup_entry(entry)
-       ├── 调用 __init__.async_setup_entry(context, entry)
-       │   │
-       │   └── context.async_forward_entry_setup(entry, "parser")
-       │       ├── 加载 parser.py 模块
-       │       ├── 调用 parser.async_setup_entry(context, entry, async_add_entities)
-       │       │   ├── 创建 FXTwitterParser 实例
-       │       │   ├── 调用 parser.async_setup()
-       │       │   └── 返回 parser 实例列表
-       │       └── 注册到平台：_platforms["fxtwitter"]["parser"] = [parser_instance]
+   └── for domain in plugins:
+       ├── [disabled: true] → state → DISABLED，跳过
        │
-       └── state → ENABLED
+       ├── manager.async_setup(domain, config)  [config 来自 plugins.yaml]
+       │   ├── pip install requirements  [线程池]
+       │   ├── importlib 加载 __init__.py
+       │   ├── 调用 async_setup(context, config)
+       │   └── state → LOADED
+       │
+       └── manager.async_setup_entry(entry)
+           ├── 调用 async_setup_entry(context, entry)
+           │   └── context.async_forward_entry_setup(entry, "parser")
+           │       ├── 加载 parser.py 作为子模块
+           │       ├── 调用 parser.async_setup_entry(context, entry, async_add_entities)
+           │       └── 注册到 _platforms[domain]["parser"]
+           └── state → ENABLED
 
-2. 插件运行
+2. 运行时 - 解析 URL
    │
-   ├── 用户请求解析 URL
-   ├── 系统调用 manager.async_find_parser_for_url(url)
-   ├── 遍历所有解析器
+   ├── manager.get_parser_entities()  → 获取所有解析器实例
    ├── 调用 parser.can_parse(url)
-   └── 如果匹配，调用 parser.parse(url) → ParserResult
+   └── 匹配成功 → parser.parse(url) → ParserResult
 
-3. 应用关闭或卸载
+3. 在线更新
    │
-   └── manager.async_unload_entry(entry_id)
-       ├── 调用 __init__.async_unload_entry(context, entry)
-       │   └── context.async_unload_platforms(entry, ["parser"])
-       │       ├── 找到所有 "parser" 平台实体
-       │       └── 调用每个实例的 async_will_remove()
-       │           └── FXTwitterParser 关闭 HTTP 会话
-       │
-       └── state → DISABLED
+   ├── PluginService.update_plugins(domains)
+   │   ├── GitHubPluginDownloader.download_plugins()
+   │   │   ├── 下载 GitHub zip 包（branch / tag / commit）
+   │   │   ├── 安全解压（Zip Slip 防护）
+   │   │   └── 按 plugins-manifest.json 覆盖安装插件目录
+   │   │
+   │   ├── 已有插件 → manager.async_reload(domain)
+   │   │   ├── async_unload_entry（卸载所有 entry）
+   │   │   ├── 清除 sys.modules 缓存
+   │   │   └── 重新 async_setup + async_setup_entry
+   │   │
+   │   └── 新插件 → manager.async_activate(domain)
+   │       └── discover → setup → setup_entry
+
+4. 应用关闭
+   │
+   └── shutdown_plugins()
+       └── for entry in config_entries:
+           └── manager.async_unload_entry(entry_id)
+               ├── async_unload_entry(context, entry)
+               │   └── context.async_unload_platforms(entry, ["parser"])
+               │       └── parser.async_will_remove()  [关闭 HTTP 会话等]
+               └── state → LOADED（若无其他活跃 entry）
 ```
 
 ---
 
-## 关键设计特点
+## 开发新插件
 
-### 1. **模块化架构**
-- 插件作为模块加载，而非类
-- 支持插件间的独立演化
-- 易于版本管理和依赖控制
-
-### 2. **状态机模型**
-- 严格的状态转移规则
-- 防止无效操作（如重复加载）
-- 便于调试和故障诊断
-
-### 3. **Home Assistant 风格**
-- 借鉴成熟的 HA 架构
-- `async_forward_entry_setup` 和 `async_unload_platforms` 模式
-- 支持平台的灵活组织
-
-### 4. **资源管理**
-- 通过 `PluginContext` 集中管理资源
-- 支持数据库连接池
-- 日志统一收集
-
-### 5. **事件驱动**
-- `EventBus` 实现插件间通信
-- 支持监听生命周期事件
-- 便于实现响应式逻辑
-
----
-
-## 扩展现有插件
-
-要新增一个解析器插件，按照以下步骤：
-
-### 1. 创建插件目录结构
+### 插件目录结构
 
 ```
 plugins/
 └── my_parser/
     ├── __init__.py          # 生命周期函数
-    ├── parser.py            # 解析实现
-    ├── const.py             # 常量定义
-    └── manifest.json        # 元数据
+    ├── parser.py            # 解析实现（可选，按平台划分）
+    ├── const.py             # 常量定义（可选）
+    └── manifest.json        # 元数据（本地开发用；线上由 plugins-manifest.json 生成）
 ```
 
-### 2. 编写 manifest.json
+### manifest.json 格式
 
 ```json
 {
   "domain": "my_parser",
   "name": "My Parser",
   "version": "1.0.0",
-  "requirements": ["requests"],
-  "author": "Your Name"
+  "requirements": ["aiohttp"],
+  "author": ["Your Name"]
 }
 ```
 
-### 3. 实现 __init__.py
+### `__init__.py` 实现
 
 ```python
+from contenthive.plugins.context import PluginContext
+from contenthive.plugins.manager import PluginEntryData
+
 async def async_setup(context: PluginContext, config: dict) -> bool:
     context.logger.info("MyParser plugin setup")
     return True
 
-async def async_setup_entry(context: PluginContext, entry):
+async def async_setup_entry(context: PluginContext, entry: PluginEntryData) -> bool:
     await context.async_forward_entry_setup(entry, "parser")
     return True
 
-async def async_unload_entry(context: PluginContext, entry):
+async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> bool:
     return await context.async_unload_platforms(entry, ["parser"])
 ```
 
-### 4. 实现 parser.py 中的解析器类
+### `parser.py` 平台实现
 
 ```python
+from contenthive.plugins.context import PluginContext
+from contenthive.plugins.manager import PluginEntryData
+
 class MyParser:
-    def __init__(self, context: PluginContext, entry):
+    def __init__(self, context: PluginContext, entry: PluginEntryData):
         self.context = context
         self.entry = entry
-    
-    async def async_setup(self):
-        # 初始化逻辑
-        pass
-    
-    def can_parse(self, url: str) -> bool:
-        # 检查是否能解析此 URL
-        return True
-    
-    async def parse(self, url: str) -> ParserResult:
-        # 执行解析逻辑
-        pass
-    
-    async def async_will_remove(self):
-        # 清理逻辑
-        pass
-```
 
-### 5. 系统将自动发现并加载你的插件！
+    async def async_setup(self):
+        # 初始化（如创建 HTTP session）
+        pass
+
+    def can_parse(self, url: str) -> bool:
+        return "example.com" in url
+
+    async def parse(self, url: str):
+        # 执行解析，返回 ParserResult
+        pass
+
+    async def async_will_remove(self):
+        # 清理资源（如关闭 HTTP session）
+        pass
+
+
+async def async_setup_entry(context, entry, async_add_entities):
+    parser = MyParser(context, entry)
+    await parser.async_setup()
+    await async_add_entities([parser])
+```
 
 ---
 
 ## 调试技巧
 
-1. **查看插件状态**：检查 `manager.plugins[domain].state`
-2. **查看错误信息**：检查 `manager.plugins[domain].error`
-3. **查看平台实体**：检查 `manager._platforms[domain]`
-4. **查看事件**：监听 `manager.event_bus` 的事件
-5. **查看日志**：通过 `context.logger` 输出调试信息
+| 目标 | 方法 |
+|------|------|
+| 查看插件状态 | `manager.plugins[domain].state` |
+| 查看错误信息 | `manager.plugins[domain].error` |
+| 查看平台实体 | `manager._platforms[domain]` |
+| 查看可用更新缓存 | `manager._available_updates` |
+| 查看上次更新检查时间 | `manager._last_update_check` |
+| 触发热重载 | `await manager.async_reload(domain)` |
+| 监听事件 | `manager.event_bus.listen("plugin_enabled", callback)` |
 
 ---
 
-## 总结
+## 关键设计特点
 
-这个插件系统通过 **生命周期管理** 和 **状态机** 实现了高度的模块化和可扩展性。插件从被发现到完全运行，再到卸载清理，每一步都有明确的职责划分和调用顺序。理解这个流程后，就可以轻松添加新的解析器或其他功能模块了。
+### 1. 模块化架构
+插件以模块（而非类）方式加载，支持平台（如 `parser.py`）作为子模块独立注册，便于版本管理和依赖控制。
+
+### 2. 状态机模型
+严格的状态转移：`INSTALLED → LOADED → ENABLED`，卸载后回退至 `LOADED`，错误则进入 `FAILED`，手动禁用则进入 `DISABLED`，防止无效操作。
+
+### 3. Home Assistant 风格
+借鉴成熟的 HA 架构，`async_forward_entry_setup` / `async_unload_platforms` 模式让插件与平台高度解耦。
+
+### 4. 安全的远程分发
+通过 `GitHubPluginDownloader` 支持 branch / tag / commit 三种 ref 类型，并内置 Domain 校验、Zip Slip 防护、路径安全检查，防止恶意插件包攻击。
+
+### 5. 热更新
+`async_reload` 完整清除模块缓存并重新加载，无需重启应用即可应用插件更新。
+
+### 6. 轻量版本检查
+`async_check_updates` 仅拉取远程 `plugins-manifest.json`（几 KB），不下载完整包，启动时开销极小。
+
+### 7. 持久化插件配置
+通过 `plugins.yaml` 集中管理每个插件的配置，包括启用/禁用状态和插件专属配置项（如 API Key）。配置与插件代码同目录存放，语义清晰，支持人工编辑，且可随插件目录一起备份。

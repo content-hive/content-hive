@@ -14,6 +14,8 @@ class OperationType(str, Enum):
     DELETE = "delete"
     CANCEL = "cancel"
     UPDATE = "update"
+    ENABLE = "enable"
+    DISABLE = "disable"
 
 class TaskType(str, Enum):
     PARSE_CONTENT = "parse_content"

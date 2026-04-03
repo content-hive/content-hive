@@ -1,76 +1,78 @@
 from contenthive.plugins.registry import PluginState
-from contenthive.database.database import get_engine
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
-from contenthive.plugins.downloader import GitHubPluginDownloader
+from contenthive.plugins.config import load_plugins_config
 from contenthive.logger import logger
 
 
-async def load_plugins_on_startup(app, data_dir):
+async def load_plugins_on_startup():
     """
     Load and enable plugins on application startup using HA-style workflow.
     """
     # 1. Create plugin context
-    context = PluginContext(
-        app=app,
-        data_dir=data_dir,
-        db_factory=get_engine,
-        logger=logger
-    )
+    context = PluginContext(logger=logger)
 
-    # 2. Download official plugins from repository
-    downloader = GitHubPluginDownloader()
-
-    try:
-        results = await downloader.download_plugins(
-            repo_url=settings.plugins_repo_url,
-            ref=settings.plugins_repo_ref,
-            ref_type=settings.plugins_repo_ref_type,
-            force_reinstall=False  # Only download if not already installed
-        )
-
-        if results:
-            success_count = sum(1 for v in results.values() if v)
-            total_count = len(results)
-            if success_count < total_count:
-                failed = [k for k, v in results.items() if not v]
-                logger.warning(f"Failed to install plugins: {', '.join(failed)}")
-    except Exception:
-        logger.exception("Failed to download plugins from repository")
-    finally:
-        # Cleanup temporary files
-        downloader.cleanup_temp()
-
-    # 3. Create plugin manager with context
+    # 2. Create plugin manager with context
     plugin_manager = PluginManager(settings.plugins_dir, context)
     set_plugin_manager(plugin_manager)
 
-    # 4. Inject HA-style methods into context for plugins to use
+    # 3. Inject HA-style methods into context for plugins to use
     context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
     context.async_unload_platforms = plugin_manager.async_unload_platforms
     context.register_service = plugin_manager.register_service
 
-    # 5. Discover plugins
+    # 4. Discover locally installed plugins
     await plugin_manager.async_discover()
 
+    # 5. Fetch remote manifest and compare — no archive download, lightweight check only
+    try:
+        check_results = await plugin_manager.async_check_updates(
+            repo_url=settings.plugins_repo_url,
+            ref=settings.plugins_repo_ref,
+        )
+        installed_domains = set(plugin_manager.plugins)
+        new_plugins = {d: v for d, v in check_results.items() if d not in installed_domains and v}
+        available_updates = {d: v for d, v in check_results.items() if d in installed_domains and v}
+
+        if new_plugins:
+            logger.info(
+                "New plugins available: "
+                + ", ".join(f"{d} ({v})" for d, v in new_plugins.items())
+            )
+        if available_updates:
+            logger.info(
+                "Plugin updates available: "
+                + ", ".join(f"{d} ({plugin_manager.plugins[d].version} → {v})" for d, v in available_updates.items())
+            )
+        if not new_plugins and not available_updates:
+            logger.debug("All plugins are up to date")
+    except Exception:
+        logger.warning("Failed to check for plugin updates from remote manifest")
+
     # 6. Setup and enable plugins
+    plugins_config = load_plugins_config()
     for domain in plugin_manager.plugins:
-        # Get plugin configuration
-        config = _get_plugin_config(domain)
-        
+        plugin_cfg = plugins_config.get(domain, {})
+
+        if plugin_cfg.get("disabled", False):
+            plugin_manager.plugins[domain].state = PluginState.DISABLED
+            logger.info(f"Plugin skipped (disabled): {domain}")
+            continue
+
         # Setup plugin (load module, install dependencies)
-        success = await plugin_manager.async_setup(domain, config)
+        success = await plugin_manager.async_setup(domain)
 
         if not success:
             logger.warning(f"Plugin setup failed: {domain}")
             continue
 
         # Create config entry
+        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
         entry = PluginEntryData(
             entry_id=f"{domain}_default",
             domain=domain,
-            data=config or {},
+            data=config,
         )
 
         # Setup entry (enable plugin)
@@ -87,21 +89,6 @@ async def load_plugins_on_startup(app, data_dir):
         if record.state == PluginState.ENABLED
     )
     logger.info(f"Plugin loading complete: {enabled_count}/{len(plugin_manager.plugins)} enabled")
-
-
-def _get_plugin_config(domain: str) -> dict:
-    """
-    Get plugin configuration from settings or config file.
-    In the future, this could load from database or config file.
-    """
-    configs = {
-        "youtube_parser": {
-            "api_key": "",
-        },
-        # Add more plugin configs as needed
-    }
-    
-    return configs.get(domain, {})
 
 
 async def shutdown_plugins():
