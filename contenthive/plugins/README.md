@@ -86,10 +86,12 @@ PluginRecord {
     instance: Optional       # 加载的插件模块对象（module，非类实例）
     state: PluginState       # 当前状态
     error: Optional[str]     # 错误信息（如果状态为 FAILED）
-    
+
     # 属性
     name: str                # 来自 manifest 的显示名称
     version: str             # 来自 manifest 的版本号
+    description: Optional[str]   # 来自 manifest 的描述
+    author: Optional[list[str]]  # 来自 manifest 的作者列表
     is_loaded: bool          # instance 是否非空
     is_enabled: bool         # state == ENABLED
 }
@@ -465,7 +467,7 @@ plugins/
   "name": "My Parser",
   "version": "1.0.0",
   "requirements": ["aiohttp"],
-  "author": "Your Name"
+  "author": ["Your Name"]
 }
 ```
 

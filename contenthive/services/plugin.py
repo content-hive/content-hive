@@ -150,9 +150,8 @@ class PluginService:
                     name=record.name,
                     error=record.error if record.state == PluginState.FAILED else None,
                     update_available=plugin_manager._available_updates.get(domain),
-                    description=record.manifest.get("description"),
-                    author=record.manifest.get("author"),
-                    requirements=record.manifest.get("requirements"),
+                    description=record.description,
+                    author=record.author,
                 )
 
         return PluginListResponse(plugins=plugin_status)

@@ -26,11 +26,11 @@ class PluginState(str, Enum):
 class PluginRecord:
     """
     Plugin record storing manifest, instance, and state.
-    
+
     Attributes:
         domain: Unique plugin identifier (from manifest.json)
         manifest: Plugin metadata (name, version, dependencies, etc.)
-        instance: Instantiated plugin class (PluginBase subclass)
+        instance: Loaded plugin module object (not a class instance)
         state: Current plugin state (PluginState enum)
         error: Error message if state is FAILED
     """
@@ -51,6 +51,16 @@ class PluginRecord:
     def version(self) -> str:
         """Get plugin version from manifest"""
         return self.manifest.get('version', 'unknown')
+
+    @property
+    def author(self) -> list[str] | None:
+        """Get plugin author list from manifest"""
+        return self.manifest.get('author')
+
+    @property
+    def description(self) -> str | None:
+        """Get plugin description from manifest"""
+        return self.manifest.get('description')
     
     @property
     def is_loaded(self) -> bool:

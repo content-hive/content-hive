@@ -20,7 +20,6 @@ class PluginInfo(APIBaseModel):
     update_available: Optional[str] = Field(None, description="Latest version if an update is available, otherwise null")
     description: Optional[str] = Field(None, description="Plugin description")
     author: Optional[list[str]] = Field(None, description="Plugin author")
-    requirements: Optional[list[str]] = Field(None, description="Plugin Python package requirements")
 
 
 class PluginUpdateInfo(APIBaseModel):
