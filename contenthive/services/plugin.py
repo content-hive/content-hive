@@ -145,7 +145,7 @@ class PluginService:
         if plugin_manager:
             for domain, record in plugin_manager.plugins.items():
                 plugin_status[domain] = PluginInfo(
-                    state=record.state.value,
+                    state=record.state,
                     version=record.version,
                     name=record.name,
                     error=record.error if record.state == PluginState.FAILED else None,

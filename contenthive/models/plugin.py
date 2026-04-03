@@ -7,12 +7,13 @@ from typing import Optional
 from pydantic import Field
 
 from contenthive.models.api import APIBaseModel
+from contenthive.plugins.registry import PluginState
 
 
 class PluginInfo(APIBaseModel):
     """Status information for a single plugin"""
 
-    state: str = Field(..., description="Plugin state")
+    state: PluginState = Field(..., description="Plugin state")
     version: str = Field(..., description="Plugin version")
     name: str = Field(..., description="Plugin display name")
     error: Optional[str] = Field(None, description="Error message if plugin is in FAILED state")
