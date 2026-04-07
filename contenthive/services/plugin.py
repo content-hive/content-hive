@@ -2,6 +2,8 @@
 Plugin management service.
 """
 
+import shutil
+import sys
 from datetime import datetime, timezone
 
 from contenthive.config import settings
@@ -19,7 +21,7 @@ from contenthive.models.plugin import (
     ReloadResponse,
     UpdatePluginsResponse,
 )
-from contenthive.plugins.config import get_plugin_config, set_plugin_field
+from contenthive.plugins.config import get_plugin_config, load_plugins_config, save_plugins_config, set_plugin_field
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager
 from contenthive.plugins.registry import PluginState
@@ -320,6 +322,58 @@ class PluginService:
             raise RuntimeError(f"Plugin '{domain}' enable failed")
 
         return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' enabled")
+
+    async def delete(self, domain: str) -> OperationResult:
+        """Unload, remove from registry, and delete the plugin directory from disk.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            OperationResult indicating success.
+
+        Raises:
+            ValueError: If the domain is not found.
+            RuntimeError: If the plugin directory cannot be deleted.
+        """
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        # Unload all config entries
+        entries = [
+            entry for entry in plugin_manager.config_entries.values()
+            if entry.domain == domain
+        ]
+        for entry in entries:
+            await plugin_manager.async_unload_entry(entry.entry_id)
+
+        # Clear cached modules
+        stale_prefixes = (f"contenthive_plugin_{domain}.",)
+        stale_exact = {f"plugin_{domain}", f"contenthive_plugin_{domain}"}
+        for key in list(sys.modules.keys()):
+            if key in stale_exact or key.startswith(stale_prefixes):
+                del sys.modules[key]
+
+        # Remove from plugin manager registry
+        del plugin_manager.plugins[domain]
+        plugin_manager._available_updates.pop(domain, None)
+
+        # Remove from plugins.yaml
+        config = load_plugins_config()
+        config.pop(domain, None)
+        save_plugins_config(config)
+
+        # Delete plugin directory from disk
+        plugin_dir = settings.plugins_dir / domain
+        if plugin_dir.exists():
+            try:
+                shutil.rmtree(plugin_dir)
+            except Exception as e:
+                raise RuntimeError(f"Failed to delete plugin directory: {e}") from e
+
+        logger.info(f"Plugins[Deleted]: {domain}")
+        return OperationResult(operation=OperationType.DELETE, id=domain, success=True, message=f"Plugin '{domain}' deleted")
 
 
 plugin_service = PluginService()
