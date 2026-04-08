@@ -167,6 +167,7 @@ class PluginService:
                     reloaded = await plugin_manager.async_reload(domain)
                     if reloaded:
                         updated.append(domain)
+                        plugin_manager._available_updates.pop(domain, None)
                     else:
                         failed.append(domain)
                 else:
@@ -174,6 +175,7 @@ class PluginService:
                     success = await plugin_manager.async_activate(domain)
                     if success:
                         updated.append(domain)
+                        plugin_manager._available_updates.pop(domain, None)
                     else:
                         failed.append(domain)
             except Exception as e:
