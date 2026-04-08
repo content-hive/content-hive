@@ -19,7 +19,7 @@ from contenthive.models.plugin import (
     ReloadResponse,
     UpdatePluginsResponse,
 )
-from contenthive.plugins.config import get_plugin_config, load_plugins_config, save_plugins_config, set_plugin_field
+from contenthive.plugins.config import get_plugin_config, remove_plugin_config, set_plugin_field
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager
 from contenthive.plugins.registry import PluginState
@@ -342,10 +342,10 @@ class PluginService:
 
         await plugin_manager.async_delete(domain)
 
-        # Remove from plugins.yaml
-        config = load_plugins_config()
-        config.pop(domain, None)
-        save_plugins_config(config)
+        try:
+            remove_plugin_config(domain)
+        except Exception as e:
+            raise RuntimeError(f"Plugin '{domain}' deleted but failed to update plugins.yaml: {e}") from e
 
         return OperationResult(operation=OperationType.DELETE, id=domain, success=True, message=f"Plugin '{domain}' deleted")
 

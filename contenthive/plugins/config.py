@@ -58,3 +58,11 @@ def set_plugin_field(domain: str, key: str, value: Any) -> None:
             config[domain] = {}
         config[domain][key] = value
         save_plugins_config(config)
+
+
+def remove_plugin_config(domain: str) -> None:
+    """Remove a plugin's entire config block from plugins.yaml and persist."""
+    with _config_lock:
+        config = load_plugins_config()
+        config.pop(domain, None)
+        save_plugins_config(config)

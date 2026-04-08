@@ -463,7 +463,14 @@ class PluginManager:
 
         Args:
             domain: Plugin domain identifier. Must be present in self.plugins.
+
+        Raises:
+            ValueError: If the domain is not found in the plugin registry.
+            RuntimeError: If the plugin directory cannot be deleted from disk.
         """
+        if domain not in self.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
         # Unload all config entries
         entries = [
             entry for entry in self.config_entries.values()
@@ -475,8 +482,17 @@ class PluginManager:
         # Clear cached modules
         self._clear_module_cache(domain)
 
-        # Remove from registry
-        del self.plugins[domain]
+        # Clean up any platform entities that weren't removed during entry unload
+        await self._async_cleanup_domain_platforms(domain)
+
+        # Clean up service registry for this domain
+        self.services.pop(domain, None)
+
+        # Clean up plugin data storage for this domain
+        self.data.pop(domain, None)
+
+        # Remove from registry (pop guards against a concurrent second call)
+        self.plugins.pop(domain, None)
         self._available_updates.pop(domain, None)
 
         # Delete plugin directory from disk
@@ -487,6 +503,7 @@ class PluginManager:
             except Exception as e:
                 raise RuntimeError(f"Failed to delete plugin directory: {e}") from e
 
+        await self.event_bus.fire("plugin_deleted", {"domain": domain})
         logger.info(f"Plugins[Deleted]: {domain}")
 
 
@@ -650,6 +667,21 @@ class PluginManager:
             return None
 
 
+
+    async def _async_cleanup_domain_platforms(self, domain: str) -> None:
+        """Remove all remaining platform entities for a domain, calling async_will_remove on each."""
+        if domain not in self._platforms:
+            return
+        for platform, entities in self._platforms[domain].items():
+            for entity in entities:
+                if hasattr(entity, "async_will_remove"):
+                    try:
+                        await entity.async_will_remove()
+                    except Exception as e:
+                        self.context.logger.warning(
+                            f"Plugins[Delete]: {domain} - Error removing {platform} entity: {e}"
+                        )
+        del self._platforms[domain]
 
     def _clear_module_cache(self, domain: str) -> None:
         """Remove all cached module entries for a plugin domain.
