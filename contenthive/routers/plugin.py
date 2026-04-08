@@ -144,6 +144,27 @@ async def enable_plugin(
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
+@router_v1.delete("/{domain}", response_model=APIResponse[OperationResult])
+async def delete_plugin(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[OperationResult]:
+    """Delete a plugin: unload it and remove its files from disk"""
+    try:
+        data = await plugin_service.delete(domain)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+        )
+    except RuntimeError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="PLUGIN_DELETE_FAILED", message=str(e))
+        )
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
 @router_v1.post("/update", response_model=APIResponse[UpdatePluginsResponse])
 async def update_plugins(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],

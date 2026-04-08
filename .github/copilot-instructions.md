@@ -34,6 +34,12 @@ Router → Service → DAO (Data Access Object) → ORM Model
 
 ## Coding Conventions
 
+### Method Ordering
+
+- Public methods must come before private methods (prefixed with `_`) within a class
+- Within each group, order methods by the plugin/feature lifecycle they belong to
+- Do not use comment divider lines (e.g., `# ----`) to separate method groups
+
 ### Imports
 
 - All imports must be placed at the top of the file, grouped in the standard order: standard library → third-party → internal

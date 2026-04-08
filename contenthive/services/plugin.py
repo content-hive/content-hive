@@ -19,7 +19,7 @@ from contenthive.models.plugin import (
     ReloadResponse,
     UpdatePluginsResponse,
 )
-from contenthive.plugins.config import get_plugin_config, set_plugin_field
+from contenthive.plugins.config import get_plugin_config, remove_plugin_config, set_plugin_field
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager
 from contenthive.plugins.registry import PluginState
@@ -165,6 +165,7 @@ class PluginService:
                     reloaded = await plugin_manager.async_reload(domain)
                     if reloaded:
                         updated.append(domain)
+                        plugin_manager._available_updates.pop(domain, None)
                     else:
                         failed.append(domain)
                 else:
@@ -172,6 +173,7 @@ class PluginService:
                     success = await plugin_manager.async_activate(domain)
                     if success:
                         updated.append(domain)
+                        plugin_manager._available_updates.pop(domain, None)
                     else:
                         failed.append(domain)
             except Exception as e:
@@ -320,6 +322,32 @@ class PluginService:
             raise RuntimeError(f"Plugin '{domain}' enable failed")
 
         return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' enabled")
+
+    async def delete(self, domain: str) -> OperationResult:
+        """Unload, remove from registry, and delete the plugin directory from disk.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            OperationResult indicating success.
+
+        Raises:
+            ValueError: If the domain is not found.
+            RuntimeError: If the plugin directory cannot be deleted.
+        """
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        await plugin_manager.async_delete(domain)
+
+        try:
+            remove_plugin_config(domain)
+        except Exception as e:
+            raise RuntimeError(f"Plugin '{domain}' deleted but failed to update plugins.yaml: {e}") from e
+
+        return OperationResult(operation=OperationType.DELETE, id=domain, success=True, message=f"Plugin '{domain}' deleted")
 
 
 plugin_service = PluginService()
