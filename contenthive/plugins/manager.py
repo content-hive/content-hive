@@ -590,17 +590,21 @@ class PluginManager:
             sys.executable, "-m", "pip", "install",
             *requirements,
             "--quiet",
-            "--root-user-action=ignore"
+            "--root-user-action=ignore",
+            "--disable-pip-version-check"
         ])
 
     async def _async_load_module(self, domain: str):
         """Load plugin module (not a class!)"""
         try:
-            module_path = self.plugins_dir / domain / "__init__.py"
+            plugin_dir = self.plugins_dir / domain
+            module_path = plugin_dir / "__init__.py"
+            module_name = f"contenthive_plugin_{domain}"
 
             spec = importlib.util.spec_from_file_location(
-                f"plugin_{domain}",
-                module_path
+                module_name,
+                module_path,
+                submodule_search_locations=[str(plugin_dir)]
             )
             if spec is None or spec.loader is None:
                 raise Exception(f"Cannot create module spec for {module_path}")
