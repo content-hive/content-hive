@@ -82,13 +82,6 @@ class PluginManager:
         self._available_updates: dict[str, str | None] = {}
         self._last_update_check: datetime | None = None
 
-    def _ensure_deps_dir_on_path(self):
-        """Create the deps directory and add it to sys.path if not already present."""
-        self.deps_dir.mkdir(parents=True, exist_ok=True)
-        deps_str = str(self.deps_dir)
-        if deps_str not in sys.path:
-            sys.path.insert(0, deps_str)
-
     async def async_discover(self):
         """Discover plugins asynchronously from the plugins directory."""
         tasks = []
@@ -523,6 +516,13 @@ class PluginManager:
         logger.info(f"Plugins[Deleted]: {domain}")
 
 
+
+    def _ensure_deps_dir_on_path(self):
+        """Create the deps directory and add it to sys.path if not already present."""
+        self.deps_dir.mkdir(parents=True, exist_ok=True)
+        deps_str = str(self.deps_dir)
+        if deps_str not in sys.path:
+            sys.path.append(deps_str)
 
     async def _async_load_manifest(self, plugin_dir: Path, manifest_path: Path):
         """Load plugin manifest"""
