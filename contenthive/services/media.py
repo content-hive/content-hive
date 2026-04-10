@@ -5,19 +5,19 @@ Media service for downloading and managing media files.
 import asyncio
 import mimetypes
 import os
+import shutil
 from typing import Optional
 import aiofiles
 import aiohttp
-import hashlib
 import magic
 from pathlib import Path
 
 from pydantic import HttpUrl
 from contenthive.logger import logger
 from contenthive.models.enumerates import MediaStatus, MediaType
-from contenthive.models.parser import ParserResult
 from contenthive.models.content import DownloadedMediaInfo
 from contenthive.config import settings
+from contenthive.plugins.manager import get_plugin_manager
 from urllib.parse import quote
 
 class MediaService:
@@ -33,7 +33,7 @@ class MediaService:
         """
         self.media_dir = media_dir
 
-    def get_relative_media_path(self, local_path: Path) -> str:
+    def _get_relative_media_path(self, local_path: Path) -> str:
         """
         Convert local file path to web-accessible relative path.
         
@@ -53,83 +53,160 @@ class MediaService:
             return ""
 
 
-    async def download_single_media(
+    async def download_media(
         self,
         platform: str,
         author: str,
         content_id: str,
         media_url: HttpUrl,
         media_type: MediaType,
+        media_index: int = 0,
         media_cover: Optional[HttpUrl] = None,
         media_description: Optional[str] = None,
         media_duration: Optional[int] = None,
         media_width: Optional[int] = None,
         media_height: Optional[int] = None,
-        media_index: int = 0
+        plugin_domain: Optional[str] = None,
     ) -> Optional[DownloadedMediaInfo]:
         """
-        Download a single media file and its optional cover image, then return the local paths.
+        Download a single media file, using a plugin download service when available
+        and falling back to the built-in HTTP downloader otherwise.
+
         Args:
-            platform: Platform code (e.g., "twitter")
-            author: Author username
+            platform: Platform code
+            author: Author username or uid
             content_id: Content ID
-            media_url: URL of the media to download
-            media_type: Type of the media (e.g., image, video)
-            media_cover: Optional URL of the cover image
-            media_description: Optional description of the media
-            media_duration: Optional duration of the media in seconds (for videos)
-            media_width: Optional width of the media in pixels
-            media_height: Optional height of the media in pixels
-            media_index: Index of the media in the list
+            media_url: Media URL to download
+            media_type: Media type
+            media_index: Index of the media item (used in filename)
+            media_cover: Optional cover image URL
+            media_description: Optional media title/description
+            media_duration: Optional duration in seconds
+            media_width: Optional width in pixels
+            media_height: Optional height in pixels
+            plugin_domain: Plugin domain to use for download (from ParserResult.parser).
+                           If the plugin has registered a "download" service it will be used;
+                           otherwise falls back to the built-in downloader.
+
         Returns:
-            DownloadedMediaInfo object or None if download failed
+            DownloadedMediaInfo on success, or None if the download fails (whether via
+            plugin or the built-in downloader)
         """
+        save_dir = self._prepare_media_directory(platform, author, content_id)
+        manager = get_plugin_manager()
+
         try:
-            # Sanitize directory names
-            platform = self._sanitize_filename(platform)
-            author = self._sanitize_filename(author)
-        
-            media_dir = self.media_dir / platform / author / content_id
-            media_dir.mkdir(parents=True, exist_ok=True)
-
-            headers = {
-                "User-Agent": settings.download_user_agent
-            }
-            async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-                local_path = await self._download_file(
-                    session,
-                    str(media_url),
-                    media_dir,
-                    media_index,
-                    file_type="media"
+            if plugin_domain and manager and manager.has_service(plugin_domain, "download"):
+                logger.debug(f"Using plugin '{plugin_domain}' download service")
+                plugin_result = await manager.call_service(plugin_domain, "download", {
+                    "media_url": str(media_url),
+                    "media_cover": str(media_cover) if media_cover else None,
+                })
+                media_path, cover_path = self._move_plugin_download_result(
+                    save_dir=save_dir,
+                    plugin_result=plugin_result,
+                    media_index=media_index,
                 )
-                cover_path = None
-                if media_cover:
-                    cover_path = await self._download_file(
-                        session, 
-                        str(media_cover), 
-                        media_dir, 
-                        media_index,
-                        file_type="cover"
-                    )
-
-                downloaded_media = DownloadedMediaInfo(
-                    status=MediaStatus.COMPLETED,
-                    url=media_url,
-                    type=media_type,
-                    title=media_description,
-                    cover=media_cover,
-                    duration=media_duration,
-                    width=media_width,
-                    height=media_height,
-                    media_path=self.get_relative_media_path(local_path),
-                    cover_path=self.get_relative_media_path(cover_path) if cover_path else None
+            else:
+                logger.debug(f"Using built-in downloader for {media_url}")
+                media_path, cover_path = await self._download_single_media(
+                    save_dir=save_dir,
+                    media_url=str(media_url),
+                    media_index=media_index,
+                    media_cover=str(media_cover) if media_cover else None,
                 )
-
-                return downloaded_media
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to download media for content {content_id}: {media_url}")
             return None
+
+        return DownloadedMediaInfo(
+            status=MediaStatus.COMPLETED,
+            url=media_url,
+            type=media_type,
+            title=media_description,
+            cover=media_cover,
+            duration=media_duration,
+            width=media_width,
+            height=media_height,
+            media_path=self._get_relative_media_path(media_path),
+            cover_path=self._get_relative_media_path(cover_path) if cover_path else None,
+        )
+
+    def _prepare_media_directory(self, platform: str, author: str, content_id: str) -> Path:
+        """
+        Build and create the media save directory, return the Path.
+
+        Args:
+            platform: Platform code
+            author: Author username or uid
+            content_id: Content ID
+
+        Returns:
+            Path to the created directory
+        """
+        platform = self._sanitize_filename(platform)
+        author = self._sanitize_filename(author)
+        content_id = self._sanitize_filename(content_id)
+        save_dir = self.media_dir / platform / author / content_id
+        save_dir.mkdir(parents=True, exist_ok=True)
+        return save_dir
+
+    def _move_plugin_download_result(
+        self,
+        save_dir: Path,
+        plugin_result: dict,
+        media_index: int,
+    ) -> tuple[Path, Optional[Path]]:
+        """
+        Validate plugin-returned temporary file paths and move them into save_dir.
+
+        Args:
+            save_dir: Destination directory
+            plugin_result: Dict with keys "media_path" (Path) and optional "cover_path" (Path)
+            media_index: Media index used in the filename
+
+        Returns:
+            Tuple of (media_path, cover_path)
+        """
+        temp_media = self._validate_plugin_temp_path(plugin_result["media_path"])
+        temp_cover = self._validate_plugin_temp_path(plugin_result.get("cover_path"))
+
+        if temp_media is None:
+            raise RuntimeError("Plugin result missing required 'media_path'")
+        media_path = self._move_to_save_dir(temp_media, save_dir, media_index, "media")
+        cover_path = self._move_to_save_dir(temp_cover, save_dir, media_index, "cover") if temp_cover else None
+        return media_path, cover_path
+
+    async def _download_single_media(
+        self,
+        save_dir: Path,
+        media_url: str,
+        media_index: int,
+        media_cover: Optional[str] = None,
+    ) -> tuple[Path, Optional[Path]]:
+        """
+        Download media and optional cover concurrently into save_dir.
+
+        Returns:
+            Tuple of (media_path, cover_path)
+        """
+        headers = {"User-Agent": settings.download_user_agent}
+        async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
+            tasks = [self._download_file(session, media_url, save_dir, media_index, "media")]
+            if media_cover:
+                tasks.append(self._download_file(session, media_cover, save_dir, media_index, "cover"))
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        media_result = results[0]
+        if isinstance(media_result, BaseException):
+            raise media_result
+
+        cover_result = results[1] if media_cover else None
+        if isinstance(cover_result, BaseException):
+            logger.warning(f"Cover download failed, skipping: {cover_result}")
+            cover_result = None
+
+        return media_result, cover_result
 
     async def _download_file(
         self, 
@@ -197,29 +274,6 @@ class MediaService:
 
         raise last_error
 
-    def _get_media_directory(self, result: ParserResult) -> Path:
-        """
-        Get the directory path for storing media files.
-        
-        Args:
-            result: Parser result
-            
-        Returns:
-            Path to media directory
-        """
-        platform = result.platform.code if result.platform else "unknown"
-        author = result.author.username if result.author else "unknown"
-
-        # Sanitize directory names
-        platform = self._sanitize_filename(platform)
-        author = self._sanitize_filename(author)
-        
-        # Use content ID or hash of URL as unique identifier
-        content_id = str(result.pid) if result.pid else hashlib.md5(str(result.url).encode()).hexdigest()[:16]
-        
-        return self.media_dir / platform / author / content_id
-
-
     @staticmethod
     def _sanitize_filename(name: str) -> str:
         """
@@ -278,6 +332,58 @@ class MediaService:
             return cls._EXT_NORMALISE.get(ext, ext)
 
         return ''
+
+    def _validate_plugin_temp_path(self, path: Optional[str]) -> Optional[Path]:
+        """
+        Validate that a plugin-returned path points to an existing regular file
+        (not a symlink or directory).
+
+        Args:
+            path: Path-like or None returned by the plugin
+
+        Returns:
+            Resolved Path, or None if path is None
+
+        Raises:
+            RuntimeError: If the path does not exist, is a symlink, or is not a regular file
+        """
+        if path is None:
+            return None
+        original = Path(path)
+        # Check the original path before resolve() follows any symlinks.
+        if original.is_symlink():
+            raise RuntimeError(f"Plugin returned a symlink, which is not allowed: {original}")
+        try:
+            resolved = original.resolve(strict=True)
+        except OSError:
+            raise RuntimeError(f"Plugin returned non-existent path: {original}")
+        if not resolved.is_file():
+            raise RuntimeError(f"Plugin returned invalid path (not a regular file): {resolved}")
+        return resolved
+
+    def _move_to_save_dir(self, temp_path: Path, save_dir: Path, index: int, file_type: str) -> Path:
+        """
+        Move a plugin's temporary file into save_dir, detecting its extension via
+        magic bytes and naming it with the same convention as _download_file():
+        {index:03d}_{file_type}{ext}.
+
+        Args:
+            temp_path: Validated temporary file path
+            save_dir: Destination directory
+            index: Media index used in filename
+            file_type: "media" or "cover"
+
+        Returns:
+            Final path of the moved file
+        """
+        with temp_path.open("rb") as f:
+            first_chunk = f.read(4096)
+        ext = self._detect_extension(first_chunk, str(temp_path), "")
+        filename = f"{index:03d}_{file_type}{ext}"
+        final_path = save_dir / filename
+        shutil.move(str(temp_path), final_path)
+        logger.debug(f"Moved plugin file {temp_path} -> {final_path}")
+        return final_path
 
     def delete_media_files(self, file_paths: list[str]) -> tuple[int, int]:
         """
