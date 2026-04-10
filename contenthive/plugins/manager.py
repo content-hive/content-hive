@@ -1,8 +1,11 @@
+import importlib
 import importlib.util
 import inspect
+import os
 import shutil
 import sys
 import json
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -57,9 +60,11 @@ class PluginManager:
     Plugins are loaded as modules, not classes.
     """
 
-    def __init__(self, plugins_dir: Path, context):
+    def __init__(self, plugins_dir: Path, context, deps_dir: Path | None = None):
         self.plugins_dir = plugins_dir
         self.context = context
+        self.deps_dir = deps_dir or Path("/app/deps")
+        self._ensure_deps_dir_on_path()
         self.plugins: dict[str, PluginRecord] = {}
         self.config_entries: dict[str, PluginEntryData] = {}
         self.event_bus = EventBus()
@@ -296,7 +301,7 @@ class PluginManager:
         Raises:
             Exception: If the remote manifest could not be fetched
         """
-        downloader = GitHubPluginDownloader()
+        downloader = GitHubPluginDownloader(self.plugins_dir)
         remote_manifest = await downloader.fetch_remote_manifest(repo_url, ref)
 
         if remote_manifest is None:
@@ -512,6 +517,13 @@ class PluginManager:
 
 
 
+    def _ensure_deps_dir_on_path(self):
+        """Create the deps directory and add it to sys.path if not already present."""
+        self.deps_dir.mkdir(parents=True, exist_ok=True)
+        deps_str = str(self.deps_dir)
+        if deps_str not in sys.path:
+            sys.path.append(deps_str)
+
     async def _async_load_manifest(self, plugin_dir: Path, manifest_path: Path):
         """Load plugin manifest"""
         try:
@@ -590,13 +602,22 @@ class PluginManager:
 
     def _install_packages(self, requirements: list[str]):
         """Blocking package installation (run in executor)"""
+        env = os.environ.copy()
+        # Ensure HOME is writable; in containers running as root, HOME may be '/'
+        # which causes pip to fail when writing to ~/.local or ~/.cache/pip
+        home = env.get("HOME", "/")
+        if not os.access(home, os.W_OK):
+            env["HOME"] = tempfile.gettempdir()
+
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
             *requirements,
+            "--target", str(self.deps_dir),
             "--quiet",
             "--root-user-action=ignore",
-            "--disable-pip-version-check"
-        ])
+            "--disable-pip-version-check",
+            "--no-cache-dir",
+        ], env=env)
 
     async def _async_load_module(self, domain: str):
         """Load plugin module (not a class!)"""

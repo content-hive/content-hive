@@ -139,17 +139,14 @@ class PluginService:
         plugin_manager = _get_plugin_manager()
         selected = domains if domains else None
 
-        downloader = GitHubPluginDownloader()
-        try:
-            download_results = await downloader.download_plugins(
-                repo_url=settings.plugins_repo_url,
-                ref=settings.plugins_repo_ref,
-                ref_type=settings.plugins_repo_ref_type,
-                selected_plugins=selected,
-                force_reinstall=True,
-            )
-        finally:
-            downloader.cleanup_temp()
+        downloader = GitHubPluginDownloader(settings.plugins_dir)
+        download_results = await downloader.download_plugins(
+            repo_url=settings.plugins_repo_url,
+            ref=settings.plugins_repo_ref,
+            ref_type=settings.plugins_repo_ref_type,
+            selected_plugins=selected,
+            force_reinstall=True,
+        )
 
         updated: list[str] = []
         failed: list[str] = []
@@ -198,7 +195,7 @@ class PluginService:
         """
         plugin_manager = get_plugin_manager()
 
-        downloader = GitHubPluginDownloader()
+        downloader = GitHubPluginDownloader(settings.plugins_dir)
         remote_manifest = await downloader.fetch_remote_manifest(
             repo_url=settings.plugins_repo_url,
             ref=settings.plugins_repo_ref,

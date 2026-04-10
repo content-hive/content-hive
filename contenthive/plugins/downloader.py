@@ -32,10 +32,10 @@ import aiohttp
 import zipfile
 import shutil
 import json
+import tempfile
 from pathlib import Path
 from urllib.parse import quote, urlparse
 from contenthive.logger import logger
-from contenthive.config import settings
 import re
 
 class GitHubPluginDownloader:
@@ -47,13 +47,14 @@ class GitHubPluginDownloader:
     VALID_REF_PATTERN = re.compile(r'^[a-zA-Z0-9._/\-]+$')
     _INVALID_REF_SEGMENTS = re.compile(r'(^/|//|/\./|/\.\./|\.\.$|^\.\./)')
     
-    def __init__(self):
+    def __init__(self, plugins_dir: Path):
         """
         Initialize the plugin downloader.
+
+        Args:
+            plugins_dir: Directory where plugins are installed.
         """
-        self.plugins_dir = settings.plugins_dir
-        self.temp_dir = self.plugins_dir / ".temp"
-        self.temp_dir.mkdir(exist_ok=True)
+        self.plugins_dir = plugins_dir
     
     def _validate_domain(self, domain: str) -> bool:
         """
@@ -214,58 +215,50 @@ class GitHubPluginDownloader:
                        plugins-manifest.json is not found in the repository.
         """
         results = {}
-        extract_dir = None
-        archive_path = None
-        
+
         try:
             logger.info(f"Downloading plugins from {repo_url} (ref: {ref})...")
-            
+
             # Validate ref before use
             self._validate_ref(ref)
 
-            # Parse GitHub URL and download
             owner, repo = self._parse_github_url(repo_url)
-            archive_path = await self._download_archive(owner, repo, ref, ref_type)
-            
-            # Extract archive (use safe ref name for directory)
-            safe_ref = self._sanitize_ref(ref)
-            extract_dir = self.temp_dir / f"extract_{repo}_{ref_type}_{safe_ref}"
-            if extract_dir.exists():
-                shutil.rmtree(extract_dir)
-            extract_dir.mkdir(parents=True)
-            
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                self._safe_extract(zip_ref, extract_dir)
-            
-            # Find repo root (GitHub adds prefix like "repo-branch")
-            root_dirs = [d for d in extract_dir.iterdir() if d.is_dir()]
-            if not root_dirs:
-                raise Exception("No directories found in archive")
-            
-            repo_root = root_dirs[0]
-            
-            multi_manifest = repo_root / "plugins-manifest.json"
-            if not multi_manifest.exists():
-                raise Exception("plugins-manifest.json not found in repository")
 
-            results = await self._install_from_manifest(
-                repo_root,
-                multi_manifest,
-                selected_plugins,
-                force_reinstall
-            )
-            return results
-            
+            with tempfile.TemporaryDirectory(prefix="contenthive_plugin_") as tmp:
+                tmp_path = Path(tmp)
+
+                archive_path = await self._download_archive(owner, repo, ref, ref_type, tmp_path)
+
+                # Extract archive
+                safe_ref = self._sanitize_ref(ref)
+                extract_dir = tmp_path / f"extract_{repo}_{ref_type}_{safe_ref}"
+                extract_dir.mkdir(parents=True)
+
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    self._safe_extract(zip_ref, extract_dir)
+
+                # Find repo root (GitHub adds prefix like "repo-branch")
+                root_dirs = [d for d in extract_dir.iterdir() if d.is_dir()]
+                if not root_dirs:
+                    raise Exception("No directories found in archive")
+
+                repo_root = root_dirs[0]
+
+                multi_manifest = repo_root / "plugins-manifest.json"
+                if not multi_manifest.exists():
+                    raise Exception("plugins-manifest.json not found in repository")
+
+                results = await self._install_from_manifest(
+                    repo_root,
+                    multi_manifest,
+                    selected_plugins,
+                    force_reinstall
+                )
+
         except Exception as e:
             logger.error(f"Failed to download plugins: {e}", exc_info=True)
-            return results
-        
-        finally:
-            # Cleanup
-            if archive_path and archive_path.exists():
-                archive_path.unlink()
-            if extract_dir and extract_dir.exists():
-                shutil.rmtree(extract_dir, ignore_errors=True)
+
+        return results
     
     async def _install_from_manifest(
         self,
@@ -361,7 +354,8 @@ class GitHubPluginDownloader:
         owner: str,
         repo: str,
         ref: str,
-        ref_type: str = "branch"
+        ref_type: str = "branch",
+        tmp_dir: Path | None = None,
     ) -> Path:
         """
         Download repository as zip archive from GitHub.
@@ -395,7 +389,8 @@ class GitHubPluginDownloader:
         
         # Create a safe filename for the archive
         safe_ref = self._sanitize_ref(ref)
-        archive_path = self.temp_dir / f"{repo}-{ref_type}-{safe_ref}.zip"
+        base = tmp_dir or Path(tempfile.gettempdir())
+        archive_path = base / f"{repo}-{ref_type}-{safe_ref}.zip"
         
         logger.debug(f"Downloading from {url}...")
         
@@ -569,14 +564,3 @@ class GitHubPluginDownloader:
             logger.warning(f"Failed to fetch remote manifest: {e}")
             return None
 
-    def cleanup_temp(self):
-        """Clean up temporary download directory"""
-        if self.temp_dir.exists():
-            try:
-                shutil.rmtree(self.temp_dir)
-                logger.debug("Cleaned up temporary download directory")
-            except Exception as e:
-                logger.warning(f"Failed to clean up temp directory: {e}")
-        
-        # Recreate the temp directory for future use
-        self.temp_dir.mkdir(exist_ok=True)
