@@ -89,7 +89,8 @@ class MediaService:
                            otherwise falls back to the built-in downloader.
 
         Returns:
-            DownloadedMediaInfo on success, or None if the built-in downloader fails
+            DownloadedMediaInfo on success, or None if the download fails (whether via
+            plugin or the built-in downloader)
         """
         save_dir = self._prepare_media_directory(platform, author, content_id)
         manager = get_plugin_manager()
@@ -145,6 +146,7 @@ class MediaService:
         """
         platform = self._sanitize_filename(platform)
         author = self._sanitize_filename(author)
+        content_id = self._sanitize_filename(content_id)
         save_dir = self.media_dir / platform / author / content_id
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
@@ -331,7 +333,7 @@ class MediaService:
 
         return ''
 
-    def _validate_plugin_temp_path(self, path) -> Optional[Path]:
+    def _validate_plugin_temp_path(self, path: Optional[str]) -> Optional[Path]:
         """
         Validate that a plugin-returned path points to an existing regular file
         (not a symlink or directory).
@@ -343,14 +345,19 @@ class MediaService:
             Resolved Path, or None if path is None
 
         Raises:
-            RuntimeError: If the path does not exist or is not a regular file
+            RuntimeError: If the path does not exist, is a symlink, or is not a regular file
         """
         if path is None:
             return None
-        resolved = Path(path).resolve()
-        if not resolved.exists():
-            raise RuntimeError(f"Plugin returned non-existent path: {resolved}")
-        if not resolved.is_file() or resolved.is_symlink():
+        original = Path(path)
+        # Check the original path before resolve() follows any symlinks.
+        if original.is_symlink():
+            raise RuntimeError(f"Plugin returned a symlink, which is not allowed: {original}")
+        try:
+            resolved = original.resolve(strict=True)
+        except OSError:
+            raise RuntimeError(f"Plugin returned non-existent path: {original}")
+        if not resolved.is_file():
             raise RuntimeError(f"Plugin returned invalid path (not a regular file): {resolved}")
         return resolved
 
@@ -369,7 +376,8 @@ class MediaService:
         Returns:
             Final path of the moved file
         """
-        first_chunk = temp_path.read_bytes()[:4096]
+        with temp_path.open("rb") as f:
+            first_chunk = f.read(4096)
         ext = self._detect_extension(first_chunk, str(temp_path), "")
         filename = f"{index:03d}_{file_type}{ext}"
         final_path = save_dir / filename
