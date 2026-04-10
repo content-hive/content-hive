@@ -193,8 +193,18 @@ class MediaService:
             tasks = [self._download_file(session, media_url, save_dir, media_index, "media")]
             if media_cover:
                 tasks.append(self._download_file(session, media_cover, save_dir, media_index, "cover"))
-            results = await asyncio.gather(*tasks)
-        return results[0], results[1] if media_cover else None
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        media_result = results[0]
+        if isinstance(media_result, BaseException):
+            raise media_result
+
+        cover_result = results[1] if media_cover else None
+        if isinstance(cover_result, BaseException):
+            logger.warning(f"Cover download failed, skipping: {cover_result}")
+            cover_result = None
+
+        return media_result, cover_result
 
     async def _download_file(
         self, 
