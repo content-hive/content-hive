@@ -60,9 +60,11 @@ class PluginManager:
     Plugins are loaded as modules, not classes.
     """
 
-    def __init__(self, plugins_dir: Path, context):
+    def __init__(self, plugins_dir: Path, context, deps_dir: Path | None = None):
         self.plugins_dir = plugins_dir
         self.context = context
+        self.deps_dir = deps_dir or plugins_dir.parent / "deps"
+        self._ensure_deps_dir_on_path()
         self.plugins: dict[str, PluginRecord] = {}
         self.config_entries: dict[str, PluginEntryData] = {}
         self.event_bus = EventBus()
@@ -79,6 +81,13 @@ class PluginManager:
         # Update check cache: domain -> latest version string if update available, else None
         self._available_updates: dict[str, str | None] = {}
         self._last_update_check: datetime | None = None
+
+    def _ensure_deps_dir_on_path(self):
+        """Create the deps directory and add it to sys.path if not already present."""
+        self.deps_dir.mkdir(parents=True, exist_ok=True)
+        deps_str = str(self.deps_dir)
+        if deps_str not in sys.path:
+            sys.path.insert(0, deps_str)
 
     async def async_discover(self):
         """Discover plugins asynchronously from the plugins directory."""
@@ -603,14 +612,11 @@ class PluginManager:
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
             *requirements,
+            "--target", str(self.deps_dir),
             "--quiet",
-            "--root-user-action=ignore",
             "--disable-pip-version-check",
             "--no-cache-dir",
         ], env=env)
-
-        # Notify Python's import system about newly installed packages
-        importlib.invalidate_caches()
 
     async def _async_load_module(self, domain: str):
         """Load plugin module (not a class!)"""
