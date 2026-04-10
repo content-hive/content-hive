@@ -1,8 +1,10 @@
 import importlib.util
 import inspect
+import os
 import shutil
 import sys
 import json
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -590,13 +592,21 @@ class PluginManager:
 
     def _install_packages(self, requirements: list[str]):
         """Blocking package installation (run in executor)"""
+        env = os.environ.copy()
+        # Ensure HOME is writable; in containers running as root, HOME may be '/'
+        # which causes pip to fail when writing to ~/.local or ~/.cache/pip
+        home = env.get("HOME", "/")
+        if not os.access(home, os.W_OK):
+            env["HOME"] = tempfile.gettempdir()
+
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
             *requirements,
             "--quiet",
             "--root-user-action=ignore",
-            "--disable-pip-version-check"
-        ])
+            "--disable-pip-version-check",
+            "--no-cache-dir",
+        ], env=env)
 
     async def _async_load_module(self, domain: str):
         """Load plugin module (not a class!)"""
