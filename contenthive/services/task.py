@@ -17,7 +17,7 @@ from contenthive.models.parser import ParserResult
 from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
 from contenthive.services.task_queue import task_queue
 from contenthive.services.content import content_service
-from contenthive.services.media import media_service  
+from contenthive.services.media import media_service
 
 class TaskService:
     """
@@ -600,7 +600,8 @@ class TaskService:
                         "media_duration": media.duration,
                         "media_width": media.width,
                         "media_height": media.height,
-                        "media_index": idx
+                        "media_index": idx,
+                        "plugin_domain": parse_result.parser
                     },
                     depends_on_id=parse_subtask.id
                 )
@@ -884,20 +885,21 @@ class TaskService:
             
             # Update sub task status to RUNNING
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
-            
-            # Download media (convert string URLs back to HttpUrl objects)
-            result = await media_service.download_single_media(
+
+            # Download media — MediaService decides whether to use plugin or built-in downloader
+            result = await media_service.download_media(
                 platform=platform,
                 author=author,
                 content_id=content_id,
                 media_url=HttpUrl(media_url),
                 media_type=media_type,
+                media_index=media_index,
                 media_cover=HttpUrl(media_cover) if media_cover else None,
                 media_description=media_description,
                 media_duration=media_duration,
                 media_width=media_width,
                 media_height=media_height,
-                media_index=media_index
+                plugin_domain=sub_task.parameters.get("plugin_domain"),
             )
             
             # Update sub task status to COMPLETED

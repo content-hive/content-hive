@@ -250,6 +250,10 @@ class PluginManager:
         self.services[domain][service] = callback
         self.context.logger.debug(f"Plugins[Service Registered]: {domain}.{service}")
 
+    def has_service(self, domain: str, service: str) -> bool:
+        """Check if a service is registered for the given domain."""
+        return service in self.services.get(domain, {})
+
     async def call_service(self, domain: str, service: str, data: dict[str, Any]):
         """Call a registered service (HA-style)"""
         if domain not in self.services or service not in self.services[domain]:
