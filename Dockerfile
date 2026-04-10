@@ -38,6 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create deps directory for runtime plugin dependencies
+RUN mkdir -p /app/deps && chmod 777 /app/deps
+
 # Copy application code
 COPY contenthive ./contenthive
 COPY alembic ./alembic
