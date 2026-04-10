@@ -1,3 +1,4 @@
+import importlib
 import importlib.util
 import inspect
 import os
@@ -607,6 +608,9 @@ class PluginManager:
             "--disable-pip-version-check",
             "--no-cache-dir",
         ], env=env)
+
+        # Notify Python's import system about newly installed packages
+        importlib.invalidate_caches()
 
     async def _async_load_module(self, domain: str):
         """Load plugin module (not a class!)"""
