@@ -63,7 +63,7 @@ class PluginManager:
     def __init__(self, plugins_dir: Path, context, deps_dir: Path | None = None):
         self.plugins_dir = plugins_dir
         self.context = context
-        self.deps_dir = deps_dir or plugins_dir.parent / "deps"
+        self.deps_dir = deps_dir or Path("/app/deps")
         self._ensure_deps_dir_on_path()
         self.plugins: dict[str, PluginRecord] = {}
         self.config_entries: dict[str, PluginEntryData] = {}
@@ -308,7 +308,7 @@ class PluginManager:
         Raises:
             Exception: If the remote manifest could not be fetched
         """
-        downloader = GitHubPluginDownloader()
+        downloader = GitHubPluginDownloader(self.plugins_dir)
         remote_manifest = await downloader.fetch_remote_manifest(repo_url, ref)
 
         if remote_manifest is None:
@@ -614,6 +614,7 @@ class PluginManager:
             *requirements,
             "--target", str(self.deps_dir),
             "--quiet",
+            "--root-user-action=ignore",
             "--disable-pip-version-check",
             "--no-cache-dir",
         ], env=env)
