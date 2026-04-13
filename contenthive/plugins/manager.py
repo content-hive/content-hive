@@ -1,4 +1,5 @@
 import importlib
+import importlib.metadata
 import importlib.util
 import inspect
 import os
@@ -12,6 +13,7 @@ from typing import Any, Callable
 import asyncio
 import subprocess
 
+from packaging.requirements import Requirement
 from packaging.version import Version
 
 from .registry import PluginRecord, PluginState
@@ -583,6 +585,12 @@ class PluginManager:
         if not requirements:
             return True
 
+        conflicts = self._detect_conflicts(requirements)
+        if conflicts:
+            for conflict in conflicts:
+                self.context.logger.warning(f"Plugins[Dependencies]: {domain} - Version conflict: {conflict}")
+            return False
+
         try:
             self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installing {len(requirements)} packages")
 
@@ -600,8 +608,44 @@ class PluginManager:
             self.context.logger.warning(f"Plugins[Dependencies Failed]: {domain} - {e}")
             return False
 
+    def _detect_conflicts(self, requirements: list[str]) -> list[str]:
+        """Return conflict descriptions for requirements that clash with already-installed versions."""
+        conflicts = []
+        for req_str in requirements:
+            try:
+                req = Requirement(req_str)
+                if not req.specifier:
+                    continue
+                installed = importlib.metadata.version(req.name)
+                if not req.specifier.contains(installed, prereleases=True):
+                    conflicts.append(f"{req_str} (installed: {installed})")
+            except importlib.metadata.PackageNotFoundError:
+                pass
+            except Exception:
+                pass
+        return conflicts
+
+    def _filter_missing_requirements(self, requirements: list[str]) -> list[str]:
+        """Return only requirements that are not already satisfied."""
+        missing = []
+        for req_str in requirements:
+            try:
+                req = Requirement(req_str)
+                installed = importlib.metadata.version(req.name)
+                if req.specifier and not req.specifier.contains(installed, prereleases=True):
+                    missing.append(req_str)
+            except importlib.metadata.PackageNotFoundError:
+                missing.append(req_str)
+            except Exception:
+                missing.append(req_str)
+        return missing
+
     def _install_packages(self, requirements: list[str]):
         """Blocking package installation (run in executor)"""
+        to_install = self._filter_missing_requirements(requirements)
+        if not to_install:
+            return
+
         env = os.environ.copy()
         # Ensure HOME is writable; in containers running as root, HOME may be '/'
         # which causes pip to fail when writing to ~/.local or ~/.cache/pip
@@ -611,7 +655,7 @@ class PluginManager:
 
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
-            *requirements,
+            *to_install,
             "--target", str(self.deps_dir),
             "--quiet",
             "--root-user-action=ignore",
