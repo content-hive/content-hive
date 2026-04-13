@@ -387,7 +387,7 @@ class MediaService:
         """
         with temp_path.open("rb") as f:
             first_chunk = f.read(4096)
-        ext = self._detect_extension(first_chunk, str(temp_path), "")
+        ext = self._detect_extension(first_chunk, url, "")
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
         filename = f"{index:03d}_{file_type}_{url_hash}{ext}"
         final_path = save_dir / filename
