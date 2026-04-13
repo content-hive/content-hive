@@ -3,6 +3,7 @@ Media service for downloading and managing media files.
 """
 
 import asyncio
+import hashlib
 import mimetypes
 import os
 import shutil
@@ -243,7 +244,8 @@ class MediaService:
                     content_type = response.headers.get('content-type', '')
                     ext = self._detect_extension(first_chunk, url, content_type)
 
-                    filename = f"{index:03d}_{file_type}{ext}"
+                    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+                    filename = f"{index:03d}_{file_type}_{url_hash}{ext}"
                     filepath = save_dir / filename
 
                     # Write first chunk then stream the rest to disk
