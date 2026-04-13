@@ -592,23 +592,26 @@ class PluginManager:
             return False
 
         try:
-            self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installing {len(requirements)} packages")
+            to_install = self._filter_missing_requirements(requirements)
+            if not to_install:
+                self.context.logger.debug(f"Plugins[Dependencies]: {domain} - All requirements already satisfied")
+                return True
+
+            self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installing {len(to_install)} packages")
 
             loop = asyncio.get_running_loop()
             installed = await loop.run_in_executor(
                 None,
                 self._install_packages,
-                requirements
+                to_install
             )
 
             if installed:
                 self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installed {installed}")
-            else:
-                self.context.logger.debug(f"Plugins[Dependencies]: {domain} - All requirements already satisfied")
             return True
 
-        except Exception as e:
-            self.context.logger.warning(f"Plugins[Dependencies Failed]: {domain} - {e}")
+        except Exception:
+            self.context.logger.exception(f"Plugins[Dependencies Failed]: {domain}")
             return False
 
     def _detect_conflicts(self, requirements: list[str]) -> list[str]:
@@ -643,12 +646,8 @@ class PluginManager:
                 missing.append(req_str)
         return missing
 
-    def _install_packages(self, requirements: list[str]) -> list[str]:
+    def _install_packages(self, to_install: list[str]) -> list[str]:
         """Blocking package installation (run in executor). Returns the list of packages actually installed."""
-        to_install = self._filter_missing_requirements(requirements)
-        if not to_install:
-            return []
-
         env = os.environ.copy()
         # Ensure HOME is writable; in containers running as root, HOME may be '/'
         # which causes pip to fail when writing to ~/.local or ~/.cache/pip
