@@ -595,13 +595,16 @@ class PluginManager:
             self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installing {len(requirements)} packages")
 
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
+            installed = await loop.run_in_executor(
                 None,
                 self._install_packages,
                 requirements
             )
 
-            self.context.logger.debug(f"Plugins[Dependencies]: {domain} - Installed successfully")
+            if installed:
+                self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installed {installed}")
+            else:
+                self.context.logger.debug(f"Plugins[Dependencies]: {domain} - All requirements already satisfied")
             return True
 
         except Exception as e:
@@ -640,11 +643,11 @@ class PluginManager:
                 missing.append(req_str)
         return missing
 
-    def _install_packages(self, requirements: list[str]):
-        """Blocking package installation (run in executor)"""
+    def _install_packages(self, requirements: list[str]) -> list[str]:
+        """Blocking package installation (run in executor). Returns the list of packages actually installed."""
         to_install = self._filter_missing_requirements(requirements)
         if not to_install:
-            return
+            return []
 
         env = os.environ.copy()
         # Ensure HOME is writable; in containers running as root, HOME may be '/'
@@ -662,6 +665,8 @@ class PluginManager:
             "--disable-pip-version-check",
             "--no-cache-dir",
         ], env=env)
+
+        return to_install
 
     async def _async_load_module(self, domain: str):
         """Load plugin module (not a class!)"""
