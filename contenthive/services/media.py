@@ -107,6 +107,8 @@ class MediaService:
                     save_dir=save_dir,
                     plugin_result=plugin_result,
                     media_index=media_index,
+                    media_url=str(media_url),
+                    media_cover=str(media_cover) if media_cover else None,
                 )
             else:
                 logger.debug(f"Using built-in downloader for {media_url}")
@@ -157,6 +159,8 @@ class MediaService:
         save_dir: Path,
         plugin_result: dict,
         media_index: int,
+        media_url: str,
+        media_cover: Optional[str],
     ) -> tuple[Path, Optional[Path]]:
         """
         Validate plugin-returned temporary file paths and move them into save_dir.
@@ -165,6 +169,8 @@ class MediaService:
             save_dir: Destination directory
             plugin_result: Dict with keys "media_path" (Path) and optional "cover_path" (Path)
             media_index: Media index used in the filename
+            media_url: Original media URL, used to compute filename hash
+            media_cover: Original cover URL, used to compute filename hash
 
         Returns:
             Tuple of (media_path, cover_path)
@@ -174,8 +180,8 @@ class MediaService:
 
         if temp_media is None:
             raise RuntimeError("Plugin result missing required 'media_path'")
-        media_path = self._move_to_save_dir(temp_media, save_dir, media_index, "media")
-        cover_path = self._move_to_save_dir(temp_cover, save_dir, media_index, "cover") if temp_cover else None
+        media_path = self._move_to_save_dir(temp_media, save_dir, media_index, "media", media_url)
+        cover_path = self._move_to_save_dir(temp_cover, save_dir, media_index, "cover", media_cover) if temp_cover and media_cover else None
         return media_path, cover_path
 
     async def _download_single_media(
@@ -363,17 +369,18 @@ class MediaService:
             raise RuntimeError(f"Plugin returned invalid path (not a regular file): {resolved}")
         return resolved
 
-    def _move_to_save_dir(self, temp_path: Path, save_dir: Path, index: int, file_type: str) -> Path:
+    def _move_to_save_dir(self, temp_path: Path, save_dir: Path, index: int, file_type: str, url: str) -> Path:
         """
         Move a plugin's temporary file into save_dir, detecting its extension via
         magic bytes and naming it with the same convention as _download_file():
-        {index:03d}_{file_type}{ext}.
+        {index:03d}_{file_type}_{url_hash}{ext}.
 
         Args:
             temp_path: Validated temporary file path
             save_dir: Destination directory
             index: Media index used in filename
             file_type: "media" or "cover"
+            url: Original URL, used to compute filename hash
 
         Returns:
             Final path of the moved file
@@ -381,7 +388,8 @@ class MediaService:
         with temp_path.open("rb") as f:
             first_chunk = f.read(4096)
         ext = self._detect_extension(first_chunk, str(temp_path), "")
-        filename = f"{index:03d}_{file_type}{ext}"
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        filename = f"{index:03d}_{file_type}_{url_hash}{ext}"
         final_path = save_dir / filename
         shutil.move(str(temp_path), final_path)
         logger.debug(f"Moved plugin file {temp_path} -> {final_path}")
