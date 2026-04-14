@@ -13,9 +13,8 @@ import aiohttp
 import magic
 from pathlib import Path
 
-from pydantic import HttpUrl
 from contenthive.logger import logger
-from contenthive.models.enumerates import MediaStatus, MediaType
+from contenthive.models.enumerates import MediaStatus
 from contenthive.models.content import DownloadedMediaInfo
 from contenthive.models.parser import ParserMediaInfo
 from contenthive.config import settings
@@ -50,7 +49,7 @@ class MediaService:
             # URL encode the path components
             parts = [quote(part) for part in relative_path.parts]
             return "/media/" + "/".join(parts)
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to generate relative media path")
             return ""
 
@@ -89,7 +88,7 @@ class MediaService:
             if plugin_domain and manager and manager.has_service(plugin_domain, "download"):
                 logger.debug(f"Using plugin '{plugin_domain}' download service")
                 plugin_result = await manager.call_service(plugin_domain, "download", {
-                    "media": media,
+                    "media": media.model_dump(mode="json"),
                 })
                 media_path, cover_path = self._move_plugin_download_result(
                     save_dir=save_dir,
@@ -102,8 +101,8 @@ class MediaService:
                 logger.debug(f"Using built-in downloader")
                 media_urls = [str(media.url)] + [str(u) for u in (media.url_fallbacks or [])]
                 cover_urls = (
-                    [str(media.cover)] + [str(u) for u in (media.cover_fallbacks or [])]
-                    if media.cover else []
+                    ([str(media.cover)] if media.cover else [])
+                    + [str(u) for u in (media.cover_fallbacks or [])]
                 )
                 media_path, cover_path = await self._download_single_media(
                     save_dir=save_dir,
@@ -286,8 +285,8 @@ class MediaService:
             last_error = url_last_error
             if url_attempt < len(urls) - 1:
                 logger.warning(
-                    f"{file_type} URL {url_attempt + 1}/{len(urls)} failed, "
-                    f"trying fallback: {url}"
+                    f"{file_type} URL {url_attempt + 1}/{len(urls)} failed ({url}), "
+                    f"trying fallback: {urls[url_attempt + 1]}"
                 )
 
         raise last_error
