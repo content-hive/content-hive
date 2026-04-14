@@ -16,7 +16,7 @@ from contenthive.models.content import (
     MediaEntity     
 )
 from contenthive.models.enumerates import MediaStatus
-from contenthive.models.parser import ParserAuthorInfo, ParserMediaInfo, ParserPlatformInfo, ParserResult
+from contenthive.plugins.contracts import ParserAuthorInfo, ParserMediaInfo, ParserPlatformInfo, ParserResult
 from contenthive.logger import logger
 
 

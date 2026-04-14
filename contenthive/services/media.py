@@ -16,7 +16,7 @@ from pathlib import Path
 from contenthive.logger import logger
 from contenthive.models.enumerates import MediaStatus
 from contenthive.models.content import DownloadedMediaInfo
-from contenthive.models.parser import ParserMediaInfo
+from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.config import settings
 from contenthive.plugins.manager import get_plugin_manager
 from urllib.parse import quote
@@ -94,15 +94,15 @@ class MediaService:
                     save_dir=save_dir,
                     plugin_result=plugin_result,
                     media_index=media_index,
-                    media_url=str(media.url),
-                    media_cover=str(media.cover) if media.cover else None,
+                    media_url=media.url,
+                    media_cover=media.cover,
                 )
             else:
                 logger.debug(f"Using built-in downloader")
-                media_urls = [str(media.url)] + [str(u) for u in (media.url_fallbacks or [])]
+                media_urls = [media.url] + list(media.url_fallbacks or [])
                 cover_urls = (
-                    ([str(media.cover)] if media.cover else [])
-                    + [str(u) for u in (media.cover_fallbacks or [])]
+                    ([media.cover] if media.cover else [])
+                    + list(media.cover_fallbacks or [])
                 )
                 media_path, cover_path = await self._download_single_media(
                     save_dir=save_dir,

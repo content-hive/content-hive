@@ -15,7 +15,7 @@ from contenthive.models.content import (
     SyncResponse
 )
 from contenthive.database.content_dao import ContentDAO
-from contenthive.models.parser import ParserResult
+from contenthive.plugins.contracts import ParserResult
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import media_service
 
