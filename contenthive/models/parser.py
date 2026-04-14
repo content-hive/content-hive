@@ -17,6 +17,8 @@ class ParserMediaInfo(BaseModel):
     duration: Optional[int] = Field(None, description="Video duration in seconds")
     width: Optional[int] = Field(None, description="Media width in pixels")
     height: Optional[int] = Field(None, description="Media height in pixels")
+    url_fallbacks: Optional[list[HttpUrl]] = Field(default=None, description="Fallback media URLs")
+    cover_fallbacks: Optional[list[HttpUrl]] = Field(default=None, description="Fallback cover URLs")
 
 
 class ParserPlatformInfo(BaseModel):
