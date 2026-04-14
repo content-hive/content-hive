@@ -101,11 +101,16 @@ class MediaService:
                 )
             else:
                 logger.debug(f"Using built-in downloader for {media.url}")
+                media_urls = [str(media.url)] + [str(u) for u in (media.url_fallbacks or [])]
+                cover_urls = (
+                    [str(media.cover)] + [str(u) for u in (media.cover_fallbacks or [])]
+                    if media.cover else []
+                )
                 media_path, cover_path = await self._download_single_media(
                     save_dir=save_dir,
-                    media_url=str(media.url),
+                    media_urls=media_urls,
                     media_index=media_index,
-                    media_cover=str(media.cover) if media.cover else None,
+                    cover_urls=cover_urls,
                 )
         except Exception:
             logger.exception(f"Failed to download media for content {content_id}: {media.url}")
@@ -178,28 +183,29 @@ class MediaService:
     async def _download_single_media(
         self,
         save_dir: Path,
-        media_url: str,
+        media_urls: list[str],
         media_index: int,
-        media_cover: Optional[str] = None,
+        cover_urls: list[str],
     ) -> tuple[Path, Optional[Path]]:
         """
         Download media and optional cover concurrently into save_dir.
+        Each accepts a list of URLs; fallback order is handled inside _download_file.
 
         Returns:
             Tuple of (media_path, cover_path)
         """
         headers = {"User-Agent": settings.download_user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-            tasks = [self._download_file(session, media_url, save_dir, media_index, "media")]
-            if media_cover:
-                tasks.append(self._download_file(session, media_cover, save_dir, media_index, "cover"))
+            tasks = [self._download_file(session, media_urls, save_dir, media_index, "media")]
+            if cover_urls:
+                tasks.append(self._download_file(session, cover_urls, save_dir, media_index, "cover"))
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
         media_result = results[0]
         if isinstance(media_result, BaseException):
             raise media_result
 
-        cover_result = results[1] if media_cover else None
+        cover_result = results[1] if cover_urls else None
         if isinstance(cover_result, BaseException):
             logger.warning(f"Cover download failed, skipping: {cover_result}")
             cover_result = None
@@ -207,69 +213,83 @@ class MediaService:
         return media_result, cover_result
 
     async def _download_file(
-        self, 
-        session: aiohttp.ClientSession, 
-        url: str, 
-        save_dir: Path, 
+        self,
+        session: aiohttp.ClientSession,
+        urls: list[str],
+        save_dir: Path,
         index: int,
-        file_type: str = "media"
+        file_type: str = "media",
     ) -> Path:
         """
-        Download a single file with retry logic.
-        
+        Download a file with fallback URL support and per-URL retry logic.
+
+        Tries each URL in order. For each URL, retries on transient errors up to
+        download_max_retries times. Moves to the next fallback URL on 4xx or when
+        all retries are exhausted. Raises the last error if all URLs fail.
+
         Args:
             session: aiohttp session
-            url: URL of the file to download
+            urls: Ordered list of URLs to try (primary first, then fallbacks)
             save_dir: Directory to save the file to
             index: File index used in the filename
             file_type: File type used in the filename, e.g. "media" or "cover"
-            
+
         Returns:
             Path to the saved file
         """
-        last_error: Exception = Exception("Unknown error")
-        for attempt in range(settings.download_max_retries + 1):
-            try:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
-                    response.raise_for_status()
+        last_error: Exception = Exception("No URLs provided")
 
-                    # Read first chunk to detect MIME type from magic bytes
-                    first_chunk = await response.content.read(4096)
-                    if not first_chunk:
-                        raise aiohttp.ClientError("Empty response body")
+        for url_attempt, url in enumerate(urls):
+            url_last_error: Exception = Exception("Unknown error")
+            for retry in range(settings.download_max_retries + 1):
+                try:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                        response.raise_for_status()
 
-                    content_type = response.headers.get('content-type', '')
-                    ext = self._detect_extension(first_chunk, url, content_type)
+                        # Read first chunk to detect MIME type from magic bytes
+                        first_chunk = await response.content.read(4096)
+                        if not first_chunk:
+                            raise aiohttp.ClientError("Empty response body")
 
-                    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-                    filename = f"{index:03d}_{file_type}_{url_hash}{ext}"
-                    filepath = save_dir / filename
+                        content_type = response.headers.get('content-type', '')
+                        ext = self._detect_extension(first_chunk, url, content_type)
 
-                    # Write first chunk then stream the rest to disk
-                    async with aiofiles.open(filepath, 'wb') as f:
-                        await f.write(first_chunk)
-                        async for chunk in response.content.iter_chunked(65536):
-                            await f.write(chunk)
+                        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+                        filename = f"{index:03d}_{file_type}_{url_hash}{ext}"
+                        filepath = save_dir / filename
 
-                    logger.debug(f"Downloaded {file_type} from {url} -> {filepath}")
-                    return filepath
-            except aiohttp.ClientResponseError as e:
-                # 4xx errors are client-side faults; retrying won't help
-                if 400 <= e.status < 500:
-                    raise
-                last_error = e
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                # Transient network / timeout errors are safe to retry
-                last_error = e
-            # All other exceptions (OSError, CancelledError, etc.) propagate immediately
+                        # Write first chunk then stream the rest to disk
+                        async with aiofiles.open(filepath, 'wb') as f:
+                            await f.write(first_chunk)
+                            async for chunk in response.content.iter_chunked(65536):
+                                await f.write(chunk)
 
-            if attempt < settings.download_max_retries:
-                wait = 2 ** attempt
+                        logger.debug(f"Downloaded {file_type} from {url} -> {filepath}")
+                        return filepath
+                except aiohttp.ClientResponseError as e:
+                    url_last_error = e
+                    if 400 <= e.status < 500:
+                        break  # 4xx: no point retrying this URL; try next fallback
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    # Transient network / timeout errors are safe to retry
+                    url_last_error = e
+                # All other exceptions (OSError, CancelledError, etc.) propagate immediately
+
+                if retry < settings.download_max_retries:
+                    wait = 2 ** retry
+                    logger.warning(
+                        f"Download attempt {retry + 1}/{settings.download_max_retries + 1} "
+                        f"failed for {url}, retrying in {wait}s: {url_last_error}"
+                    )
+                    await asyncio.sleep(wait)
+
+            # This URL exhausted all retries (or got 4xx); try next fallback
+            last_error = url_last_error
+            if url_attempt < len(urls) - 1:
                 logger.warning(
-                    f"Download attempt {attempt + 1}/{settings.download_max_retries + 1} "
-                    f"failed for {url}, retrying in {wait}s: {last_error}"
+                    f"{file_type} URL {url_attempt + 1}/{len(urls)} failed, "
+                    f"trying fallback: {url}"
                 )
-                await asyncio.sleep(wait)
 
         raise last_error
 
