@@ -17,6 +17,7 @@ from pydantic import HttpUrl
 from contenthive.logger import logger
 from contenthive.models.enumerates import MediaStatus, MediaType
 from contenthive.models.content import DownloadedMediaInfo
+from contenthive.models.parser import ParserMediaInfo
 from contenthive.config import settings
 from contenthive.plugins.manager import get_plugin_manager
 from urllib.parse import quote
@@ -59,14 +60,8 @@ class MediaService:
         platform: str,
         author: str,
         content_id: str,
-        media_url: HttpUrl,
-        media_type: MediaType,
+        media: ParserMediaInfo,
         media_index: int = 0,
-        media_cover: Optional[HttpUrl] = None,
-        media_description: Optional[str] = None,
-        media_duration: Optional[int] = None,
-        media_width: Optional[int] = None,
-        media_height: Optional[int] = None,
         plugin_domain: Optional[str] = None,
     ) -> Optional[DownloadedMediaInfo]:
         """
@@ -77,14 +72,8 @@ class MediaService:
             platform: Platform code
             author: Author username or uid
             content_id: Content ID
-            media_url: Media URL to download
-            media_type: Media type
+            media: Media information from parser
             media_index: Index of the media item (used in filename)
-            media_cover: Optional cover image URL
-            media_description: Optional media title/description
-            media_duration: Optional duration in seconds
-            media_width: Optional width in pixels
-            media_height: Optional height in pixels
             plugin_domain: Plugin domain to use for download (from ParserResult.parser).
                            If the plugin has registered a "download" service it will be used;
                            otherwise falls back to the built-in downloader.
@@ -100,37 +89,39 @@ class MediaService:
             if plugin_domain and manager and manager.has_service(plugin_domain, "download"):
                 logger.debug(f"Using plugin '{plugin_domain}' download service")
                 plugin_result = await manager.call_service(plugin_domain, "download", {
-                    "media_url": str(media_url),
-                    "media_cover": str(media_cover) if media_cover else None,
+                    "media_url": str(media.url),
+                    "media_cover": str(media.cover) if media.cover else None,
                 })
                 media_path, cover_path = self._move_plugin_download_result(
                     save_dir=save_dir,
                     plugin_result=plugin_result,
                     media_index=media_index,
-                    media_url=str(media_url),
-                    media_cover=str(media_cover) if media_cover else None,
+                    media_url=str(media.url),
+                    media_cover=str(media.cover) if media.cover else None,
                 )
             else:
-                logger.debug(f"Using built-in downloader for {media_url}")
+                logger.debug(f"Using built-in downloader for {media.url}")
                 media_path, cover_path = await self._download_single_media(
                     save_dir=save_dir,
-                    media_url=str(media_url),
+                    media_url=str(media.url),
                     media_index=media_index,
-                    media_cover=str(media_cover) if media_cover else None,
+                    media_cover=str(media.cover) if media.cover else None,
                 )
         except Exception:
-            logger.exception(f"Failed to download media for content {content_id}: {media_url}")
+            logger.exception(f"Failed to download media for content {content_id}: {media.url}")
             return None
 
         return DownloadedMediaInfo(
             status=MediaStatus.COMPLETED,
-            url=media_url,
-            type=media_type,
-            title=media_description,
-            cover=media_cover,
-            duration=media_duration,
-            width=media_width,
-            height=media_height,
+            url=media.url,
+            type=media.type,
+            title=media.title,
+            cover=media.cover,
+            url_fallbacks=media.url_fallbacks or [],
+            cover_fallbacks=media.cover_fallbacks or [],
+            duration=media.duration,
+            width=media.width,
+            height=media.height,
             media_path=self._get_relative_media_path(media_path),
             cover_path=self._get_relative_media_path(cover_path) if cover_path else None,
         )

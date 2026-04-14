@@ -13,7 +13,7 @@ from contenthive.database.task_dao import TaskDAO
 from contenthive.database.content_dao import ContentDAO
 from contenthive.models.content import DownloadedMediaInfo, PaginatedResponse, PaginationInfo
 from contenthive.models.enumerates import MediaStatus, TaskType, TaskStatus, TaskRole
-from contenthive.models.parser import ParserResult
+from contenthive.models.parser import ParserMediaInfo, ParserResult
 from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
 from contenthive.services.task_queue import task_queue
 from contenthive.services.content import content_service
@@ -593,17 +593,9 @@ class TaskService:
                         "platform": platform_code,
                         "author": author_uid,
                         "content_id": content_id,
-                        "media_url": str(media.url),
-                        "media_type": media.type,
-                        "media_cover": str(media.cover) if media.cover else None,
-                        "media_url_fallbacks": [str(u) for u in media.url_fallbacks or []],
-                        "media_cover_fallbacks": [str(u) for u in media.cover_fallbacks or []],
-                        "media_description": media.title,
-                        "media_duration": media.duration,
-                        "media_width": media.width,
-                        "media_height": media.height,
+                        "plugin_domain": parse_result.parser,
                         "media_index": idx,
-                        "plugin_domain": parse_result.parser
+                        "media": media.model_dump(mode="json"),
                     },
                     depends_on_id=parse_subtask.id
                 )
@@ -859,34 +851,25 @@ class TaskService:
             DownloadedMediaInfo with status indicating success or failure
         """
         # Extract parameters
-        media_url = sub_task.parameters.get("media_url")
-        media_type = sub_task.parameters.get("media_type")
-        media_cover = sub_task.parameters.get("media_cover")
-        media_url_fallbacks = sub_task.parameters.get("media_url_fallbacks", [])
-        media_cover_fallbacks = sub_task.parameters.get("media_cover_fallbacks", [])
-        media_description = sub_task.parameters.get("media_description")
-        media_duration = sub_task.parameters.get("media_duration")
-        media_width = sub_task.parameters.get("media_width")
-        media_height = sub_task.parameters.get("media_height")
-        
+        platform = sub_task.parameters.get("platform")
+        author = sub_task.parameters.get("author")
+        content_id = sub_task.parameters.get("content_id")
+        plugin_domain = sub_task.parameters.get("plugin_domain")
+        media_index = sub_task.parameters.get("media_index", 0)
+        media_data = sub_task.parameters.get("media", {})
+
         try:
             # Validate required parameters
-            platform = sub_task.parameters.get("platform")
-            author = sub_task.parameters.get("author")
-            content_id = sub_task.parameters.get("content_id")
-            media_index = sub_task.parameters.get("media_index", 0)
-            
             if not platform or not author or not content_id:
                 raise ValueError("platform, author, and content_id parameters are required")
-            
-            if not media_url or not media_type:
-                raise ValueError("media_url and media_type parameters are required")
-            
+
+            media = ParserMediaInfo.model_validate(media_data)
+
             # Get main task to get user_id
             main_task = self.get_main_task(sub_task.main_task_id)
             if not main_task:
                 raise ValueError(f"Main task {sub_task.main_task_id} not found")
-            
+
             # Update sub task status to RUNNING
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
@@ -895,63 +878,62 @@ class TaskService:
                 platform=platform,
                 author=author,
                 content_id=content_id,
-                media_url=HttpUrl(media_url),
-                media_type=media_type,
+                media=media,
                 media_index=media_index,
-                media_cover=HttpUrl(media_cover) if media_cover else None,
-                media_description=media_description,
-                media_duration=media_duration,
-                media_width=media_width,
-                media_height=media_height,
-                plugin_domain=sub_task.parameters.get("plugin_domain"),
+                plugin_domain=plugin_domain,
             )
-            
+
             # Update sub task status to COMPLETED
             self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
             self.update_sub_task_result(sub_task.id, {
                 "status": "success",
                 "media_path": result.media_path if result else None
             })
-            
+
             # If download_single_media returns None, treat as failure
             if result is None:
                 logger.warning(f"Media download sub task {sub_task.sub_task_id} returned None")
                 return DownloadedMediaInfo(
                     status=MediaStatus.FAILED,
-                    url=HttpUrl(media_url) if media_url else HttpUrl("https://unknown.url"),
-                    type=media_type,
-                    title=media_description,
-                    cover=media_cover if media_cover else None,
-                    duration=media_duration,
-                    width=media_width,
-                    height=media_height,
+                    url=media.url,
+                    type=media.type,
+                    title=media.title,
+                    cover=media.cover,
+                    url_fallbacks=media.url_fallbacks or [],
+                    cover_fallbacks=media.cover_fallbacks or [],
+                    duration=media.duration,
+                    width=media.width,
+                    height=media.height,
                     media_path=None,
                     cover_path=None
                 )
-            
+
             return result
-            
+
         except Exception as e:
             error_msg = str(e)
             logger.exception(f"Media download sub task {sub_task.sub_task_id} failed")
-            
+
             # Update sub task status to FAILED
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
             self.update_sub_task_result(sub_task.id, {
                 "status": "failed",
                 "error": error_msg
             })
-            
+
             # Return a failed DownloadedMediaInfo object instead of raising exception
+            _url = media_data.get("url", "https://unknown.url")
             return DownloadedMediaInfo(
                 status=MediaStatus.FAILED,
-                url=HttpUrl(media_url) if media_url else HttpUrl("https://unknown.url"),
-                type=media_type,
-                title=media_description,
-                cover=media_cover if media_cover else None,
-                duration=media_duration,
-                width=media_width,
-                height=media_height,
+                url=HttpUrl(_url),
+                type=media_data.get("type"),
+                title=media_data.get("title"),
+                cover=HttpUrl(media_data["cover"]) if media_data.get("cover") else None,
+                url_fallbacks=[HttpUrl(u) for u in (media_data.get("url_fallbacks") or [])],
+                cover_fallbacks=[HttpUrl(u) for u in (media_data.get("cover_fallbacks") or [])],
+                duration=media_data.get("duration"),
+                width=media_data.get("width"),
+                height=media_data.get("height"),
                 media_path=None,
                 cover_path=None
             )
