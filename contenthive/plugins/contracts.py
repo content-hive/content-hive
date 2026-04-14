@@ -3,7 +3,7 @@ Plugin contract types. This is the stable interface between Content Hive
 and its plugins. Plugins must only import from contenthive.plugins.*.
 """
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Re-export enums from enumerates so plugins only need to import from here
 from contenthive.models.enumerates import MediaType, ParserResultStatus
@@ -47,7 +47,7 @@ class ParserResult(BaseModel):
     url: str
     title: Optional[str] = None
     content: Optional[str] = None
-    media: list[ParserMediaInfo] = []
+    media: list[ParserMediaInfo] = Field(default_factory=list)
     author: ParserAuthorInfo
     platform: ParserPlatformInfo
     post_time: Optional[int] = None
