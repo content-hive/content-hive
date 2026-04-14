@@ -6,14 +6,13 @@ import hashlib
 from typing import Optional, List, Dict, Any
 import uuid
 import asyncio
-from pydantic import HttpUrl
 
 from contenthive.logger import logger
 from contenthive.database.task_dao import TaskDAO
 from contenthive.database.content_dao import ContentDAO
 from contenthive.models.content import DownloadedMediaInfo, PaginatedResponse, PaginationInfo
 from contenthive.models.enumerates import MediaStatus, TaskType, TaskStatus, TaskRole
-from contenthive.models.parser import ParserMediaInfo, ParserResult
+from contenthive.plugins.contracts import ParserMediaInfo, ParserResult
 from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
 from contenthive.services.task_queue import task_queue
 from contenthive.services.content import content_service
@@ -925,12 +924,12 @@ class TaskService:
             _url = media_data.get("url", "https://unknown.url")
             return DownloadedMediaInfo(
                 status=MediaStatus.FAILED,
-                url=HttpUrl(_url),
+                url=_url,
                 type=media_data.get("type"),
                 title=media_data.get("title"),
-                cover=HttpUrl(media_data["cover"]) if media_data.get("cover") else None,
-                url_fallbacks=[HttpUrl(u) for u in (media_data.get("url_fallbacks") or [])],
-                cover_fallbacks=[HttpUrl(u) for u in (media_data.get("cover_fallbacks") or [])],
+                cover=media_data.get("cover"),
+                url_fallbacks=media_data.get("url_fallbacks") or [],
+                cover_fallbacks=media_data.get("cover_fallbacks") or [],
                 duration=media_data.get("duration"),
                 width=media_data.get("width"),
                 height=media_data.get("height"),

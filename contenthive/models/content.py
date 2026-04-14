@@ -4,7 +4,7 @@ Models for content-related operations.
 
 from datetime import datetime, timezone
 from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional, Literal, Generic, TypeVar
+from typing import Optional, Generic, TypeVar
 from dataclasses import dataclass, field
 
 from contenthive.database.orm_models import Author, Media, ParseResult, Platform
@@ -179,12 +179,12 @@ class ParseResultEntity:
 class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
     status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
-    url: HttpUrl = Field(..., description="Original media URL")
+    url: str = Field(..., description="Original media URL")
     type: Optional[MediaType] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
-    cover: Optional[HttpUrl] = Field(None, description="Original video cover URL")
-    url_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback media URLs")
-    cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
+    cover: Optional[str] = Field(None, description="Original video cover URL")
+    url_fallbacks: list[str] = Field(default_factory=list, description="Fallback media URLs")
+    cover_fallbacks: list[str] = Field(default_factory=list, description="Fallback cover URLs")
     duration: Optional[int] = Field(None, description="Video duration in seconds")
     width: Optional[int] = Field(None, description="Media width in pixels")
     height: Optional[int] = Field(None, description="Media height in pixels")
@@ -312,7 +312,7 @@ class URLParserResult(APIBaseModel):
     platform: PlatformInfo = Field(..., description="Platform information")
     post_time: Optional[int] = Field(None, description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
-    state: Literal["success", "error"] = Field(..., description="Parsing state")
+    state: ParserResultStatus = Field(..., description="Parsing state")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
     deleted_at: Optional[datetime] = Field(None, description="Deletion timestamp (null if not deleted)")
@@ -331,7 +331,7 @@ class URLParserResult(APIBaseModel):
             platform=PlatformInfo.from_entity(entity.platform),
             post_time=entity.post_time,
             parser=entity.parser,
-            state=entity.state,  # type: ignore
+            state=entity.state,
             created_at=(entity.created_at) if entity.created_at else datetime.now(timezone.utc),
             updated_at=(entity.updated_at) if entity.updated_at else datetime.now(timezone.utc),
             deleted_at=entity.deleted_at,
