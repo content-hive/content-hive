@@ -596,6 +596,8 @@ class TaskService:
                         "media_url": str(media.url),
                         "media_type": media.type,
                         "media_cover": str(media.cover) if media.cover else None,
+                        "media_url_fallbacks": [str(u) for u in media.url_fallbacks or []],
+                        "media_cover_fallbacks": [str(u) for u in media.cover_fallbacks or []],
                         "media_description": media.title,
                         "media_duration": media.duration,
                         "media_width": media.width,
@@ -860,6 +862,8 @@ class TaskService:
         media_url = sub_task.parameters.get("media_url")
         media_type = sub_task.parameters.get("media_type")
         media_cover = sub_task.parameters.get("media_cover")
+        media_url_fallbacks = sub_task.parameters.get("media_url_fallbacks", [])
+        media_cover_fallbacks = sub_task.parameters.get("media_cover_fallbacks", [])
         media_description = sub_task.parameters.get("media_description")
         media_duration = sub_task.parameters.get("media_duration")
         media_width = sub_task.parameters.get("media_width")

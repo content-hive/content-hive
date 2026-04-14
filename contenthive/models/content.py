@@ -90,6 +90,8 @@ class MediaEntity:
     type: Optional[MediaType] = None
     title: Optional[str] = None
     cover: Optional[str] = None
+    url_fallbacks: list[str] = field(default_factory=list)
+    cover_fallbacks: list[str] = field(default_factory=list)
     duration: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
@@ -108,6 +110,8 @@ class MediaEntity:
             type=orm.type,
             title=orm.title,
             cover=orm.cover,
+            url_fallbacks=orm.url_fallbacks or [],
+            cover_fallbacks=orm.cover_fallbacks or [],
             duration=orm.duration,
             width=orm.width,
             height=orm.height,
@@ -179,6 +183,8 @@ class DownloadedMediaInfo(BaseModel):
     type: Optional[MediaType] = Field(None, description="Media type")
     title: Optional[str] = Field(None, description="Media title")
     cover: Optional[HttpUrl] = Field(None, description="Original video cover URL")
+    url_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback media URLs")
+    cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
     duration: Optional[int] = Field(None, description="Video duration in seconds")
     width: Optional[int] = Field(None, description="Media width in pixels")
     height: Optional[int] = Field(None, description="Media height in pixels")
@@ -222,6 +228,8 @@ class MediaInfo(APIBaseModel):
     width: Optional[int] = Field(None, description="Media width in pixels")
     height: Optional[int] = Field(None, description="Media height in pixels")
     cover: Optional[HttpUrl] = Field(None, description="Original video cover URL")
+    url_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback media URLs")
+    cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
     media_path: Optional[str] = Field(None, description="Local media file path")
     cover_path: Optional[str] = Field(None, description="Local cover file path")
 
@@ -238,6 +246,8 @@ class MediaInfo(APIBaseModel):
             width=entity.width,
             height=entity.height,
             cover=entity.cover, # type: ignore
+            url_fallbacks=entity.url_fallbacks, # type: ignore
+            cover_fallbacks=entity.cover_fallbacks, # type: ignore
             media_path=entity.media_path,
             cover_path=entity.cover_path
         )

@@ -137,6 +137,8 @@ class Media(Base, TimestampMixin):
     width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     cover: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    url_fallbacks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    cover_fallbacks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     media_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     cover_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     status: Mapped[MediaStatus] = mapped_column(SQLEnum(MediaStatus), default=MediaStatus.PENDING, nullable=False, index=True)

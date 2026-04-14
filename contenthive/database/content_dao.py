@@ -238,6 +238,8 @@ class ContentDAO:
                 type=media.type,
                 title=media.title,
                 cover=media.cover,
+                url_fallbacks=media.url_fallbacks,
+                cover_fallbacks=media.cover_fallbacks,
                 duration=media.duration,
                 width=media.width,
                 height=media.height,
@@ -275,7 +277,9 @@ class ContentDAO:
                 url=str(media.url),
                 type=media.type if media.type else None,
                 title=media.title,
-                cover=str(media.cover) if media.cover else None
+                cover=str(media.cover) if media.cover else None,
+                url_fallbacks=[str(u) for u in (media.url_fallbacks or [])],
+                cover_fallbacks=[str(u) for u in (media.cover_fallbacks or [])],
             )
             media_id = self._save_media(media_entity, commit=False)
             media_ids.append(media_id)
@@ -303,6 +307,8 @@ class ContentDAO:
                 type=media.type if media.type else None,
                 title=media.title,
                 cover=str(media.cover) if media.cover else None,
+                url_fallbacks=[str(u) for u in media.url_fallbacks],
+                cover_fallbacks=[str(u) for u in media.cover_fallbacks],
                 duration=media.duration,
                 width=media.width,
                 height=media.height,
