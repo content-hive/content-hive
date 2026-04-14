@@ -99,7 +99,7 @@ class MediaService:
                     media_cover=str(media.cover) if media.cover else None,
                 )
             else:
-                logger.debug(f"Using built-in downloader for {media.url}")
+                logger.debug(f"Using built-in downloader")
                 media_urls = [str(media.url)] + [str(u) for u in (media.url_fallbacks or [])]
                 cover_urls = (
                     [str(media.cover)] + [str(u) for u in (media.cover_fallbacks or [])]
