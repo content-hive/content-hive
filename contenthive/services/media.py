@@ -89,8 +89,7 @@ class MediaService:
             if plugin_domain and manager and manager.has_service(plugin_domain, "download"):
                 logger.debug(f"Using plugin '{plugin_domain}' download service")
                 plugin_result = await manager.call_service(plugin_domain, "download", {
-                    "media_url": str(media.url),
-                    "media_cover": str(media.cover) if media.cover else None,
+                    "media": media,
                 })
                 media_path, cover_path = self._move_plugin_download_result(
                     save_dir=save_dir,
