@@ -2,7 +2,7 @@ from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
-from contenthive.plugins.config import load_plugins_config
+from contenthive.plugins.config import load_plugins_config, plugin_get_config, plugin_save_config, strip_framework_keys
 from contenthive.logger import logger
 
 
@@ -21,6 +21,10 @@ async def load_plugins_on_startup():
     context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
     context.async_unload_platforms = plugin_manager.async_unload_platforms
     context.register_service = plugin_manager.register_service
+
+    # 4. Inject config persistence callbacks; 'disabled' is framework-only and protected
+    context.get_config = plugin_get_config
+    context.save_config = plugin_save_config
 
     # 4. Discover locally installed plugins
     await plugin_manager.async_discover()
@@ -68,7 +72,7 @@ async def load_plugins_on_startup():
             continue
 
         # Create config entry
-        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
+        config = strip_framework_keys(plugin_cfg)
         entry = PluginEntryData(
             entry_id=f"{domain}_default",
             domain=domain,

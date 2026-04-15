@@ -10,6 +10,8 @@ from contenthive.logger import logger
 
 _config_lock = threading.Lock()
 
+_FRAMEWORK_KEYS = {"disabled"}
+
 
 def _config_path() -> Path:
     return settings.plugins_dir / "plugins.yaml"
@@ -34,7 +36,7 @@ def load_plugins_config() -> dict[str, dict]:
 def save_plugins_config(config: dict[str, dict]) -> None:
     """Persist the full config dict to plugins.yaml atomically."""
     path = _config_path()
-    content = yaml.dump(config, default_flow_style=False, allow_unicode=True)
+    content = yaml.dump(config, default_flow_style=False, allow_unicode=True, width=4096)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".plugins_yaml_")
     try:
         with open(tmp_fd, "w", encoding="utf-8") as f:
@@ -66,3 +68,20 @@ def remove_plugin_config(domain: str) -> None:
         config = load_plugins_config()
         config.pop(domain, None)
         save_plugins_config(config)
+
+
+def strip_framework_keys(cfg: dict) -> dict:
+    """Remove framework-internal keys (e.g. 'disabled') from a config dict."""
+    return {k: v for k, v in cfg.items() if k not in _FRAMEWORK_KEYS}
+
+
+def plugin_get_config(domain: str) -> dict:
+    """Get plugin config for use inside plugins. Excludes framework-internal keys."""
+    return strip_framework_keys(get_plugin_config(domain))
+
+
+def plugin_save_config(domain: str, key: str, value: Any) -> None:
+    """Set a single field in a plugin's config. Raises ValueError if key is 'disabled'."""
+    if key in _FRAMEWORK_KEYS:
+        raise ValueError(f"Plugins cannot modify the framework-reserved field: '{key}'.")
+    set_plugin_field(domain, key, value)

@@ -19,3 +19,7 @@ class PluginContext:
         self.async_forward_entry_setup: Optional[Callable[..., Coroutine[Any, Any, bool]]] = None
         self.async_unload_platforms: Optional[Callable[..., Coroutine[Any, Any, bool]]] = None
         self.register_service: Optional[Callable[[str, str, Callable], None]] = None
+
+        # Config persistence (injected by manager); 'disabled' field is always excluded
+        self.get_config: Optional[Callable[[str], dict]] = None
+        self.save_config: Optional[Callable[[str, str, Any], None]] = None
