@@ -26,10 +26,10 @@ async def load_plugins_on_startup():
     context.get_config = plugin_get_config
     context.save_config = plugin_save_config
 
-    # 4. Discover locally installed plugins
+    # 5. Discover locally installed plugins
     await plugin_manager.async_discover()
 
-    # 5. Fetch remote manifest and compare — no archive download, lightweight check only
+    # 6. Fetch remote manifest and compare — no archive download, lightweight check only
     try:
         check_results = await plugin_manager.async_check_updates(
             repo_url=settings.plugins_repo_url,
@@ -54,7 +54,7 @@ async def load_plugins_on_startup():
     except Exception:
         logger.warning("Failed to check for plugin updates from remote manifest")
 
-    # 6. Setup and enable plugins
+    # 7. Setup and enable plugins
     plugins_config = load_plugins_config()
     for domain in plugin_manager.plugins:
         plugin_cfg = plugins_config.get(domain, {})
@@ -87,7 +87,7 @@ async def load_plugins_on_startup():
         else:
             logger.warning(f"Plugin enable failed: {domain}")
 
-    # 7. Log summary
+    # 8. Log summary
     enabled_count = sum(
         1 for record in plugin_manager.plugins.values()
         if record.state == PluginState.ENABLED

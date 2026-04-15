@@ -17,7 +17,7 @@ from packaging.requirements import Requirement
 from packaging.version import Version
 
 from .registry import PluginRecord, PluginState
-from contenthive.plugins.config import get_plugin_config
+from contenthive.plugins.config import get_plugin_config, strip_framework_keys
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.logger import logger
 
@@ -135,7 +135,7 @@ class PluginManager:
             # Call module-level async_setup function
             if hasattr(module, "async_setup"):
                 plugin_cfg = get_plugin_config(domain)
-                config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
+                config = strip_framework_keys(plugin_cfg)
                 result = await module.async_setup(self.context, config)
                 if not result:
                     raise Exception("async_setup returned False")
