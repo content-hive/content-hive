@@ -1,3 +1,4 @@
+import json
 import tempfile
 import threading
 from pathlib import Path
@@ -9,6 +10,8 @@ from contenthive.config import settings
 from contenthive.logger import logger
 
 _config_lock = threading.Lock()
+
+_FRAMEWORK_KEYS = {"disabled"}
 
 
 def _config_path() -> Path:
@@ -25,16 +28,36 @@ def load_plugins_config() -> dict[str, dict]:
     if not path.exists():
         return {}
     try:
-        return yaml.safe_load(path.read_text()) or {}
+        data = yaml.safe_load(path.read_text())
     except Exception:
         logger.warning("Failed to parse plugins.yaml, treating as empty config")
         return {}
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        logger.warning(
+            "plugins.yaml has unexpected shape (%s), treating as empty config",
+            type(data).__name__,
+        )
+        return {}
+    return data
+
+
+def _assert_yaml_safe(value: Any) -> None:
+    """Raise ValueError if value cannot round-trip through yaml.safe_dump / yaml.safe_load."""
+    try:
+        json.dumps(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Config value must be a JSON-serializable primitive (str, int, float, bool, None, list, dict); "
+            f"got {type(value).__name__!r}: {exc}"
+        ) from exc
 
 
 def save_plugins_config(config: dict[str, dict]) -> None:
     """Persist the full config dict to plugins.yaml atomically."""
     path = _config_path()
-    content = yaml.dump(config, default_flow_style=False, allow_unicode=True)
+    content = yaml.safe_dump(config, default_flow_style=False, allow_unicode=True, width=4096)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".plugins_yaml_")
     try:
         with open(tmp_fd, "w", encoding="utf-8") as f:
@@ -52,6 +75,7 @@ def get_plugin_config(domain: str) -> dict:
 
 def set_plugin_field(domain: str, key: str, value: Any) -> None:
     """Set a single field in a plugin's config block and persist."""
+    _assert_yaml_safe(value)
     with _config_lock:
         config = load_plugins_config()
         if domain not in config:
@@ -66,3 +90,20 @@ def remove_plugin_config(domain: str) -> None:
         config = load_plugins_config()
         config.pop(domain, None)
         save_plugins_config(config)
+
+
+def strip_framework_keys(cfg: dict) -> dict:
+    """Remove framework-internal keys (e.g. 'disabled') from a config dict."""
+    return {k: v for k, v in cfg.items() if k not in _FRAMEWORK_KEYS}
+
+
+def plugin_get_config(domain: str) -> dict:
+    """Get plugin config for use inside plugins. Excludes framework-internal keys."""
+    return strip_framework_keys(get_plugin_config(domain))
+
+
+def plugin_save_config(domain: str, key: str, value: Any) -> None:
+    """Set a single field in a plugin's config. Raises ValueError if key is 'disabled'."""
+    if key in _FRAMEWORK_KEYS:
+        raise ValueError(f"Plugins cannot modify the framework-reserved field: '{key}'.")
+    set_plugin_field(domain, key, value)
