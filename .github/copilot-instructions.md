@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Content Hive is a content parsing service built on **FastAPI + Python 3.12**, using SQLite as the database, Playwright for browser automation, and an extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
+Content Hive is a content parsing service built on **FastAPI + Python 3.13**, using SQLite as the database, Playwright for browser automation, and an extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
 
 ---
 
@@ -13,7 +13,7 @@ Content Hive is a content parsing service built on **FastAPI + Python 3.12**, us
 - **Data Validation**: Pydantic v2 / pydantic-settings
 - **Browser Automation**: Playwright (Chromium)
 - **Containerization**: Docker + GitHub Actions CI/CD (push to GHCR and Docker Hub)
-- **Python Version**: 3.12
+- **Python Version**: 3.13
 
 ---
 
