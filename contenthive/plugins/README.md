@@ -125,7 +125,7 @@ class Quality(str, Enum):
     HIGH = "high"
 
 class ConfigSchema(PluginConfigSchema):
-    api_key: str = Field(title="API Key", json_schema_extra={"secret": True})
+    api_key: str = Field(default="", title="API Key", json_schema_extra={"secret": True})
     quality: Quality = Field(default=Quality.HIGH, title="Video Quality")
 
 CONFIG_SCHEMA = ConfigSchema
@@ -137,9 +137,11 @@ CONFIG_SCHEMA = ConfigSchema
 |------|------|
 | 敏感字段（密码/Token）| `Field(json_schema_extra={"secret": True})` |
 | 显示标签 | `Field(title="My Label")` |
-| 必填字段 | 无 `default` 参数 |
-| 可选字段 | 提供 `default` 参数 |
+| 需用户配置的字段 | `default=""` + 在 `async_setup_entry` 内检查空值 |
+| 可选调参字段 | 提供合理的 `default` 参数（如 `default=3`） |
 | 支持的类型 | `str`, `int`, `float`, `bool`, `str` Enum 子类 |
+
+> **约定**：所有字段必须声明默认值，框架在插件首次加载时会将默认值自动写入 `plugins.yaml`。对于需要用户配置的字段（如 API Key、Cookies），使用 `default=""`，并在 `async_setup_entry` 内检查值是否为空，若为空则返回 `False` 并打印提示日志。
 
 > `model_config = ConfigDict(extra="ignore")`：schema 会忽略配置文件中未声明的键，避免因框架内部字段（如 `disabled`）导致验证报错。
 
@@ -608,6 +610,7 @@ from contenthive.plugins.context import PluginContext
 from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.manager import PluginEntryData
 
+DOMAIN = "my_parser"
 
 # 可选：定义配置 Schema，驱动配置管理 API
 class Quality(str, Enum):
@@ -615,7 +618,7 @@ class Quality(str, Enum):
     HIGH = "high"
 
 class ConfigSchema(PluginConfigSchema):
-    api_key: str = Field(title="API Key", json_schema_extra={"secret": True})
+    api_key: str = Field(default="", title="API Key", json_schema_extra={"secret": True})
     quality: Quality = Field(default=Quality.HIGH, title="Video Quality")
 
 CONFIG_SCHEMA = ConfigSchema
@@ -626,6 +629,10 @@ async def async_setup(context: PluginContext) -> bool:
     return True
 
 async def async_setup_entry(context: PluginContext, entry: PluginEntryData) -> bool:
+    config = context.get_config(DOMAIN)
+    if not config.api_key:
+        context.logger.warning("MyParser plugin skipped: 'api_key' is not configured")
+        return False
     await context.async_forward_entry_setup(entry, "parser")
     return True
 

@@ -16,7 +16,7 @@ import subprocess
 from packaging.requirements import Requirement
 from packaging.version import Version
 
-from contenthive.plugins.config import plugin_get_config, plugin_save_config
+from contenthive.plugins.config import plugin_get_config, plugin_save_config, init_plugin_config_defaults
 from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.registry import PluginRecord, PluginState
 from contenthive.plugins.downloader import GitHubPluginDownloader
@@ -364,6 +364,10 @@ class PluginManager:
 
         if not await self.async_setup(domain):
             return False
+
+        record = self.plugins[domain]
+        if record.config_schema:
+            init_plugin_config_defaults(domain, record.config_schema)
 
         entry = PluginEntryData(
             entry_id=f"{domain}_default",

@@ -2,7 +2,7 @@ from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
-from contenthive.plugins.config import load_plugins_config, strip_framework_keys
+from contenthive.plugins.config import load_plugins_config, strip_framework_keys, init_plugin_config_defaults
 from contenthive.logger import logger
 
 
@@ -68,6 +68,12 @@ async def load_plugins_on_startup():
         if not success:
             logger.warning(f"Plugin setup failed: {domain}")
             continue
+
+        # Write schema defaults to plugins.yaml for any fields not yet present
+        schema_cls = plugin_manager.plugins[domain].config_schema
+        if schema_cls:
+            init_plugin_config_defaults(domain, schema_cls)
+            plugin_cfg = load_plugins_config().get(domain, {})
 
         # Create config entry
         config = strip_framework_keys(plugin_cfg)

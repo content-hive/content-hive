@@ -2,9 +2,10 @@ import json
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, cast
 
 import yaml
+from pydantic_core import PydanticUndefined
 
 from contenthive.config import settings
 from contenthive.logger import logger
@@ -89,6 +90,32 @@ def remove_plugin_config(domain: str) -> None:
     with _config_lock:
         config = load_plugins_config()
         config.pop(domain, None)
+        save_plugins_config(config)
+
+
+def init_plugin_config_defaults(
+    domain: str,
+    schema_cls: type[PluginConfigSchema],
+) -> None:
+    """Write schema field defaults to plugins.yaml for any fields not yet present.
+
+    Only fields that have a declared default (or default_factory) are written.
+    Already-present fields are never overwritten.
+    """
+    with _config_lock:
+        config = load_plugins_config()
+        domain_cfg = config.get(domain, {})
+
+        for field_name, field_info in schema_cls.model_fields.items():
+            if field_name in domain_cfg:
+                continue
+            if field_info.default is not PydanticUndefined:
+                domain_cfg[field_name] = field_info.default
+            elif field_info.default_factory is not None:
+                factory = cast(Callable[[], Any], field_info.default_factory)
+                domain_cfg[field_name] = factory()
+
+        config[domain] = domain_cfg
         save_plugins_config(config)
 
 

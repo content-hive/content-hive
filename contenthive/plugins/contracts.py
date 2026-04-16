@@ -18,6 +18,11 @@ class PluginConfigSchema(BaseModel):
     Mark sensitive fields:  Field(json_schema_extra={"secret": True})
     Set display label:      Field(title="My Label")
 
+    **Convention**: All fields MUST declare a default value so the plugin loads on
+    first boot without user configuration. For fields that require user input (e.g.
+    API keys, cookies), use ``default=""`` and validate the value at runtime inside
+    ``async_setup_entry``, returning ``False`` with a warning log if the value is empty.
+
     Example::
 
         from enum import Enum
