@@ -10,10 +10,9 @@ from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.plugins.contracts import PluginConfigSchema
 
+FRAMEWORK_KEYS = {"disabled"}
+
 _config_lock = threading.Lock()
-
-_FRAMEWORK_KEYS = {"disabled"}
-
 
 def _config_path() -> Path:
     return settings.plugins_dir / "plugins.yaml"
@@ -95,7 +94,7 @@ def remove_plugin_config(domain: str) -> None:
 
 def strip_framework_keys(cfg: dict) -> dict:
     """Remove framework-internal keys (e.g. 'disabled') from a config dict."""
-    return {k: v for k, v in cfg.items() if k not in _FRAMEWORK_KEYS}
+    return {k: v for k, v in cfg.items() if k not in FRAMEWORK_KEYS}
 
 
 def plugin_get_config(

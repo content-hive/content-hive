@@ -28,13 +28,11 @@ from contenthive.models.plugin import (
     UpdatePluginConfigResponse,
     UpdatePluginsResponse,
 )
-from contenthive.plugins.config import get_plugin_config, plugin_get_config, plugin_save_config, remove_plugin_config, set_plugin_field
+from contenthive.plugins.config import FRAMEWORK_KEYS, get_plugin_config, plugin_get_config, plugin_save_config, remove_plugin_config, set_plugin_field
 from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager
 from contenthive.plugins.registry import PluginState
-
-_FRAMEWORK_KEYS = {"disabled"}
 
 _PYTHON_TYPE_TO_FIELD_TYPE: dict[type, SettingFieldType] = {
     str: SettingFieldType.STRING,
@@ -127,14 +125,14 @@ def _validate_partial_config(
 
     # 1. Reject framework-reserved keys
     for key in incoming:
-        if key in _FRAMEWORK_KEYS:
+        if key in FRAMEWORK_KEYS:
             errors.append(f"Key '{key}' is reserved by the framework and cannot be set via API")
 
     declared_fields = schema_cls.model_fields
 
     # 2. Type-check declared keys that are present in incoming
     for key, value in incoming.items():
-        if key in _FRAMEWORK_KEYS or key not in declared_fields:
+        if key in FRAMEWORK_KEYS or key not in declared_fields:
             continue
         field_info = declared_fields[key]
         annotation = field_info.annotation
