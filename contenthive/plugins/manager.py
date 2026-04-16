@@ -16,10 +16,11 @@ import subprocess
 from packaging.requirements import Requirement
 from packaging.version import Version
 
-from .registry import PluginRecord, PluginState
 from contenthive.plugins.config import plugin_get_config, plugin_save_config
 from contenthive.plugins.contracts import PluginConfigSchema
+from contenthive.plugins.registry import PluginRecord, PluginState
 from contenthive.plugins.downloader import GitHubPluginDownloader
+
 from contenthive.logger import logger
 
 
