@@ -2,18 +2,24 @@ import json
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, cast
 
-import yaml
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+from pydantic import TypeAdapter
+from pydantic_core import PydanticUndefined
 
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.plugins.contracts import PluginConfigSchema
 
+FRAMEWORK_KEYS = {"disabled"}
+
+_yaml = YAML()
+_yaml.preserve_quotes = True
+_yaml.width = 4096
+
 _config_lock = threading.Lock()
-
-_FRAMEWORK_KEYS = {"disabled"}
-
 
 def _config_path() -> Path:
     return settings.plugins_dir / "plugins.yaml"
@@ -27,14 +33,15 @@ def load_plugins_config() -> dict[str, dict]:
     """
     path = _config_path()
     if not path.exists():
-        return {}
+        return CommentedMap()
     try:
-        data = yaml.safe_load(path.read_text())
+        with path.open("r", encoding="utf-8") as f:
+            data = _yaml.load(f)
     except Exception:
         logger.warning("Failed to parse plugins.yaml, treating as empty config")
         return {}
     if data is None:
-        return {}
+        return CommentedMap()
     if not isinstance(data, dict):
         logger.warning(
             "plugins.yaml has unexpected shape (%s), treating as empty config",
@@ -58,11 +65,10 @@ def _assert_yaml_safe(value: Any) -> None:
 def save_plugins_config(config: dict[str, dict]) -> None:
     """Persist the full config dict to plugins.yaml atomically."""
     path = _config_path()
-    content = yaml.safe_dump(config, default_flow_style=False, allow_unicode=True, width=4096)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".plugins_yaml_")
     try:
         with open(tmp_fd, "w", encoding="utf-8") as f:
-            f.write(content)
+            _yaml.dump(config, f)
         Path(tmp_path).replace(path)
     except Exception:
         Path(tmp_path).unlink(missing_ok=True)
@@ -93,9 +99,44 @@ def remove_plugin_config(domain: str) -> None:
         save_plugins_config(config)
 
 
+def init_plugin_config_defaults(
+    domain: str,
+    schema_cls: type[PluginConfigSchema],
+) -> None:
+    """Write schema field defaults to plugins.yaml for any fields not yet present.
+
+    Only fields that have a declared default (or default_factory) are written.
+    Already-present fields are never overwritten.
+    Skips saving when no new defaults were added.
+    """
+    with _config_lock:
+        config = load_plugins_config()
+        domain_cfg = config.get(domain, {})
+
+        added = False
+        for field_name, field_info in schema_cls.model_fields.items():
+            if field_name in domain_cfg:
+                continue
+            if field_info.default is not PydanticUndefined:
+                raw = field_info.default
+            elif field_info.default_factory is not None:
+                factory = cast(Callable[[], Any], field_info.default_factory)
+                raw = factory()
+            else:
+                continue
+            domain_cfg[field_name] = TypeAdapter(field_info.annotation).dump_python(raw, mode="json")
+            added = True
+
+        if not added:
+            return
+
+        config[domain] = domain_cfg
+        save_plugins_config(config)
+
+
 def strip_framework_keys(cfg: dict) -> dict:
     """Remove framework-internal keys (e.g. 'disabled') from a config dict."""
-    return {k: v for k, v in cfg.items() if k not in _FRAMEWORK_KEYS}
+    return {k: v for k, v in cfg.items() if k not in FRAMEWORK_KEYS}
 
 
 def plugin_get_config(
