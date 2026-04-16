@@ -2,7 +2,7 @@ from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
-from contenthive.plugins.config import load_plugins_config, plugin_save_config, strip_framework_keys
+from contenthive.plugins.config import load_plugins_config, strip_framework_keys
 from contenthive.logger import logger
 
 
@@ -21,6 +21,8 @@ async def load_plugins_on_startup():
     context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
     context.async_unload_platforms = plugin_manager.async_unload_platforms
     context.register_service = plugin_manager.register_service
+    context.get_config = plugin_manager.get_config
+    context.save_config = plugin_manager.save_config
 
     # Discover locally installed plugins
     await plugin_manager.async_discover()

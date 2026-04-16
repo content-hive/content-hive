@@ -134,11 +134,6 @@ class PluginManager:
 
             record.instance = module  # Store module, not class instance
 
-            # Inject domain-scoped config closures before calling async_setup
-            schema_cls = record.config_schema or PluginConfigSchema
-            self.context.get_config = lambda: plugin_get_config(domain, schema_cls)
-            self.context.save_config = lambda cfg: plugin_save_config(domain, cfg)
-
             # Call module-level async_setup function
             if hasattr(module, "async_setup"):
                 result = await module.async_setup(self.context)
@@ -253,6 +248,19 @@ class PluginManager:
             return False
 
 
+
+    def get_config(self, domain: str) -> PluginConfigSchema:
+        """Get plugin config as a typed settings object.
+
+        Auto-resolves CONFIG_SCHEMA from the plugin registry.
+        """
+        record = self.plugins.get(domain)
+        schema_cls = (record.config_schema if record else None) or PluginConfigSchema
+        return plugin_get_config(domain, schema_cls)
+
+    def save_config(self, domain: str, config: PluginConfigSchema) -> None:
+        """Persist a typed config object to plugins.yaml."""
+        plugin_save_config(domain, config)
 
     def register_service(self, domain: str, service: str, callback: Callable):
         """Register a service (HA-style)"""
