@@ -7,7 +7,6 @@ from enum import Enum
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
-from pydantic_core import PydanticUndefinedType
 
 from contenthive.config import settings
 from contenthive.logger import logger
@@ -73,8 +72,7 @@ def _schema_class_to_setting_items(schema_cls: type, config_obj: PluginConfigSch
         extra = field_info.json_schema_extra or {}
         secret = bool(extra.get("secret", False))
 
-        # required: PydanticUndefined means no default → required
-        required = isinstance(field_info.default, PydanticUndefinedType)
+        required = field_info.is_required()
 
         # default value
         default = None if required else field_info.default
@@ -160,7 +158,7 @@ def _validate_partial_config(
     if stored:
         satisfied |= {k for k in stored if k in declared_fields}
     for field_name, field_info in declared_fields.items():
-        if isinstance(field_info.default, PydanticUndefinedType) and field_name not in satisfied:
+        if field_info.is_required() and field_name not in satisfied:
             errors.append(f"Required field '{field_name}' is missing")
 
     return errors
@@ -571,7 +569,7 @@ class PluginService:
 
         # Apply partial update over current config, then persist atomically
         partial = {k: v for k, v in body.config.items() if k in declared_keys}
-        updated = current.model_copy(update=partial)
+        updated = schema_cls.model_validate({**current.model_dump(), **partial})
         plugin_save_config(domain, updated)
 
         return UpdatePluginConfigResponse(

@@ -115,7 +115,7 @@ def plugin_save_config(domain: str, config: PluginConfigSchema) -> None:
     The entire domain block is updated under a single lock/save cycle to prevent
     partial writes if an error occurs mid-way.
     """
-    new_fields = config.model_dump(mode="json")
+    new_fields = strip_framework_keys(config.model_dump(mode="json"))
     with _config_lock:
         full_config = load_plugins_config()
         domain_config = full_config.get(domain, {})
