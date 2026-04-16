@@ -28,10 +28,10 @@ from contenthive.models.plugin import (
     UpdatePluginConfigResponse,
     UpdatePluginsResponse,
 )
-from contenthive.plugins.config import FRAMEWORK_KEYS, get_plugin_config, plugin_get_config, plugin_save_config, remove_plugin_config, set_plugin_field
+from contenthive.plugins.config import FRAMEWORK_KEYS, plugin_get_config, plugin_save_config, remove_plugin_config, set_plugin_field
 from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
-from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager
+from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, is_plugin_update_available
 from contenthive.plugins.registry import PluginState
 
 _PYTHON_TYPE_TO_FIELD_TYPE: dict[type, SettingFieldType] = {
@@ -72,8 +72,8 @@ def _schema_class_to_setting_items(schema_cls: type, config_obj: PluginConfigSch
 
         required = field_info.is_required()
 
-        # default value
-        default = None if required else field_info.default
+        # default value: None for required fields or factory-based defaults
+        default = None if required or field_info.default_factory is not None else field_info.default
         if isinstance(default, Enum):
             default = default.value
 
@@ -252,7 +252,7 @@ class PluginService:
             plugins_info[domain] = PluginUpdateInfo(
                 current_version=record.version,
                 latest_version=latest,
-                update_available=latest is not None,
+                update_available=is_plugin_update_available(latest, record.version),
             )
 
         return CheckUpdatesResponse(
@@ -304,8 +304,8 @@ class PluginService:
                         failed.append(domain)
                 else:
                     # New plugin: discover → setup → enable
-                    success = await plugin_manager.async_activate(domain)
-                    if success:
+                    activated = await plugin_manager.async_activate(domain)
+                    if activated:
                         updated.append(domain)
                         plugin_manager._available_updates.pop(domain, None)
                     else:
@@ -441,17 +441,17 @@ class PluginService:
 
         entry_id = f"{domain}_default"
         if entry_id in plugin_manager.config_entries:
-            set_plugin_field(domain, "disabled", False)
-            return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' is already enabled")
+            record = plugin_manager.plugins[domain]
+            if record.state == PluginState.ENABLED:
+                set_plugin_field(domain, "disabled", False)
+                return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' is already enabled")
 
         set_plugin_field(domain, "disabled", False)
 
         if not await plugin_manager.async_setup(domain):
             raise RuntimeError(f"Plugin '{domain}' setup failed")
         
-        plugin_cfg = get_plugin_config(domain)
-        config = {k: v for k, v in plugin_cfg.items() if k != "disabled"}
-        entry = PluginEntryData(entry_id=entry_id, domain=domain, data=config)
+        entry = PluginEntryData(entry_id=entry_id, domain=domain, data={})
         if not await plugin_manager.async_setup_entry(entry):
             raise RuntimeError(f"Plugin '{domain}' enable failed")
 
@@ -512,7 +512,7 @@ class PluginService:
             config_obj = plugin_get_config(domain, schema_cls)
         except ValidationError as e:
             raise ConfigValidationError(
-                [f"Persisted config is invalid: {err['loc'][0]}: {err['msg']}" for err in e.errors()]
+                [f"Persisted config is invalid: {err['loc'][0] if err['loc'] else 'root'}: {err['msg']}" for err in e.errors()]
             ) from e
         return PluginConfigResponse(
             domain=domain,
@@ -559,7 +559,7 @@ class PluginService:
             current = plugin_get_config(domain, schema_cls)
         except ValidationError as e:
             raise ConfigValidationError(
-                [f"Persisted config is invalid: {err['loc'][0]}: {err['msg']}" for err in e.errors()]
+                [f"Persisted config is invalid: {err['loc'][0] if err['loc'] else 'root'}: {err['msg']}" for err in e.errors()]
             ) from e
         errors = _validate_partial_config(schema_cls, body.config, stored=current.model_dump())
         if errors:

@@ -24,6 +24,20 @@ from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.logger import logger
 
 
+def is_plugin_update_available(latest_version: str | None, current_version: str) -> bool:
+    """Return True if latest_version is a valid semver string strictly greater than current_version."""
+    if latest_version is None:
+        return False
+    try:
+        return Version(latest_version) > Version(current_version)
+    except Exception:
+        logger.warning(
+            f"is_plugin_update_available: invalid version string "
+            f"(current={current_version}, latest={latest_version})"
+        )
+        return False
+
+
 class PluginEntryData:
     """Plugin configuration entry data"""
     def __init__(self, entry_id: str, domain: str, data: dict[str, Any]):
@@ -324,14 +338,7 @@ class PluginManager:
             if not local_record:
                 continue
 
-            try:
-                results[domain] = remote_version_str if Version(remote_version_str) > Version(local_record.version) else None
-            except Exception:
-                self.context.logger.warning(
-                    f"Plugins[Update Check]: {domain} - invalid version string "
-                    f"(local={local_record.version}, remote={remote_version_str})"
-                )
-                results[domain] = None
+            results[domain] = remote_version_str if is_plugin_update_available(remote_version_str, local_record.version) else None
 
         # Cache results
         self._available_updates = results
