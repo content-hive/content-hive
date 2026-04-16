@@ -108,7 +108,17 @@ def plugin_get_config(
 
 
 def plugin_save_config(domain: str, config: PluginConfigSchema) -> None:
-    """Save all declared fields of a settings object to plugins.yaml."""
-    for key in type(config).model_fields:
-        value = getattr(config, key)
-        set_plugin_field(domain, key, value)
+    """Save all declared fields of a settings object to plugins.yaml atomically.
+
+    Uses model_dump(mode="json") so Enum values are serialized to their primitive
+    equivalents before writing, avoiding json.dumps failures on Enum instances.
+    The entire domain block is updated under a single lock/save cycle to prevent
+    partial writes if an error occurs mid-way.
+    """
+    new_fields = config.model_dump(mode="json")
+    with _config_lock:
+        full_config = load_plugins_config()
+        domain_config = full_config.get(domain, {})
+        domain_config.update(new_fields)
+        full_config[domain] = domain_config
+        save_plugins_config(full_config)

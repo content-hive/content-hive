@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from pydantic_core import PydanticUndefinedType
 
 from contenthive.config import settings
@@ -100,7 +100,11 @@ def _schema_class_to_setting_items(schema_cls: type, config_obj: PluginConfigSch
     return items
 
 
-def _validate_partial_config(schema_cls: type, incoming: dict[str, Any]) -> list[str]:
+def _validate_partial_config(
+    schema_cls: type,
+    incoming: dict[str, Any],
+    stored: dict[str, Any] | None = None,
+) -> list[str]:
     """
     Validate a partial config dict against a PluginConfigSchema class.
 
@@ -108,7 +112,16 @@ def _validate_partial_config(schema_cls: type, incoming: dict[str, Any]) -> list
     - Framework-reserved keys are always rejected.
     - Keys not declared in the schema are silently ignored (not validated).
     - Declared keys present in `incoming` are type-checked with strict=True.
-    - required fields must be present in `incoming` (after filtering undeclared keys).
+    - Required fields must be present in `incoming` OR already covered by `stored`
+      (the currently persisted config). This allows true partial updates where only
+      a subset of fields is sent.
+
+    Args:
+        schema_cls: The PluginConfigSchema subclass to validate against.
+        incoming: The raw dict from the request body.
+        stored: Optional dict of the currently persisted config values. When
+            provided, required fields already present there are not re-required
+            in `incoming`.
 
     Returns a list of error strings. Empty list means valid.
     """
@@ -142,10 +155,12 @@ def _validate_partial_config(schema_cls: type, incoming: dict[str, Any]) -> list
                 actual = type(value).__name__
                 errors.append(f"Key '{key}': expected {expected}, got {actual} ({value!r})")
 
-    # 3. Check required fields (only those declared in schema)
-    declared_incoming = {k for k in incoming if k in declared_fields}
+    # 3. Check required fields: satisfied when present in incoming OR in stored config
+    satisfied = {k for k in incoming if k in declared_fields}
+    if stored:
+        satisfied |= {k for k in stored if k in declared_fields}
     for field_name, field_info in declared_fields.items():
-        if isinstance(field_info.default, PydanticUndefinedType) and field_name not in declared_incoming:
+        if isinstance(field_info.default, PydanticUndefinedType) and field_name not in satisfied:
             errors.append(f"Required field '{field_name}' is missing")
 
     return errors
@@ -497,7 +512,12 @@ class PluginService:
         if schema_cls is None:
             return PluginConfigResponse(domain=domain, settings=[])
 
-        config_obj = plugin_get_config(domain, schema_cls)
+        try:
+            config_obj = plugin_get_config(domain, schema_cls)
+        except ValidationError as e:
+            raise ConfigValidationError(
+                [f"Persisted config is invalid: {err['loc'][0]}: {err['msg']}" for err in e.errors()]
+            ) from e
         return PluginConfigResponse(
             domain=domain,
             settings=_schema_class_to_setting_items(schema_cls, config_obj),
@@ -536,14 +556,21 @@ class PluginService:
         if schema_cls is None:
             return UpdatePluginConfigResponse(domain=domain, settings=[])
 
-        errors = _validate_partial_config(schema_cls, body.config)
+        # Load current config first so required-field validation can account for
+        # values that are already persisted (enables true partial updates).
+        declared_keys = set(schema_cls.model_fields)
+        try:
+            current = plugin_get_config(domain, schema_cls)
+        except ValidationError as e:
+            raise ConfigValidationError(
+                [f"Persisted config is invalid: {err['loc'][0]}: {err['msg']}" for err in e.errors()]
+            ) from e
+        errors = _validate_partial_config(schema_cls, body.config, stored=current.model_dump())
         if errors:
             raise ConfigValidationError(errors)
 
-        # Read current config, apply partial update, persist atomically
-        declared_keys = set(schema_cls.model_fields)
+        # Apply partial update over current config, then persist atomically
         partial = {k: v for k, v in body.config.items() if k in declared_keys}
-        current = plugin_get_config(domain, schema_cls)
         updated = current.model_copy(update=partial)
         plugin_save_config(domain, updated)
 

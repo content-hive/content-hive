@@ -182,6 +182,15 @@ async def get_plugin_config(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
         )
+    except ConfigValidationError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorDetail(
+                code="PERSISTED_CONFIG_INVALID",
+                message="Stored plugin config is invalid and cannot be read",
+                details={"errors": e.errors},
+            )
+        )
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -65,7 +65,7 @@ class PluginRecord:
         return self.manifest.get('description')
 
     @property
-    def config_schema(self) -> Optional[type]:
+    def config_schema(self) -> type[PluginConfigSchema] | None:
         """Returns CONFIG_SCHEMA class from loaded module, or None if not defined."""
         if self.instance is None:
             return None
