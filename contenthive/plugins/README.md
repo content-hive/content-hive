@@ -621,7 +621,7 @@ class ConfigSchema(PluginConfigSchema):
 CONFIG_SCHEMA = ConfigSchema
 
 
-async def async_setup(context: PluginContext, config: dict) -> bool:
+async def async_setup(context: PluginContext) -> bool:
     context.logger.info("MyParser plugin setup")
     return True
 

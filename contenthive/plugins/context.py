@@ -22,5 +22,5 @@ class PluginContext:
         self.register_service: Optional[Callable[[str, str, Callable], None]] = None
 
         # Config persistence (injected by manager); 'disabled' field is always excluded
-        self.get_config: Optional[Callable[..., PluginConfigSchema]] = None
-        self.save_config: Optional[Callable[..., None]] = None
+        self.get_config: Optional[Callable[[str], PluginConfigSchema]] = None
+        self.save_config: Optional[Callable[[str, PluginConfigSchema], None]] = None
