@@ -31,6 +31,7 @@ from contenthive.models.plugin import (
 from contenthive.plugins.config import FRAMEWORK_KEYS, plugin_get_config, plugin_save_config, remove_plugin_config, set_plugin_field
 from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
+from packaging.version import InvalidVersion
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, is_plugin_update_available
 from contenthive.plugins.registry import PluginState
 
@@ -249,10 +250,18 @@ class PluginService:
         plugins_info: dict[str, PluginUpdateInfo] = {}
         for domain, record in plugin_manager.plugins.items():
             latest = update_results.get(domain)
+            try:
+                update_available = is_plugin_update_available(latest, record.version)
+            except InvalidVersion:
+                logger.warning(
+                    "Plugin %s: invalid version string (local=%s, remote=%s)",
+                    domain, record.version, latest,
+                )
+                update_available = False
             plugins_info[domain] = PluginUpdateInfo(
                 current_version=record.version,
                 latest_version=latest,
-                update_available=is_plugin_update_available(latest, record.version),
+                update_available=update_available,
             )
 
         return CheckUpdatesResponse(

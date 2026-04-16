@@ -14,7 +14,7 @@ import asyncio
 import subprocess
 
 from packaging.requirements import Requirement
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 
 from contenthive.plugins.config import plugin_get_config, plugin_save_config, init_plugin_config_defaults
 from contenthive.plugins.contracts import PluginConfigSchema
@@ -25,17 +25,13 @@ from contenthive.logger import logger
 
 
 def is_plugin_update_available(latest_version: str | None, current_version: str) -> bool:
-    """Return True if latest_version is a valid semver string strictly greater than current_version."""
+    """Return True if latest_version is a valid PEP 440 version string strictly greater than current_version.
+
+    Raises InvalidVersion if either version string cannot be parsed.
+    """
     if latest_version is None:
         return False
-    try:
-        return Version(latest_version) > Version(current_version)
-    except Exception:
-        logger.warning(
-            f"is_plugin_update_available: invalid version string "
-            f"(current={current_version}, latest={latest_version})"
-        )
-        return False
+    return Version(latest_version) > Version(current_version)
 
 
 class PluginEntryData:
@@ -338,7 +334,15 @@ class PluginManager:
             if not local_record:
                 continue
 
-            results[domain] = remote_version_str if is_plugin_update_available(remote_version_str, local_record.version) else None
+            try:
+                update_available = is_plugin_update_available(remote_version_str, local_record.version)
+            except InvalidVersion:
+                logger.warning(
+                    "Plugin %s: invalid version string (local=%s, remote=%s)",
+                    domain, local_record.version, remote_version_str,
+                )
+                update_available = False
+            results[domain] = remote_version_str if update_available else None
 
         # Cache results
         self._available_updates = results
