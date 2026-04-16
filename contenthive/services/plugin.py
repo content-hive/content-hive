@@ -3,6 +3,11 @@ Plugin management service.
 """
 
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
+
+from pydantic import TypeAdapter
+from pydantic_core import PydanticUndefinedType
 
 from contenthive.config import settings
 from contenthive.logger import logger
@@ -13,16 +18,137 @@ from contenthive.models.plugin import (
     AvailablePluginsResponse,
     CheckConfigResponse,
     CheckUpdatesResponse,
+    PluginConfigResponse,
     PluginInfo,
     PluginListResponse,
     PluginUpdateInfo,
     ReloadResponse,
+    SettingFieldType,
+    SettingItem,
+    UpdatePluginConfigRequest,
+    UpdatePluginConfigResponse,
     UpdatePluginsResponse,
 )
-from contenthive.plugins.config import get_plugin_config, remove_plugin_config, set_plugin_field
+from contenthive.plugins.config import get_plugin_config, plugin_get_config, plugin_save_config, remove_plugin_config, set_plugin_field
+from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager
 from contenthive.plugins.registry import PluginState
+
+_FRAMEWORK_KEYS = {"disabled"}
+
+_PYTHON_TYPE_TO_FIELD_TYPE: dict[type, SettingFieldType] = {
+    str: SettingFieldType.STRING,
+    int: SettingFieldType.INTEGER,
+    float: SettingFieldType.FLOAT,
+    bool: SettingFieldType.BOOLEAN,
+}
+
+
+class ConfigValidationError(Exception):
+    """Raised when plugin config fails schema validation."""
+    def __init__(self, errors: list[str]):
+        self.errors = errors
+        super().__init__("; ".join(errors))
+
+
+def _schema_class_to_setting_items(schema_cls: type, config_obj: PluginConfigSchema) -> list[SettingItem]:
+    """Convert a PluginConfigSchema class + current config object into SettingItem list."""
+    items: list[SettingItem] = []
+    for field_name, field_info in schema_cls.model_fields.items():
+        annotation = field_info.annotation
+
+        # Determine type and options
+        if isinstance(annotation, type) and issubclass(annotation, Enum):
+            field_type = SettingFieldType.ENUM
+            options = [e.value for e in annotation]
+        else:
+            field_type = _PYTHON_TYPE_TO_FIELD_TYPE.get(annotation, SettingFieldType.STRING)
+            options = None
+
+        # label: use title if set, fallback to field name
+        label = field_info.title or field_name
+
+        # secret: from json_schema_extra
+        extra = field_info.json_schema_extra or {}
+        secret = bool(extra.get("secret", False))
+
+        # required: PydanticUndefined means no default → required
+        required = isinstance(field_info.default, PydanticUndefinedType)
+
+        # default value
+        default = None if required else field_info.default
+        if isinstance(default, Enum):
+            default = default.value
+
+        # Current value from config object
+        raw_value = getattr(config_obj, field_name, None)
+        if isinstance(raw_value, Enum):
+            raw_value = raw_value.value
+
+        items.append(SettingItem(
+            key=field_name,
+            type=field_type,
+            label=label,
+            description=field_info.description,
+            required=required,
+            secret=secret,
+            default=default,
+            options=options,
+            value=raw_value,
+        ))
+    return items
+
+
+def _validate_partial_config(schema_cls: type, incoming: dict[str, Any]) -> list[str]:
+    """
+    Validate a partial config dict against a PluginConfigSchema class.
+
+    Rules:
+    - Framework-reserved keys are always rejected.
+    - Keys not declared in the schema are silently ignored (not validated).
+    - Declared keys present in `incoming` are type-checked with strict=True.
+    - required fields must be present in `incoming` (after filtering undeclared keys).
+
+    Returns a list of error strings. Empty list means valid.
+    """
+    errors: list[str] = []
+
+    # 1. Reject framework-reserved keys
+    for key in incoming:
+        if key in _FRAMEWORK_KEYS:
+            errors.append(f"Key '{key}' is reserved by the framework and cannot be set via API")
+
+    declared_fields = schema_cls.model_fields
+
+    # 2. Type-check declared keys that are present in incoming
+    for key, value in incoming.items():
+        if key in _FRAMEWORK_KEYS or key not in declared_fields:
+            continue
+        field_info = declared_fields[key]
+        annotation = field_info.annotation
+        if isinstance(annotation, type) and issubclass(annotation, Enum):
+            # Enum: check that value is a string matching one of the enum member values
+            valid_values = [e.value for e in annotation]
+            if value not in valid_values:
+                errors.append(
+                    f"Key '{key}': '{value}' is not a valid option, must be one of {valid_values}"
+                )
+        else:
+            try:
+                TypeAdapter(annotation).validate_python(value, strict=True)
+            except Exception:
+                expected = getattr(annotation, '__name__', str(annotation))
+                actual = type(value).__name__
+                errors.append(f"Key '{key}': expected {expected}, got {actual} ({value!r})")
+
+    # 3. Check required fields (only those declared in schema)
+    declared_incoming = {k for k in incoming if k in declared_fields}
+    for field_name, field_info in declared_fields.items():
+        if isinstance(field_info.default, PydanticUndefinedType) and field_name not in declared_incoming:
+            errors.append(f"Required field '{field_name}' is missing")
+
+    return errors
 
 
 def _get_plugin_manager() -> PluginManager:
@@ -345,6 +471,86 @@ class PluginService:
             raise RuntimeError(f"Plugin '{domain}' deleted but failed to update plugins.yaml: {e}") from e
 
         return OperationResult(operation=OperationType.DELETE, id=domain, success=True, message=f"Plugin '{domain}' deleted")
+
+
+    def get_plugin_settings(self, domain: str) -> PluginConfigResponse:
+        """Return the settings schema with current config values for a plugin.
+
+        If the plugin has no CONFIG_SCHEMA, returns an empty settings list.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            PluginConfigResponse with schema fields and their current values.
+
+        Raises:
+            ValueError: If the domain is not found.
+            RuntimeError: If the plugin manager is not initialized.
+        """
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        record = plugin_manager.plugins[domain]
+        schema_cls = record.config_schema
+        if schema_cls is None:
+            return PluginConfigResponse(domain=domain, settings=[])
+
+        config_obj = plugin_get_config(domain, schema_cls)
+        return PluginConfigResponse(
+            domain=domain,
+            settings=_schema_class_to_setting_items(schema_cls, config_obj),
+        )
+
+    def update_plugin_settings(self, domain: str, body: UpdatePluginConfigRequest) -> UpdatePluginConfigResponse:
+        """Validate and persist plugin config fields declared in CONFIG_SCHEMA.
+
+        If the plugin has no CONFIG_SCHEMA, all incoming keys are ignored and an
+        empty settings list is returned.
+
+        Validation rules (when schema exists):
+        - Framework-reserved keys ('disabled') are rejected with 400.
+        - Keys not declared in the schema are silently ignored.
+        - Type checking is performed with strict=True for each declared key.
+        - Required fields must be present.
+
+        Args:
+            domain: Plugin domain identifier.
+            body: UpdatePluginConfigRequest with config dict.
+
+        Returns:
+            UpdatePluginConfigResponse with settings list reflecting updated values.
+
+        Raises:
+            ValueError: If the domain is not found.
+            ConfigValidationError: If validation fails.
+            RuntimeError: If the plugin manager is not initialized.
+        """
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        record = plugin_manager.plugins[domain]
+        schema_cls = record.config_schema
+        if schema_cls is None:
+            return UpdatePluginConfigResponse(domain=domain, settings=[])
+
+        errors = _validate_partial_config(schema_cls, body.config)
+        if errors:
+            raise ConfigValidationError(errors)
+
+        # Read current config, apply partial update, persist atomically
+        declared_keys = set(schema_cls.model_fields)
+        partial = {k: v for k, v in body.config.items() if k in declared_keys}
+        current = plugin_get_config(domain, schema_cls)
+        updated = current.model_copy(update=partial)
+        plugin_save_config(domain, updated)
+
+        return UpdatePluginConfigResponse(
+            domain=domain,
+            settings=_schema_class_to_setting_items(schema_cls, updated),
+        )
 
 
 plugin_service = PluginService()

@@ -3,10 +3,39 @@ Plugin contract types. This is the stable interface between Content Hive
 and its plugins. Plugins must only import from contenthive.plugins.*.
 """
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Re-export enums from enumerates so plugins only need to import from here
 from contenthive.models.enumerates import MediaType, ParserResultStatus
+
+
+class PluginConfigSchema(BaseModel):
+    """Base class for plugin configuration schemas.
+
+    Subclass this and assign to CONFIG_SCHEMA in your plugin's __init__.py.
+    Supported field types: str, int, float, bool, (str, Enum) subclass.
+
+    Mark sensitive fields:  Field(json_schema_extra={"secret": True})
+    Set display label:      Field(title="My Label")
+
+    Example::
+
+        from enum import Enum
+        from pydantic import Field
+        from contenthive.plugins.contracts import PluginConfigSchema
+
+        class Quality(str, Enum):
+            LOW = "low"
+            HIGH = "high"
+
+        class ConfigSchema(PluginConfigSchema):
+            cookies: str = Field(default="", title="Cookies",
+                                 json_schema_extra={"secret": True})
+            quality: Quality = Field(default=Quality.HIGH, title="Video Quality")
+
+        CONFIG_SCHEMA = ConfigSchema
+    """
+    model_config = ConfigDict(extra="ignore")
 
 
 class ParserMediaInfo(BaseModel):

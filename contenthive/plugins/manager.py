@@ -17,7 +17,8 @@ from packaging.requirements import Requirement
 from packaging.version import Version
 
 from .registry import PluginRecord, PluginState
-from contenthive.plugins.config import get_plugin_config, strip_framework_keys
+from contenthive.plugins.config import plugin_get_config, plugin_save_config
+from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.logger import logger
 
@@ -132,11 +133,14 @@ class PluginManager:
 
             record.instance = module  # Store module, not class instance
 
+            # Inject domain-scoped config closures before calling async_setup
+            schema_cls = record.config_schema or PluginConfigSchema
+            self.context.get_config = lambda: plugin_get_config(domain, schema_cls)
+            self.context.save_config = lambda cfg: plugin_save_config(domain, cfg)
+
             # Call module-level async_setup function
             if hasattr(module, "async_setup"):
-                plugin_cfg = get_plugin_config(domain)
-                config = strip_framework_keys(plugin_cfg)
-                result = await module.async_setup(self.context, config)
+                result = await module.async_setup(self.context)
                 if not result:
                     raise Exception("async_setup returned False")
 

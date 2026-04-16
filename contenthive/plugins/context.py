@@ -2,6 +2,7 @@ import logging
 from typing import Any, Callable, Coroutine, Optional
 
 from contenthive.logger import logger as app_logger
+from contenthive.plugins.contracts import PluginConfigSchema
 
 
 class PluginContext:
@@ -21,5 +22,5 @@ class PluginContext:
         self.register_service: Optional[Callable[[str, str, Callable], None]] = None
 
         # Config persistence (injected by manager); 'disabled' field is always excluded
-        self.get_config: Optional[Callable[[str], dict]] = None
-        self.save_config: Optional[Callable[[str, str, Any], None]] = None
+        self.get_config: Optional[Callable[[], PluginConfigSchema]] = None
+        self.save_config: Optional[Callable[[PluginConfigSchema], None]] = None
