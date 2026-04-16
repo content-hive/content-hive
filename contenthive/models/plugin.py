@@ -3,11 +3,50 @@ Models for plugin-related operations.
 """
 
 from datetime import datetime
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional, Union
 from pydantic import Field
 
 from contenthive.models.api import APIBaseModel
 from contenthive.plugins.registry import PluginState
+
+
+class SettingFieldType(str, Enum):
+    STRING = "string"
+    INTEGER = "integer"
+    FLOAT = "float"
+    BOOLEAN = "boolean"
+    ENUM = "enum"
+
+
+class SettingItem(APIBaseModel):
+    """A single setting field with its schema definition and current value."""
+    key: str = Field(..., description="Setting key name")
+    type: SettingFieldType = Field(..., description="Value type")
+    label: str = Field(..., description="Human-readable label for UI display")
+    description: Optional[str] = Field(None, description="Detailed description")
+    required: bool = Field(False, description="Whether this field is required")
+    secret: bool = Field(False, description="Whether this is a sensitive value")
+    default: Optional[Union[str, int, float, bool]] = Field(None, description="Default value")
+    options: Optional[list[str]] = Field(None, description="Valid options for enum type")
+    value: Optional[Union[str, int, float, bool]] = Field(None, description="Current configured value")
+
+
+class PluginConfigResponse(APIBaseModel):
+    """Response for GET /v1/plugins/{domain}/config"""
+    domain: str = Field(..., description="Plugin domain identifier")
+    settings: list[SettingItem] = Field(default_factory=list, description="Setting fields with current values")
+
+
+class UpdatePluginConfigRequest(APIBaseModel):
+    """Request body for PUT /v1/plugins/{domain}/config"""
+    config: dict[str, Any] = Field(..., description="Key-value pairs to update in plugin config")
+
+
+class UpdatePluginConfigResponse(APIBaseModel):
+    """Response for PUT /v1/plugins/{domain}/config"""
+    domain: str = Field(..., description="Plugin domain identifier")
+    settings: list[SettingItem] = Field(default_factory=list, description="Setting fields with updated values")
 
 
 class PluginInfo(APIBaseModel):

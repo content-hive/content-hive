@@ -2,7 +2,7 @@ from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
-from contenthive.plugins.config import load_plugins_config, plugin_get_config, plugin_save_config, strip_framework_keys
+from contenthive.plugins.config import load_plugins_config, strip_framework_keys
 from contenthive.logger import logger
 
 
@@ -10,26 +10,24 @@ async def load_plugins_on_startup():
     """
     Load and enable plugins on application startup using HA-style workflow.
     """
-    # 1. Create plugin context
+    # Create plugin context
     context = PluginContext(logger=logger)
 
-    # 2. Create plugin manager with context
+    # Create plugin manager with context
     plugin_manager = PluginManager(settings.plugins_dir, context)
     set_plugin_manager(plugin_manager)
 
-    # 3. Inject HA-style methods into context for plugins to use
+    # Inject HA-style methods into context for plugins to use
     context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
     context.async_unload_platforms = plugin_manager.async_unload_platforms
     context.register_service = plugin_manager.register_service
+    context.get_config = plugin_manager.get_config
+    context.save_config = plugin_manager.save_config
 
-    # 4. Inject config persistence callbacks; 'disabled' is framework-only and protected
-    context.get_config = plugin_get_config
-    context.save_config = plugin_save_config
-
-    # 5. Discover locally installed plugins
+    # Discover locally installed plugins
     await plugin_manager.async_discover()
 
-    # 6. Fetch remote manifest and compare — no archive download, lightweight check only
+    # Fetch remote manifest and compare — no archive download, lightweight check only
     try:
         check_results = await plugin_manager.async_check_updates(
             repo_url=settings.plugins_repo_url,
@@ -54,7 +52,7 @@ async def load_plugins_on_startup():
     except Exception:
         logger.warning("Failed to check for plugin updates from remote manifest")
 
-    # 7. Setup and enable plugins
+    # Setup and enable plugins
     plugins_config = load_plugins_config()
     for domain in plugin_manager.plugins:
         plugin_cfg = plugins_config.get(domain, {})
@@ -87,7 +85,7 @@ async def load_plugins_on_startup():
         else:
             logger.warning(f"Plugin enable failed: {domain}")
 
-    # 8. Log summary
+    # Log summary
     enabled_count = sum(
         1 for record in plugin_manager.plugins.values()
         if record.state == PluginState.ENABLED

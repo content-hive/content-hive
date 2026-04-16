@@ -9,14 +9,17 @@ from contenthive.models.plugin import (
     AvailablePluginsResponse,
     CheckConfigResponse,
     CheckUpdatesResponse,
+    PluginConfigResponse,
     PluginListResponse,
     ReloadResponse,
+    UpdatePluginConfigRequest,
+    UpdatePluginConfigResponse,
     UpdatePluginsRequest,
     UpdatePluginsResponse,
 )
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_admin_user
-from contenthive.services.plugin import plugin_service
+from contenthive.services.plugin import ConfigValidationError, plugin_service
 
 router_v1 = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 
@@ -161,6 +164,73 @@ async def delete_plugin(
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(code="PLUGIN_DELETE_FAILED", message=str(e))
+        )
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
+@router_v1.get("/{domain}/config", response_model=APIResponse[PluginConfigResponse])
+async def get_plugin_config(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[PluginConfigResponse]:
+    """Get settings schema with current config values for a plugin.
+    Returns an empty settings list if the plugin has no CONFIG_SCHEMA declared."""
+    try:
+        data = plugin_service.get_plugin_settings(domain)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+        )
+    except ConfigValidationError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorDetail(
+                code="PERSISTED_CONFIG_INVALID",
+                message="Stored plugin config is invalid and cannot be read",
+                details={"errors": e.errors},
+            )
+        )
+    except RuntimeError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
+        )
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
+@router_v1.put("/{domain}/config", response_model=APIResponse[UpdatePluginConfigResponse])
+async def update_plugin_config(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+    body: UpdatePluginConfigRequest = Body(...),
+) -> APIResponse[UpdatePluginConfigResponse]:
+    """Update plugin configuration fields.
+
+    - If the plugin has no CONFIG_SCHEMA, all incoming keys are ignored.
+    - If schema exists: framework-reserved keys are rejected, undeclared keys are ignored,
+      type checking is enforced, and required fields must be provided.
+    """
+    try:
+        data = plugin_service.update_plugin_settings(domain, body)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+        )
+    except ConfigValidationError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(
+                code="CONFIG_VALIDATION_FAILED",
+                message="Plugin config validation failed",
+                details={"errors": e.errors},
+            )
+        )
+    except RuntimeError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 

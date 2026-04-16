@@ -16,9 +16,11 @@ import subprocess
 from packaging.requirements import Requirement
 from packaging.version import Version
 
-from .registry import PluginRecord, PluginState
-from contenthive.plugins.config import get_plugin_config, strip_framework_keys
+from contenthive.plugins.config import plugin_get_config, plugin_save_config
+from contenthive.plugins.contracts import PluginConfigSchema
+from contenthive.plugins.registry import PluginRecord, PluginState
 from contenthive.plugins.downloader import GitHubPluginDownloader
+
 from contenthive.logger import logger
 
 
@@ -134,9 +136,7 @@ class PluginManager:
 
             # Call module-level async_setup function
             if hasattr(module, "async_setup"):
-                plugin_cfg = get_plugin_config(domain)
-                config = strip_framework_keys(plugin_cfg)
-                result = await module.async_setup(self.context, config)
+                result = await module.async_setup(self.context)
                 if not result:
                     raise Exception("async_setup returned False")
 
@@ -249,6 +249,19 @@ class PluginManager:
 
 
 
+    def get_config(self, domain: str) -> PluginConfigSchema:
+        """Get plugin config as a typed settings object.
+
+        Auto-resolves CONFIG_SCHEMA from the plugin registry.
+        """
+        record = self.plugins.get(domain)
+        schema_cls = (record.config_schema if record else None) or PluginConfigSchema
+        return plugin_get_config(domain, schema_cls)
+
+    def save_config(self, domain: str, config: PluginConfigSchema) -> None:
+        """Persist a typed config object to plugins.yaml."""
+        plugin_save_config(domain, config)
+
     def register_service(self, domain: str, service: str, callback: Callable):
         """Register a service (HA-style)"""
         if domain not in self.services:
@@ -272,17 +285,6 @@ class PluginManager:
             return await callback(data)
         else:
             return callback(data)
-
-    def get_parser_entities(self) -> list[Any]:
-        """Get all registered parser entities from all plugins."""
-        parsers = []
-
-        for _, platforms in self._platforms.items():
-            if "parser" in platforms:
-                parsers.extend(platforms["parser"])
-
-        return parsers
-
 
 
     async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, str | None]:

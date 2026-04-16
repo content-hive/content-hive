@@ -8,6 +8,7 @@ import yaml
 
 from contenthive.config import settings
 from contenthive.logger import logger
+from contenthive.plugins.contracts import PluginConfigSchema
 
 _config_lock = threading.Lock()
 
@@ -97,13 +98,27 @@ def strip_framework_keys(cfg: dict) -> dict:
     return {k: v for k, v in cfg.items() if k not in _FRAMEWORK_KEYS}
 
 
-def plugin_get_config(domain: str) -> dict:
-    """Get plugin config for use inside plugins. Excludes framework-internal keys."""
-    return strip_framework_keys(get_plugin_config(domain))
+def plugin_get_config(
+    domain: str,
+    schema_cls: type[PluginConfigSchema] = PluginConfigSchema,
+) -> PluginConfigSchema:
+    """Get plugin config as a typed settings object. Excludes framework-internal keys."""
+    raw = strip_framework_keys(get_plugin_config(domain))
+    return schema_cls.model_validate(raw)
 
 
-def plugin_save_config(domain: str, key: str, value: Any) -> None:
-    """Set a single field in a plugin's config. Raises ValueError if key is 'disabled'."""
-    if key in _FRAMEWORK_KEYS:
-        raise ValueError(f"Plugins cannot modify the framework-reserved field: '{key}'.")
-    set_plugin_field(domain, key, value)
+def plugin_save_config(domain: str, config: PluginConfigSchema) -> None:
+    """Save all declared fields of a settings object to plugins.yaml atomically.
+
+    Uses model_dump(mode="json") so Enum values are serialized to their primitive
+    equivalents before writing, avoiding json.dumps failures on Enum instances.
+    The entire domain block is updated under a single lock/save cycle to prevent
+    partial writes if an error occurs mid-way.
+    """
+    new_fields = strip_framework_keys(config.model_dump(mode="json"))
+    with _config_lock:
+        full_config = load_plugins_config()
+        domain_config = full_config.get(domain, {})
+        domain_config.update(new_fields)
+        full_config[domain] = domain_config
+        save_plugins_config(full_config)

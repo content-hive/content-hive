@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import Optional, Dict, Any
 
+from contenthive.plugins.contracts import PluginConfigSchema
+
 class PluginState(str, Enum):
     """
     Plugin state enumeration (Home Assistant-style).
@@ -61,7 +63,17 @@ class PluginRecord:
     def description(self) -> str | None:
         """Get plugin description from manifest"""
         return self.manifest.get('description')
-    
+
+    @property
+    def config_schema(self) -> type[PluginConfigSchema] | None:
+        """Returns CONFIG_SCHEMA class from loaded module, or None if not defined."""
+        if self.instance is None:
+            return None
+        schema = getattr(self.instance, 'CONFIG_SCHEMA', None)
+        if schema is None or not (isinstance(schema, type) and issubclass(schema, PluginConfigSchema)):
+            return None
+        return schema
+
     @property
     def is_loaded(self) -> bool:
         """Check if plugin is loaded (module imported)"""

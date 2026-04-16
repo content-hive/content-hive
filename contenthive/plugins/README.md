@@ -41,6 +41,11 @@ PluginState              manifest.json + Module Code
  GitHubPluginDownloader      config.py
  (从 GitHub 仓库下载并      (plugins.yaml 读写，
   安装插件)                  持久化插件配置)
+
+┌──────────────────────────────────────────────────────────┐
+│                   contracts.py                            │
+│   (稳定插件接口：PluginConfigSchema、ParserResult 等)    │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -92,14 +97,78 @@ PluginRecord {
     version: str             # 来自 manifest 的版本号
     description: Optional[str]   # 来自 manifest 的描述
     author: Optional[list[str]]  # 来自 manifest 的作者列表
+    config_schema: Optional[type[PluginConfigSchema]]
+                             # 从已加载模块读取 CONFIG_SCHEMA，无则返回 None
     is_loaded: bool          # instance 是否非空
     is_enabled: bool         # state == ENABLED
 }
 ```
 
+> **`config_schema` 属性**：读取插件模块上的 `CONFIG_SCHEMA` 属性（须为 `PluginConfigSchema` 的子类），用于驱动配置管理 API。若插件未定义该属性或模块尚未加载，返回 `None`。
+
 ---
 
-### 2. `context.py` - 插件执行上下文
+### 2. `contracts.py` - 插件契约类型
+
+**职责**：定义 ContentHive 与插件之间的**稳定接口**。插件只应从 `contenthive.plugins.*` 导入，不得依赖核心内部模块。
+
+#### PluginConfigSchema
+插件配置 Schema 的基类，基于 Pydantic `BaseModel`。插件需在 `__init__.py` 中定义子类并赋值给 `CONFIG_SCHEMA`：
+
+```python
+from enum import Enum
+from pydantic import Field
+from contenthive.plugins.contracts import PluginConfigSchema
+
+class Quality(str, Enum):
+    LOW = "low"
+    HIGH = "high"
+
+class ConfigSchema(PluginConfigSchema):
+    api_key: str = Field(title="API Key", json_schema_extra={"secret": True})
+    quality: Quality = Field(default=Quality.HIGH, title="Video Quality")
+
+CONFIG_SCHEMA = ConfigSchema
+```
+
+字段声明约定：
+
+| 特性 | 写法 |
+|------|------|
+| 敏感字段（密码/Token）| `Field(json_schema_extra={"secret": True})` |
+| 显示标签 | `Field(title="My Label")` |
+| 必填字段 | 无 `default` 参数 |
+| 可选字段 | 提供 `default` 参数 |
+| 支持的类型 | `str`, `int`, `float`, `bool`, `str` Enum 子类 |
+
+> `model_config = ConfigDict(extra="ignore")`：schema 会忽略配置文件中未声明的键，避免因框架内部字段（如 `disabled`）导致验证报错。
+
+#### 数据契约类型
+
+| 类 | 说明 |
+|---|---|
+| `ParserResult` | 插件 `parse()` 方法的完整返回值 |
+| `ParserMediaInfo` | 单条媒体信息（URL、类型、标题、封面、时长、分辨率等） |
+| `ParserPlatformInfo` | 平台信息（code、name、url、icon_url） |
+| `ParserAuthorInfo` | 作者信息（uid、name、username、avatar、url 等） |
+
+```python
+class ParserResult(BaseModel):
+    pid: str                        # 内容唯一 ID
+    url: str                        # 原始 URL
+    title: Optional[str]
+    content: Optional[str]
+    media: list[ParserMediaInfo]
+    author: ParserAuthorInfo
+    platform: ParserPlatformInfo
+    post_time: Optional[int]        # Unix 时间戳
+    parser: str                     # 解析器标识
+    state: ParserResultStatus
+```
+
+---
+
+### 3. `context.py` - 插件执行上下文
 
 **职责**：为插件提供访问应用资源的接口
 
@@ -122,7 +191,7 @@ PluginContext {
 
 ---
 
-### 3. `manager.py` - 核心插件管理器
+### 4. `manager.py` - 核心插件管理器
 
 **职责**：协调插件的发现、加载、设置、执行、卸载、更新检查和热重载
 
@@ -199,6 +268,14 @@ async async_unload_entry(entry_id: str) -> bool
 - 删除条目记录
 - 若该插件无其他活跃条目，状态回退为 `LOADED`
 
+##### 删除插件
+```python
+async async_delete(domain: str) -> bool
+```
+- 卸载所有活跃 entry
+- 从 `plugin_manager.plugins` 注册表中移除记录
+- 从磁盘上删除插件目录及其所有文件
+
 ##### 版本检查
 ```python
 async async_check_updates(repo_url: str, ref: str = "main") -> dict[str, str | None]
@@ -241,7 +318,7 @@ get_plugin_manager()          # 获取全局实例（可能为 None）
 
 ---
 
-### 4. `downloader.py` - GitHub 插件下载器
+### 5. `downloader.py` - GitHub 插件下载器
 
 **职责**：从 GitHub 仓库安全地下载、解压并安装插件
 
@@ -287,7 +364,7 @@ async download_plugins(
 async fetch_remote_manifest(repo_url: str, ref: str = "main") -> dict | None
 ```
 - 仅抓取 `raw.githubusercontent.com` 上的 `plugins-manifest.json`
-- 不下载完整包，用于轻量级版本检查
+- 不下载完整包，用于轻量级版本检查及列出可用插件
 
 ##### URL 格式支持
 
@@ -308,7 +385,7 @@ async fetch_remote_manifest(repo_url: str, ref: str = "main") -> dict | None
 
 ---
 
-### 5. `config.py` - 插件配置文件工具
+### 6. `config.py` - 插件配置文件工具
 
 **职责**：读写 `plugins_dir/plugins.yaml`，持久化每个插件的配置（包括启用/禁用状态）
 
@@ -323,20 +400,26 @@ youtube_parser:
   api_key: "xxx"
 ```
 
-每个插件占一个独立配置块，`disabled` 是内置字段，其余字段作为插件专属配置传入 `async_setup`。
+每个插件占一个独立配置块，`disabled` 是框架内置字段（`_FRAMEWORK_KEYS`），其余字段作为插件专属配置传入 `async_setup`。
 
 #### 主要函数
 
 | 函数 | 说明 |
 |------|------|
 | `load_plugins_config()` | 加载完整配置，返回 `dict[domain, config]`；文件不存在或解析失败时返回 `{}` |
-| `save_plugins_config(config)` | 将完整配置写回 `plugins.yaml` |
+| `save_plugins_config(config)` | 将完整配置原子写回 `plugins.yaml`（使用临时文件 + rename，线程安全） |
 | `get_plugin_config(domain)` | 获取单个插件的配置块，不存在时返回 `{}` |
-| `set_plugin_field(domain, key, value)` | 设置单个插件的某个配置字段并持久化 |
+| `set_plugin_field(domain, key, value)` | 在线程锁下设置单个插件的某个配置字段并持久化 |
+| `remove_plugin_config(domain)` | 删除某个插件的整个配置块并持久化（插件删除时调用） |
+| `strip_framework_keys(cfg)` | 从配置 dict 中过滤掉框架内置键（如 `disabled`） |
+| `plugin_get_config(domain, schema_cls)` | 获取插件配置并反序列化为 `PluginConfigSchema` 子类实例 |
+| `plugin_save_config(domain, config)` | 将 `PluginConfigSchema` 实例序列化后原子写入 `plugins.yaml` |
+
+> **原子写入**：`save_plugins_config` 通过 `tempfile.mkstemp` + `Path.replace` 保证写入的原子性，避免进程崩溃时产生损坏的配置文件。所有修改操作均在 `_config_lock` 线程锁内执行。
 
 ---
 
-### 6. `startup.py` - 启动与关闭
+### 7. `startup.py` - 启动与关闭
 
 **职责**：应用启动时初始化插件系统，关闭时优雅卸载
 
@@ -357,21 +440,56 @@ youtube_parser:
 
 ---
 
-### 7. `services/plugin.py` - 插件管理服务层
+### 8. `services/plugin.py` - 插件管理服务层
 
 **职责**：封装插件管理操作，供 HTTP 路由层调用
+
+#### ConfigValidationError
+
+自定义异常类，当插件配置未通过 Schema 校验时抛出，携带结构化的错误列表。路由层将其映射为 HTTP 400。
 
 #### PluginService 方法
 
 | 方法 | 说明 |
 |------|------|
 | `reload_all()` | 热重载所有插件，返回每个 domain 的结果 |
-| `check_config()` | 校验所有插件 manifest 的必填字段和依赖完整性 |
-| `check_updates()` | 查询远端版本，返回各插件的当前版本与最新版本 |
+| `check_config()` | 校验所有插件 manifest 的必填字段（domain/name/version） |
+| `check_updates()` | 查询远端版本，返回各插件的当前版本与最新版本及检查时间戳 |
 | `update_plugins(domains)` | 下载并安装指定插件（或全部），已有插件热重载，新插件直接激活 |
-| `list_plugins()` | 返回所有插件的状态、版本、错误信息及更新可用性 |
-| `disable(domain)` | 卸载插件并在 `plugins.yaml` 中写入 `disabled: true`，重启后生效 |
-| `enable(domain)` | 从 `plugins.yaml` 移除禁用标记，动态加载并激活插件 |
+| `list_available()` | 拉取远端 `plugins-manifest.json`，合并本地安装状态，返回所有可用插件信息 |
+| `list_plugins()` | 返回所有已发现插件的状态、版本、错误信息及更新可用性 |
+| `disable(domain)` | 卸载插件并在 `plugins.yaml` 中写入 `disabled: true` |
+| `enable(domain)` | 清除禁用标记，动态加载并激活插件 |
+| `delete(domain)` | 卸载插件、从注册表移除、删除磁盘目录，并清理 `plugins.yaml` 中的配置块 |
+| `get_plugin_settings(domain)` | 读取插件的 `CONFIG_SCHEMA`，返回 schema 字段列表及当前配置值 |
+| `update_plugin_settings(domain, body)` | 校验并持久化插件配置字段（支持部分更新） |
+
+#### 配置校验规则（`update_plugin_settings`）
+
+- 框架保留键（`disabled`）被拒绝，返回 400
+- 未在 `CONFIG_SCHEMA` 中声明的键被静默忽略
+- 声明的键以 `strict=True` 模式做类型检查
+- 必填字段须在请求体或已持久化配置中满足（支持真正的部分更新）
+
+---
+
+## HTTP API 端点
+
+所有端点需要管理员权限（Bearer Token），路由前缀为 `/v1/plugins`。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/v1/plugins/` | 列出所有本地已发现的插件及其状态 |
+| `GET` | `/v1/plugins/available` | 列出远端仓库中所有可用插件（含未安装的） |
+| `POST` | `/v1/plugins/reload` | 热重载所有插件 |
+| `POST` | `/v1/plugins/check-config` | 校验所有插件 manifest 的必填字段 |
+| `GET` | `/v1/plugins/check-updates` | 检查各插件是否有新版本 |
+| `POST` | `/v1/plugins/update` | 从远端仓库下载并安装/更新插件 |
+| `POST` | `/v1/plugins/{domain}/enable` | 启用指定插件 |
+| `POST` | `/v1/plugins/{domain}/disable` | 禁用指定插件 |
+| `DELETE` | `/v1/plugins/{domain}` | 删除插件（卸载 + 删除文件） |
+| `GET` | `/v1/plugins/{domain}/config` | 获取插件配置 Schema 及当前值 |
+| `PUT` | `/v1/plugins/{domain}/config` | 更新插件配置字段 |
 
 ---
 
@@ -433,7 +551,17 @@ youtube_parser:
    │   └── 新插件 → manager.async_activate(domain)
    │       └── discover → setup → setup_entry
 
-4. 应用关闭
+4. 插件删除
+   │
+   ├── PluginService.delete(domain)
+   │   ├── manager.async_delete(domain)
+   │   │   ├── async_unload_entry（卸载所有 entry）
+   │   │   ├── 从 plugins 注册表移除
+   │   │   └── 删除磁盘上的插件目录
+   │   └── remove_plugin_config(domain)
+   │       └── 从 plugins.yaml 中删除配置块
+
+5. 应用关闭
    │
    └── shutdown_plugins()
        └── for entry in config_entries:
@@ -453,7 +581,7 @@ youtube_parser:
 ```
 plugins/
 └── my_parser/
-    ├── __init__.py          # 生命周期函数
+    ├── __init__.py          # 生命周期函数 + CONFIG_SCHEMA（可选）
     ├── parser.py            # 解析实现（可选，按平台划分）
     ├── const.py             # 常量定义（可选）
     └── manifest.json        # 元数据（本地开发用；线上由 plugins-manifest.json 生成）
@@ -474,10 +602,26 @@ plugins/
 ### `__init__.py` 实现
 
 ```python
+from enum import Enum
+from pydantic import Field
 from contenthive.plugins.context import PluginContext
+from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.manager import PluginEntryData
 
-async def async_setup(context: PluginContext, config: dict) -> bool:
+
+# 可选：定义配置 Schema，驱动配置管理 API
+class Quality(str, Enum):
+    LOW = "low"
+    HIGH = "high"
+
+class ConfigSchema(PluginConfigSchema):
+    api_key: str = Field(title="API Key", json_schema_extra={"secret": True})
+    quality: Quality = Field(default=Quality.HIGH, title="Video Quality")
+
+CONFIG_SCHEMA = ConfigSchema
+
+
+async def async_setup(context: PluginContext) -> bool:
     context.logger.info("MyParser plugin setup")
     return True
 
@@ -493,6 +637,7 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 
 ```python
 from contenthive.plugins.context import PluginContext
+from contenthive.plugins.contracts import ParserResult, ParserAuthorInfo, ParserPlatformInfo
 from contenthive.plugins.manager import PluginEntryData
 
 class MyParser:
@@ -507,9 +652,9 @@ class MyParser:
     def can_parse(self, url: str) -> bool:
         return "example.com" in url
 
-    async def parse(self, url: str):
+    async def parse(self, url: str) -> ParserResult:
         # 执行解析，返回 ParserResult
-        pass
+        ...
 
     async def async_will_remove(self):
         # 清理资源（如关闭 HTTP session）
@@ -530,6 +675,7 @@ async def async_setup_entry(context, entry, async_add_entities):
 |------|------|
 | 查看插件状态 | `manager.plugins[domain].state` |
 | 查看错误信息 | `manager.plugins[domain].error` |
+| 查看配置 Schema | `manager.plugins[domain].config_schema` |
 | 查看平台实体 | `manager._platforms[domain]` |
 | 查看可用更新缓存 | `manager._available_updates` |
 | 查看上次更新检查时间 | `manager._last_update_check` |
@@ -559,4 +705,10 @@ async def async_setup_entry(context, entry, async_add_entities):
 `async_check_updates` 仅拉取远程 `plugins-manifest.json`（几 KB），不下载完整包，启动时开销极小。
 
 ### 7. 持久化插件配置
-通过 `plugins.yaml` 集中管理每个插件的配置，包括启用/禁用状态和插件专属配置项（如 API Key）。配置与插件代码同目录存放，语义清晰，支持人工编辑，且可随插件目录一起备份。
+通过 `plugins.yaml` 集中管理每个插件的配置，包括启用/禁用状态和插件专属配置项（如 API Key）。写入使用临时文件 + rename 原子操作，并加线程锁，保证并发安全。
+
+### 8. 类型化配置 Schema
+插件可通过 `CONFIG_SCHEMA = MyConfigSchema` 声明配置 schema，框架自动支持配置的读取、写入、类型校验和 API 暴露，无需额外代码。敏感字段（如 Token）标记 `secret=True` 后可在 API 响应中被脱敏处理。
+
+### 9. 稳定的插件接口契约
+`contracts.py` 定义了插件与核心之间的稳定边界。插件只依赖 `contenthive.plugins.*`，与核心内部实现解耦，保证插件在版本升级时的兼容性。
