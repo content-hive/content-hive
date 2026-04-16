@@ -277,17 +277,6 @@ class PluginManager:
         else:
             return callback(data)
 
-    def get_parser_entities(self) -> list[Any]:
-        """Get all registered parser entities from all plugins."""
-        parsers = []
-
-        for _, platforms in self._platforms.items():
-            if "parser" in platforms:
-                parsers.extend(platforms["parser"])
-
-        return parsers
-
-
 
     async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, str | None]:
         """
