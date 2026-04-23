@@ -112,6 +112,7 @@ class AvailablePluginInfo(APIBaseModel):
     version: str = Field(..., description="Latest version in remote repository")
     description: Optional[str] = Field(None, description="Plugin description")
     author: Optional[list[str]] = Field(None, description="Plugin author")
+    disclaimer: Optional[str] = Field(None, description="Risk disclaimer to display before installation")
     installed: bool = Field(..., description="Whether the plugin is currently installed")
     installed_version: Optional[str] = Field(None, description="Installed version, if installed")
 

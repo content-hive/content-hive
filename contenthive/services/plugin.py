@@ -364,6 +364,7 @@ class PluginService:
                 version=version,
                 description=plugin.get("description"),
                 author=plugin.get("author"),
+                disclaimer=plugin.get("disclaimer"),
                 installed=local is not None,
                 installed_version=local.version if local else None,
             ))
