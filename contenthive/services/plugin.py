@@ -333,8 +333,8 @@ class PluginService:
 
         Returns:
             AvailablePluginsResponse with a list of AvailablePluginInfo entries,
-            each carrying domain, name, version, description, author, installed
-            flag, and installed_version (None if not installed locally).
+            each carrying domain, name, version, description, author, disclaimer,
+            installed flag, and installed_version (None if not installed locally).
 
         Raises:
             RuntimeError: If the remote manifest cannot be fetched.
