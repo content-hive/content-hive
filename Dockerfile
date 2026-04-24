@@ -48,8 +48,8 @@ COPY alembic ./alembic
 COPY alembic.ini .
 
 # Inject build-time version into const.py, then remove the script
-COPY scripts/write_version.py ./scripts/write_version.py
-RUN PYTHONPATH=/app python scripts/write_version.py ${APP_VERSION} && rm -rf scripts/write_version.py
+COPY scripts/write_version.py write_version.py
+RUN python write_version.py "${APP_VERSION}" && rm -rf write_version.py
 
 COPY entrypoint /entrypoint
 RUN chmod +x /entrypoint

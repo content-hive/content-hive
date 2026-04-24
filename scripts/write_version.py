@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 def write_version(version: str) -> None:
-    const_path = Path(__file__).parent.parent / "contenthive" / "const.py"
+    const_path = Path("contenthive/const.py")
     content = const_path.read_text()
 
     content = re.sub(
