@@ -3,15 +3,12 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import computed_field, Field
 
-
 class Settings(BaseSettings):
     """
     Application configuration settings.
     """
     
     # Application settings
-    app_name: str = "Content Hive"
-    app_version: str = os.getenv("APP_VERSION", "1.0.0")
     environment: str = os.getenv("ENVIRONMENT", "production")
     debug: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
 

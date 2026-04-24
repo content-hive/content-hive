@@ -2,14 +2,15 @@ FROM python:3.13-slim-trixie
 
 ARG APP_VERSION=0.1.0
 
-LABEL version="${APP_VERSION}" \
-      description="Content Hive - A content parsing service" \
-      maintainer="shaoxiaof@hotmail.com"
+LABEL org.opencontainers.image.title="Content Hive" \
+      org.opencontainers.image.description="Content Hive - A content parsing service" \
+      org.opencontainers.image.authors="The Content Hive Team" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${APP_VERSION}"
 
 ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai \
-    PLAYWRIGHT_BROWSERS_PATH=/config/ms-playwright \
-    APP_VERSION=${APP_VERSION}
+    PLAYWRIGHT_BROWSERS_PATH=/config/ms-playwright
 
 WORKDIR /app
 
@@ -45,6 +46,10 @@ RUN mkdir -p /app/deps && chmod 777 /app/deps
 COPY contenthive ./contenthive
 COPY alembic ./alembic
 COPY alembic.ini .
+
+# Inject build-time version into const.py, then remove the script
+COPY scripts/write_version.py write_version.py
+RUN python write_version.py "${APP_VERSION}" && rm -rf write_version.py
 
 COPY entrypoint /entrypoint
 RUN chmod +x /entrypoint
