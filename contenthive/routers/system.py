@@ -1,7 +1,7 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, BackgroundTasks, status
 
-from contenthive.config import settings
+from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.logger import logger
 from contenthive.core.restart import get_restart_manager, RestartType
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
@@ -59,8 +59,8 @@ async def health_check() -> APIResponse[HealthResponse]:
     return APIResponse(
         status=ResponseStatus.SUCCESS,
         data=HealthResponse(
-            app=settings.app_name,
-            version=settings.app_version,
+            app=APP_NAME,
+            version=APP_VERSION,
             plugin_updates_available=plugin_updates_available,
         )
     )

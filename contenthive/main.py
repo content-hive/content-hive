@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
+from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.routers import admin, content, plugin, system, user, task
 from contenthive.database.database import initialize_db
 from contenthive.config import settings, ensure_directories
@@ -65,8 +66,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title=settings.app_name,
-    version=settings.app_version,
+    title=APP_NAME,
+    version=APP_VERSION,
     lifespan=lifespan
 )
 
