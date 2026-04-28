@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Content Hive is a content parsing service built on **FastAPI + Python 3.13**, using SQLite as the database, Playwright for browser automation, and an extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
+Content Hive is a content parsing service built on **FastAPI + Python 3.13**, using SQLite as the database and an extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
 
 ---
 
@@ -11,7 +11,6 @@ Content Hive is a content parsing service built on **FastAPI + Python 3.13**, us
 - **Web Framework**: FastAPI + Uvicorn
 - **Database**: SQLite + SQLAlchemy (ORM)
 - **Data Validation**: Pydantic v2 / pydantic-settings
-- **Browser Automation**: Playwright (Chromium)
 - **Containerization**: Docker + GitHub Actions CI/CD (push to GHCR and Docker Hub)
 - **Python Version**: 3.13
 
@@ -154,8 +153,6 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 - The version is extracted from the tag and passed into the image via the `APP_VERSION` build-arg
 - Non-`dev`/`beta` versions also push the `:latest` tag
 - Images are pushed to both **GHCR** (`ghcr.io`) and **Docker Hub**
-- Playwright/Chromium browsers are automatically installed to `/config/ms-playwright` on the first container startup
-
 ---
 
 ## Directory Conventions
@@ -165,4 +162,3 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 | `/config/data/` | Database and media files |
 | `/config/logs/` | Log files |
 | `/config/plugins/` | User-installed plugins |
-| `/config/ms-playwright/` | Playwright browser binaries |
