@@ -181,6 +181,7 @@ async def get_parser_task(
 async def list_parser_tasks(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     status: Optional[List[TaskStatus]] = Query(None),
+    task_ids: Optional[List[int]] = Query(None),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),
@@ -191,7 +192,8 @@ async def list_parser_tasks(
     
     Args:
         current_user: The currently authenticated user
-        status: Optional task status filter (e.g., pending, running, completed)
+        status: Optional task status filter (e.g., pending, running, completed). Ignored when task_ids is provided.
+        task_ids: Optional list of task IDs to filter by. When provided, status filter is ignored.
         page: Page number (starting from 1)
         page_size: Number of items per page (default: 20)
         sort_by: Field to sort by (default: created_at)
@@ -204,6 +206,7 @@ async def list_parser_tasks(
         result = task_service.list_main_tasks_by_user(
             user_id=current_user.id,
             status=status,
+            task_ids=task_ids,
             page=page,
             page_size=page_size,
             sort_by=sort_by,

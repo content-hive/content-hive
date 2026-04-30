@@ -246,6 +246,7 @@ class TaskService:
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
         status: Optional[List[TaskStatus]] = None,
+        task_ids: Optional[List[int]] = None,
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0
@@ -256,7 +257,8 @@ class TaskService:
         Args:
             user_id: Filter by user ID
             task_type: Filter by task type
-            status: Filter by status
+            status: Filter by status. Ignored when task_ids is provided.
+            task_ids: Optional list of task IDs to filter by. When provided, status filter is ignored.
             role: Filter by role
             limit: Maximum number of results
             offset: Offset for pagination
@@ -269,6 +271,7 @@ class TaskService:
                 user_id=user_id,
                 task_type=task_type,
                 status=status,
+                task_ids=task_ids,
                 role=role,
                 limit=limit,
                 offset=offset
@@ -279,6 +282,7 @@ class TaskService:
             self,
             user_id: int,
             status: Optional[List[TaskStatus]] = None,
+            task_ids: Optional[List[int]] = None,
             page: int = 1,
             page_size: int = 20,
             sort_by: str = "created_at",
@@ -289,7 +293,8 @@ class TaskService:
 
         Args:
             user_id: User ID to filter tasks
-            status: Optional task status filter (e.g., pending, running, completed)
+            status: Optional task status filter (e.g., pending, running, completed). Ignored when task_ids is provided.
+            task_ids: Optional list of task IDs to filter by. When provided, status filter is ignored.
             page: Page number (starting from 1)
             page_size: Number of items per page
             sort_by: Field to sort by (id, created_at, updated_at)
@@ -300,11 +305,12 @@ class TaskService:
         """
         try:
             offset = (page - 1) * page_size
-            
+
             with TaskDAO() as dao:
                 tasks, total = dao.list_main_tasks(
                     user_id=user_id,
                     status=status,
+                    task_ids=task_ids,
                     limit=page_size,
                     offset=offset,
                     sort_by=sort_by,

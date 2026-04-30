@@ -334,6 +334,7 @@ class TaskDAO:
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
         status: Optional[List[TaskStatus]] = None,
+        task_ids: Optional[List[int]] = None,
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0,
@@ -347,7 +348,8 @@ class TaskDAO:
         Args:
             user_id: Filter by user ID
             task_type: Filter by task type
-            status: Filter by status
+            status: Filter by status. Ignored when task_ids is provided.
+            task_ids: Filter by task IDs. When provided, status filter is ignored.
             role: Filter by role
             limit: Maximum number of results
             offset: Offset for pagination
@@ -368,7 +370,9 @@ class TaskDAO:
             if task_type is not None:
                 stmt = stmt.where(MainTask.type == task_type)
             
-            if status:
+            if task_ids:
+                stmt = stmt.where(MainTask.id.in_(task_ids))
+            elif status:
                 stmt = stmt.where(MainTask.status.in_(status))
 
             if role is not None:
@@ -380,7 +384,9 @@ class TaskDAO:
                 count_stmt = count_stmt.where(MainTask.user_id == user_id)
             if task_type is not None:
                 count_stmt = count_stmt.where(MainTask.type == task_type)
-            if status:
+            if task_ids:
+                count_stmt = count_stmt.where(MainTask.id.in_(task_ids))
+            elif status:
                 count_stmt = count_stmt.where(MainTask.status.in_(status))
             if role is not None:
                 count_stmt = count_stmt.where(MainTask.role == role)
