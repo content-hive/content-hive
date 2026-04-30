@@ -1,5 +1,5 @@
 
-from typing import Annotated, Optional
+from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, Query
 
@@ -180,7 +180,7 @@ async def get_parser_task(
 @router_v1.get("/parser", response_model=APIResponse[PaginatedResponse[MainTaskInfo]])
 async def list_parser_tasks(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
-    status: Optional[TaskStatus] = None,
+    status: Optional[List[TaskStatus]] = Query(None),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),

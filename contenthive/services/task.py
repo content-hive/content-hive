@@ -245,7 +245,7 @@ class TaskService:
         self,
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
-        status: Optional[TaskStatus] = None,
+        status: Optional[List[TaskStatus]] = None,
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0
@@ -278,7 +278,7 @@ class TaskService:
     def list_main_tasks_by_user(
             self,
             user_id: int,
-            status: Optional[TaskStatus] = None,
+            status: Optional[List[TaskStatus]] = None,
             page: int = 1,
             page_size: int = 20,
             sort_by: str = "created_at",
@@ -1065,7 +1065,7 @@ class TaskService:
                 linked_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
-                    status=TaskStatus.PENDING,
+                    status=[TaskStatus.PENDING],
                     limit=1000
                 )
 
@@ -1129,7 +1129,7 @@ class TaskService:
                 linked_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
-                    status=TaskStatus.PENDING,
+                    status=[TaskStatus.PENDING],
                     limit=1000
                 )
 

@@ -286,7 +286,7 @@ class TaskDAO:
                 session.commit()
             
             return True
-        except Exception as e:
+        except Exception:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to update main task {id} result")
@@ -323,7 +323,7 @@ class TaskDAO:
                 session.commit()
             
             return True
-        except Exception as e:
+        except Exception:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to update main task {id} parse_result_id")
@@ -333,7 +333,7 @@ class TaskDAO:
         self,
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
-        status: Optional[TaskStatus] = None,
+        status: Optional[List[TaskStatus]] = None,
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0,
@@ -368,20 +368,20 @@ class TaskDAO:
             if task_type is not None:
                 stmt = stmt.where(MainTask.type == task_type)
             
-            if status is not None:
-                stmt = stmt.where(MainTask.status == status)
-            
+            if status:
+                stmt = stmt.where(MainTask.status.in_(status))
+
             if role is not None:
                 stmt = stmt.where(MainTask.role == role)
-            
+
             # Get total count with the same filters
             count_stmt = select(func.count(MainTask.id)).where(MainTask.deleted_at == None)
             if user_id is not None:
                 count_stmt = count_stmt.where(MainTask.user_id == user_id)
             if task_type is not None:
                 count_stmt = count_stmt.where(MainTask.type == task_type)
-            if status is not None:
-                count_stmt = count_stmt.where(MainTask.status == status)
+            if status:
+                count_stmt = count_stmt.where(MainTask.status.in_(status))
             if role is not None:
                 count_stmt = count_stmt.where(MainTask.role == role)
             
