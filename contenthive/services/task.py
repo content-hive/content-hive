@@ -245,7 +245,8 @@ class TaskService:
         self,
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
-        status: Optional[TaskStatus] = None,
+        status: Optional[List[TaskStatus]] = None,
+        task_ids: Optional[List[str]] = None,
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0
@@ -256,7 +257,8 @@ class TaskService:
         Args:
             user_id: Filter by user ID
             task_type: Filter by task type
-            status: Filter by status
+            status: Filter by status. Ignored when task_ids is provided.
+            task_ids: Optional list of task IDs to filter by. When provided, status filter is ignored.
             role: Filter by role
             limit: Maximum number of results
             offset: Offset for pagination
@@ -269,6 +271,7 @@ class TaskService:
                 user_id=user_id,
                 task_type=task_type,
                 status=status,
+                task_ids=task_ids,
                 role=role,
                 limit=limit,
                 offset=offset
@@ -278,7 +281,8 @@ class TaskService:
     def list_main_tasks_by_user(
             self,
             user_id: int,
-            status: Optional[TaskStatus] = None,
+            status: Optional[List[TaskStatus]] = None,
+            task_ids: Optional[List[str]] = None,
             page: int = 1,
             page_size: int = 20,
             sort_by: str = "created_at",
@@ -289,7 +293,8 @@ class TaskService:
 
         Args:
             user_id: User ID to filter tasks
-            status: Optional task status filter (e.g., pending, running, completed)
+            status: Optional task status filter (e.g., pending, running, completed). Ignored when task_ids is provided.
+            task_ids: Optional list of task IDs to filter by. When provided, status filter is ignored.
             page: Page number (starting from 1)
             page_size: Number of items per page
             sort_by: Field to sort by (id, created_at, updated_at)
@@ -300,11 +305,12 @@ class TaskService:
         """
         try:
             offset = (page - 1) * page_size
-            
+
             with TaskDAO() as dao:
                 tasks, total = dao.list_main_tasks(
                     user_id=user_id,
                     status=status,
+                    task_ids=task_ids,
                     limit=page_size,
                     offset=offset,
                     sort_by=sort_by,
@@ -464,6 +470,10 @@ class TaskService:
         task = self.get_main_task(id)
         if not task:
             raise ValueError(f"Main task {id} not found")
+
+        if task.status == TaskStatus.CANCELED:
+            logger.info(f"Task {id} is already canceled, skipping execution")
+            return {}
 
         if task.status != TaskStatus.PENDING:
             raise ValueError(f"Task {id} is not in PENDING state (current: {task.status})")
@@ -967,9 +977,10 @@ class TaskService:
 
     # Task Management Methods
 
-    def cancel_main_task(self, id: int) -> bool:
+    async def cancel_main_task(self, id: int) -> bool:
         """
         Cancel a main task and all its sub tasks.
+        If the task is a PRIMARY task, linked tasks waiting for it will be promoted.
 
         Args:
             id: Database ID of the task
@@ -995,9 +1006,17 @@ class TaskService:
             # Cancel main task
             self.update_main_task_status(id, TaskStatus.CANCELED)
             logger.info(f"Cancelled main task {id} and {len(sub_tasks)} sub tasks")
+
+            # Remove from queue or cancel the running asyncio task
+            task_queue.remove(id)
+
+            # Promote a linked task to PRIMARY if this was a PRIMARY task
+            if task.role == TaskRole.PRIMARY:
+                await self.promote_linked_tasks(id)
+
             return True
 
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to cancel main task {id}")
             raise
 
@@ -1041,6 +1060,49 @@ class TaskService:
 
     # Task Monitoring and Completion
 
+    async def promote_linked_tasks(self, canceled_primary_id: int) -> None:
+        """
+        When a PRIMARY task is canceled, promote the earliest linked task to PRIMARY
+        and re-point all other linked tasks to the new PRIMARY.
+
+        Args:
+            canceled_primary_id: Database ID of the canceled PRIMARY task
+        """
+        try:
+            with TaskDAO() as dao:
+                linked_tasks, _ = dao.list_main_tasks(
+                    task_type=TaskType.PARSE_CONTENT,
+                    role=TaskRole.LINKED,
+                    status=[TaskStatus.PENDING],
+                    primary_task_id=canceled_primary_id,
+                    sort_by="created_at",
+                    order="asc",
+                    limit=10000
+                )
+
+            if not linked_tasks:
+                return
+
+            new_primary = linked_tasks[0]
+            remaining = linked_tasks[1:]
+
+            with TaskDAO() as dao:
+                dao.bulk_update_linked_task_primary(
+                    task_ids=[t.id for t in remaining],
+                    new_primary_id=new_primary.id,
+                    new_primary_role=TaskRole.PRIMARY,
+                )
+
+            task_queue.enqueue(new_primary.id)
+            logger.info(
+                f"Promoted linked task {new_primary.id} to PRIMARY "
+                f"(was waiting for canceled task {canceled_primary_id}), "
+                f"{len(remaining)} other linked tasks re-pointed"
+            )
+
+        except Exception:
+            logger.exception(f"Failed to promote linked tasks for canceled primary {canceled_primary_id}")
+
     async def monitor_and_complete_linked_tasks(self, primary_task_id: int) -> None:
         """
         Monitor a primary task and complete all linked tasks when it finishes.
@@ -1062,15 +1124,13 @@ class TaskService:
 
             # Find all linked tasks waiting for this primary task
             with TaskDAO() as dao:
-                linked_tasks, _ = dao.list_main_tasks(
+                waiting_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
-                    status=TaskStatus.PENDING,
-                    limit=1000
+                    status=[TaskStatus.PENDING],
+                    primary_task_id=primary_task_id,
+                    limit=10000
                 )
-
-            # Filter tasks that are waiting for this specific primary task
-            waiting_tasks = [task for task in linked_tasks if task.primary_task_id == primary_task_id]
 
             if not waiting_tasks:
                 logger.debug(f"No linked tasks waiting for primary task {primary_task_id}")
@@ -1126,15 +1186,13 @@ class TaskService:
 
             # Find all linked tasks waiting for this primary task
             with TaskDAO() as dao:
-                linked_tasks, _ = dao.list_main_tasks(
+                waiting_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
-                    status=TaskStatus.PENDING,
-                    limit=1000
+                    status=[TaskStatus.PENDING],
+                    primary_task_id=primary_task_id,
+                    limit=10000
                 )
-
-            # Filter tasks that are waiting for this specific primary task
-            waiting_tasks = [task for task in linked_tasks if task.primary_task_id == primary_task_id]
 
             if not waiting_tasks:
                 logger.debug(f"No linked tasks waiting for primary task {primary_task_id}")

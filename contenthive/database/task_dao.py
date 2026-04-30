@@ -1,7 +1,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, update
 from sqlalchemy.orm import Session, joinedload
 
 from contenthive.database.database import get_engine, get_session_local
@@ -286,7 +286,7 @@ class TaskDAO:
                 session.commit()
             
             return True
-        except Exception as e:
+        except Exception:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to update main task {id} result")
@@ -323,18 +323,58 @@ class TaskDAO:
                 session.commit()
             
             return True
-        except Exception as e:
+        except Exception:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to update main task {id} parse_result_id")
+            raise
+
+    def bulk_update_linked_task_primary(
+        self,
+        task_ids: List[int],
+        new_primary_id: int,
+        new_primary_role: TaskRole,
+    ) -> None:
+        """
+        Promote one linked task to PRIMARY and re-point all remaining linked tasks
+        to the new primary in a single transaction (3 statements total).
+
+        Args:
+            task_ids: IDs of the remaining LINKED tasks to re-point
+            new_primary_id: ID of the task being promoted to PRIMARY
+            new_primary_role: Role to assign to the new primary (PRIMARY)
+        """
+        session = self._get_session()
+        try:
+            if task_ids:
+                session.execute(
+                    update(MainTask)
+                    .where(MainTask.id.in_(task_ids))
+                    .values(primary_task_id=new_primary_id)
+                )
+
+            session.execute(
+                update(MainTask)
+                .where(MainTask.id == new_primary_id)
+                .values(role=new_primary_role, primary_task_id=None)
+            )
+
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception(
+                f"Failed to bulk update linked tasks (new_primary={new_primary_id})"
+            )
             raise
 
     def list_main_tasks(
         self,
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
-        status: Optional[TaskStatus] = None,
+        status: Optional[List[TaskStatus]] = None,
+        task_ids: Optional[List[str]] = None,
         role: Optional[TaskRole] = None,
+        primary_task_id: Optional[int] = None,
         limit: int = 100,
         offset: int = 0,
         include_sub_tasks: bool = False,
@@ -347,8 +387,10 @@ class TaskDAO:
         Args:
             user_id: Filter by user ID
             task_type: Filter by task type
-            status: Filter by status
+            status: Filter by status. Ignored when task_ids is provided.
+            task_ids: Filter by task IDs. When provided, status filter is ignored.
             role: Filter by role
+            primary_task_id: Filter by primary task ID
             limit: Maximum number of results
             offset: Offset for pagination
             include_sub_tasks: Whether to load sub tasks
@@ -368,22 +410,31 @@ class TaskDAO:
             if task_type is not None:
                 stmt = stmt.where(MainTask.type == task_type)
             
-            if status is not None:
-                stmt = stmt.where(MainTask.status == status)
-            
+            if task_ids:
+                stmt = stmt.where(MainTask.task_id.in_(task_ids))
+            elif status:
+                stmt = stmt.where(MainTask.status.in_(status))
+
             if role is not None:
                 stmt = stmt.where(MainTask.role == role)
-            
+
+            if primary_task_id is not None:
+                stmt = stmt.where(MainTask.primary_task_id == primary_task_id)
+
             # Get total count with the same filters
             count_stmt = select(func.count(MainTask.id)).where(MainTask.deleted_at == None)
             if user_id is not None:
                 count_stmt = count_stmt.where(MainTask.user_id == user_id)
             if task_type is not None:
                 count_stmt = count_stmt.where(MainTask.type == task_type)
-            if status is not None:
-                count_stmt = count_stmt.where(MainTask.status == status)
+            if task_ids:
+                count_stmt = count_stmt.where(MainTask.task_id.in_(task_ids))
+            elif status:
+                count_stmt = count_stmt.where(MainTask.status.in_(status))
             if role is not None:
                 count_stmt = count_stmt.where(MainTask.role == role)
+            if primary_task_id is not None:
+                count_stmt = count_stmt.where(MainTask.primary_task_id == primary_task_id)
             
             total = session.execute(count_stmt).scalar() or 0
             
