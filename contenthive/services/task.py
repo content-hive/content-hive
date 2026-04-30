@@ -246,7 +246,7 @@ class TaskService:
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
         status: Optional[List[TaskStatus]] = None,
-        task_ids: Optional[List[int]] = None,
+        task_ids: Optional[List[str]] = None,
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0
@@ -282,7 +282,7 @@ class TaskService:
             self,
             user_id: int,
             status: Optional[List[TaskStatus]] = None,
-            task_ids: Optional[List[int]] = None,
+            task_ids: Optional[List[str]] = None,
             page: int = 1,
             page_size: int = 20,
             sort_by: str = "created_at",

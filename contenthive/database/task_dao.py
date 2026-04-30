@@ -334,7 +334,7 @@ class TaskDAO:
         user_id: Optional[int] = None,
         task_type: Optional[TaskType] = None,
         status: Optional[List[TaskStatus]] = None,
-        task_ids: Optional[List[int]] = None,
+        task_ids: Optional[List[str]] = None,
         role: Optional[TaskRole] = None,
         limit: int = 100,
         offset: int = 0,
@@ -371,7 +371,7 @@ class TaskDAO:
                 stmt = stmt.where(MainTask.type == task_type)
             
             if task_ids:
-                stmt = stmt.where(MainTask.id.in_(task_ids))
+                stmt = stmt.where(MainTask.task_id.in_(task_ids))
             elif status:
                 stmt = stmt.where(MainTask.status.in_(status))
 

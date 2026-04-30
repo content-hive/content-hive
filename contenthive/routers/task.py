@@ -181,7 +181,7 @@ async def get_parser_task(
 async def list_parser_tasks(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     status: Optional[List[TaskStatus]] = Query(None),
-    task_ids: Optional[List[int]] = Query(None),
+    task_ids: Optional[List[str]] = Query(None),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),
