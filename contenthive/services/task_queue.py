@@ -84,6 +84,30 @@ class TaskQueue:
             logger.exception(f"Failed to enqueue task {task_id}")
             return False
     
+    def remove(self, task_id: int) -> bool:
+        """
+        Remove a task from the queue or cancel it if already running.
+
+        Args:
+            task_id: Database ID of the task
+
+        Returns:
+            True if the task was found and removed/canceled
+        """
+        before = len(self._queue)
+        self._queue = deque(item for item in self._queue if item[0] != task_id)
+        if len(self._queue) < before:
+            logger.info(f"Task {task_id} removed from queue")
+            return True
+
+        if task_id in self._running_tasks:
+            self._running_tasks[task_id].cancel()
+            logger.info(f"Task {task_id} canceled while running")
+            return True
+
+        logger.warning(f"Task {task_id} not found in queue or running tasks")
+        return False
+
     def get_queue_status(self) -> Dict[str, Any]:
         """
         Get current queue status.
@@ -165,7 +189,7 @@ class TaskQueue:
             task_id: Database ID of the task
         """
         from contenthive.services.task import task_service
-        
+
         try:
             logger.info(f"Executing task {task_id}")
             result = await task_service.execute_main_task(task_id)

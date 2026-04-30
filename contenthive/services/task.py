@@ -471,6 +471,10 @@ class TaskService:
         if not task:
             raise ValueError(f"Main task {id} not found")
 
+        if task.status == TaskStatus.CANCELED:
+            logger.info(f"Task {id} is already canceled, skipping execution")
+            return {}
+
         if task.status != TaskStatus.PENDING:
             raise ValueError(f"Task {id} is not in PENDING state (current: {task.status})")
 
@@ -1003,13 +1007,16 @@ class TaskService:
             self.update_main_task_status(id, TaskStatus.CANCELED)
             logger.info(f"Cancelled main task {id} and {len(sub_tasks)} sub tasks")
 
+            # Remove from queue or cancel the running asyncio task
+            task_queue.remove(id)
+
             # Promote a linked task to PRIMARY if this was a PRIMARY task
             if task.role == TaskRole.PRIMARY:
                 await self.promote_linked_tasks(id)
 
             return True
 
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to cancel main task {id}")
             raise
 
@@ -1064,11 +1071,13 @@ class TaskService:
         try:
             with TaskDAO() as dao:
                 linked_tasks, _ = dao.list_main_tasks(
+                    task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
                     status=[TaskStatus.PENDING],
                     primary_task_id=canceled_primary_id,
                     sort_by="created_at",
                     order="asc",
+                    limit=10000
                 )
 
             if not linked_tasks:
@@ -1118,6 +1127,7 @@ class TaskService:
                     role=TaskRole.LINKED,
                     status=[TaskStatus.PENDING],
                     primary_task_id=primary_task_id,
+                    limit=10000
                 )
 
             if not waiting_tasks:
@@ -1179,6 +1189,7 @@ class TaskService:
                     role=TaskRole.LINKED,
                     status=[TaskStatus.PENDING],
                     primary_task_id=primary_task_id,
+                    limit=10000
                 )
 
             if not waiting_tasks:
