@@ -1,7 +1,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, update
 from sqlalchemy.orm import Session, joinedload
 
 from contenthive.database.database import get_engine, get_session_local
@@ -329,44 +329,42 @@ class TaskDAO:
             logger.exception(f"Failed to update main task {id} parse_result_id")
             raise
 
-    def update_main_task_role(
+    def bulk_update_linked_task_primary(
         self,
-        id: int,
-        role: Optional[TaskRole],
-        primary_task_id: Optional[int],
-        commit: bool = True
-    ) -> bool:
+        task_ids: List[int],
+        new_primary_id: int,
+        new_primary_role: TaskRole,
+    ) -> None:
         """
-        Update main task role and primary_task_id.
+        Promote one linked task to PRIMARY and re-point all remaining linked tasks
+        to the new primary in a single transaction (3 statements total).
 
         Args:
-            id: Database ID of the task
-            role: New role (PRIMARY, LINKED, REUSED, or None)
-            primary_task_id: New primary task ID (None for PRIMARY tasks)
-            commit: Whether to commit immediately (default: True)
-
-        Returns:
-            True if updated successfully
+            task_ids: IDs of the remaining LINKED tasks to re-point
+            new_primary_id: ID of the task being promoted to PRIMARY
+            new_primary_role: Role to assign to the new primary (PRIMARY)
         """
         session = self._get_session()
         try:
-            stmt = select(MainTask).where(MainTask.id == id)
-            task = session.execute(stmt).scalar_one_or_none()
-            if not task:
-                logger.warning(f"Main task {id} not found")
-                return False
+            if task_ids:
+                session.execute(
+                    update(MainTask)
+                    .where(MainTask.id.in_(task_ids))
+                    .values(primary_task_id=new_primary_id)
+                )
 
-            task.role = role
-            task.primary_task_id = primary_task_id
+            session.execute(
+                update(MainTask)
+                .where(MainTask.id == new_primary_id)
+                .values(role=new_primary_role, primary_task_id=None)
+            )
 
-            if commit:
-                session.commit()
-
-            return True
+            session.commit()
         except Exception:
-            if commit:
-                session.rollback()
-            logger.exception(f"Failed to update main task {id} role")
+            session.rollback()
+            logger.exception(
+                f"Failed to bulk update linked tasks (new_primary={new_primary_id})"
+            )
             raise
 
     def list_main_tasks(

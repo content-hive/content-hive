@@ -1087,9 +1087,11 @@ class TaskService:
             remaining = linked_tasks[1:]
 
             with TaskDAO() as dao:
-                for linked_task in remaining:
-                    dao.update_main_task_role(linked_task.id, role=TaskRole.LINKED, primary_task_id=new_primary.id, commit=False)
-                dao.update_main_task_role(new_primary.id, role=TaskRole.PRIMARY, primary_task_id=None, commit=True)
+                dao.bulk_update_linked_task_primary(
+                    task_ids=[t.id for t in remaining],
+                    new_primary_id=new_primary.id,
+                    new_primary_role=TaskRole.PRIMARY,
+                )
 
             task_queue.enqueue(new_primary.id)
             logger.info(
