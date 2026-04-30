@@ -1068,15 +1068,12 @@ class TaskService:
 
             # Find all linked tasks waiting for this primary task
             with TaskDAO() as dao:
-                linked_tasks, _ = dao.list_main_tasks(
+                waiting_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
                     status=[TaskStatus.PENDING],
-                    limit=1000
+                    primary_task_id=primary_task_id,
                 )
-
-            # Filter tasks that are waiting for this specific primary task
-            waiting_tasks = [task for task in linked_tasks if task.primary_task_id == primary_task_id]
 
             if not waiting_tasks:
                 logger.debug(f"No linked tasks waiting for primary task {primary_task_id}")
@@ -1132,15 +1129,12 @@ class TaskService:
 
             # Find all linked tasks waiting for this primary task
             with TaskDAO() as dao:
-                linked_tasks, _ = dao.list_main_tasks(
+                waiting_tasks, _ = dao.list_main_tasks(
                     task_type=TaskType.PARSE_CONTENT,
                     role=TaskRole.LINKED,
                     status=[TaskStatus.PENDING],
-                    limit=1000
+                    primary_task_id=primary_task_id,
                 )
-
-            # Filter tasks that are waiting for this specific primary task
-            waiting_tasks = [task for task in linked_tasks if task.primary_task_id == primary_task_id]
 
             if not waiting_tasks:
                 logger.debug(f"No linked tasks waiting for primary task {primary_task_id}")

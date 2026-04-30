@@ -336,6 +336,7 @@ class TaskDAO:
         status: Optional[List[TaskStatus]] = None,
         task_ids: Optional[List[str]] = None,
         role: Optional[TaskRole] = None,
+        primary_task_id: Optional[int] = None,
         limit: int = 100,
         offset: int = 0,
         include_sub_tasks: bool = False,
@@ -351,6 +352,7 @@ class TaskDAO:
             status: Filter by status. Ignored when task_ids is provided.
             task_ids: Filter by task IDs. When provided, status filter is ignored.
             role: Filter by role
+            primary_task_id: Filter by primary task ID
             limit: Maximum number of results
             offset: Offset for pagination
             include_sub_tasks: Whether to load sub tasks
@@ -378,6 +380,9 @@ class TaskDAO:
             if role is not None:
                 stmt = stmt.where(MainTask.role == role)
 
+            if primary_task_id is not None:
+                stmt = stmt.where(MainTask.primary_task_id == primary_task_id)
+
             # Get total count with the same filters
             count_stmt = select(func.count(MainTask.id)).where(MainTask.deleted_at == None)
             if user_id is not None:
@@ -385,11 +390,13 @@ class TaskDAO:
             if task_type is not None:
                 count_stmt = count_stmt.where(MainTask.type == task_type)
             if task_ids:
-                count_stmt = count_stmt.where(MainTask.id.in_(task_ids))
+                count_stmt = count_stmt.where(MainTask.task_id.in_(task_ids))
             elif status:
                 count_stmt = count_stmt.where(MainTask.status.in_(status))
             if role is not None:
                 count_stmt = count_stmt.where(MainTask.role == role)
+            if primary_task_id is not None:
+                count_stmt = count_stmt.where(MainTask.primary_task_id == primary_task_id)
             
             total = session.execute(count_stmt).scalar() or 0
             
