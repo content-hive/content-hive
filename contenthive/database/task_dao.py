@@ -329,6 +329,46 @@ class TaskDAO:
             logger.exception(f"Failed to update main task {id} parse_result_id")
             raise
 
+    def update_main_task_role(
+        self,
+        id: int,
+        role: Optional[TaskRole],
+        primary_task_id: Optional[int],
+        commit: bool = True
+    ) -> bool:
+        """
+        Update main task role and primary_task_id.
+
+        Args:
+            id: Database ID of the task
+            role: New role (PRIMARY, LINKED, REUSED, or None)
+            primary_task_id: New primary task ID (None for PRIMARY tasks)
+            commit: Whether to commit immediately (default: True)
+
+        Returns:
+            True if updated successfully
+        """
+        session = self._get_session()
+        try:
+            stmt = select(MainTask).where(MainTask.id == id)
+            task = session.execute(stmt).scalar_one_or_none()
+            if not task:
+                logger.warning(f"Main task {id} not found")
+                return False
+
+            task.role = role
+            task.primary_task_id = primary_task_id
+
+            if commit:
+                session.commit()
+
+            return True
+        except Exception:
+            if commit:
+                session.rollback()
+            logger.exception(f"Failed to update main task {id} role")
+            raise
+
     def list_main_tasks(
         self,
         user_id: Optional[int] = None,

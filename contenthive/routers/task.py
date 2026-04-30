@@ -93,7 +93,7 @@ async def cancel_parser_task(
                 )
             )
 
-        success = task_service.cancel_main_task(task.id)
+        success = await task_service.cancel_main_task(task.id)
         if not success:
             raise DetailedHTTPException(
                 status_code=409,

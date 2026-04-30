@@ -973,9 +973,10 @@ class TaskService:
 
     # Task Management Methods
 
-    def cancel_main_task(self, id: int) -> bool:
+    async def cancel_main_task(self, id: int) -> bool:
         """
         Cancel a main task and all its sub tasks.
+        If the task is a PRIMARY task, linked tasks waiting for it will be promoted.
 
         Args:
             id: Database ID of the task
@@ -1001,6 +1002,11 @@ class TaskService:
             # Cancel main task
             self.update_main_task_status(id, TaskStatus.CANCELED)
             logger.info(f"Cancelled main task {id} and {len(sub_tasks)} sub tasks")
+
+            # Promote a linked task to PRIMARY if this was a PRIMARY task
+            if task.role == TaskRole.PRIMARY:
+                await self.promote_linked_tasks(id)
+
             return True
 
         except Exception as e:
@@ -1046,6 +1052,45 @@ class TaskService:
             raise
 
     # Task Monitoring and Completion
+
+    async def promote_linked_tasks(self, canceled_primary_id: int) -> None:
+        """
+        When a PRIMARY task is canceled, promote the earliest linked task to PRIMARY
+        and re-point all other linked tasks to the new PRIMARY.
+
+        Args:
+            canceled_primary_id: Database ID of the canceled PRIMARY task
+        """
+        try:
+            with TaskDAO() as dao:
+                linked_tasks, _ = dao.list_main_tasks(
+                    role=TaskRole.LINKED,
+                    status=[TaskStatus.PENDING],
+                    primary_task_id=canceled_primary_id,
+                    sort_by="created_at",
+                    order="asc",
+                )
+
+            if not linked_tasks:
+                return
+
+            new_primary = linked_tasks[0]
+            remaining = linked_tasks[1:]
+
+            with TaskDAO() as dao:
+                for linked_task in remaining:
+                    dao.update_main_task_role(linked_task.id, role=TaskRole.LINKED, primary_task_id=new_primary.id, commit=False)
+                dao.update_main_task_role(new_primary.id, role=TaskRole.PRIMARY, primary_task_id=None, commit=True)
+
+            task_queue.enqueue(new_primary.id)
+            logger.info(
+                f"Promoted linked task {new_primary.id} to PRIMARY "
+                f"(was waiting for canceled task {canceled_primary_id}), "
+                f"{len(remaining)} other linked tasks re-pointed"
+            )
+
+        except Exception:
+            logger.exception(f"Failed to promote linked tasks for canceled primary {canceled_primary_id}")
 
     async def monitor_and_complete_linked_tasks(self, primary_task_id: int) -> None:
         """
