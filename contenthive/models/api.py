@@ -1,13 +1,11 @@
 from datetime import UTC, datetime
-from typing import Any, TypeVar
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from contenthive.models.enumerates import OperationType, ResponseStatus
-
-T = TypeVar("T")
 
 # ERROR CODE CONSTANTS
 

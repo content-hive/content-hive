@@ -324,8 +324,6 @@ class UserDAO:
         """
         session = self._get_session()
         try:
-            from datetime import datetime
-
             now = datetime.now(UTC)
             stmt = select(SessionModel).where(SessionModel.expires_at < now)
             expired_sessions = session.execute(stmt).scalars().all()
