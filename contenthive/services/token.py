@@ -6,6 +6,7 @@ from fastapi import Request
 
 from contenthive.core.secret import secret_manager
 from contenthive.database.user_dao import UserDAO
+from contenthive.models.enumerates import UserStatus
 from contenthive.models.user import (
     AuthTokenModel,
     DeviceInfoModel,
@@ -26,7 +27,7 @@ class TokenService:
             if not user or not secret_manager.verify_password(password, user.password_hash):
                 raise ValueError("Invalid username or password")
 
-            if user.status == 2:  # disabled
+            if user.status == UserStatus.DISABLED:
                 raise ValueError("User account is disabled")
 
             # Update last login time
@@ -104,7 +105,7 @@ class TokenService:
                     raise ValueError("Token has been invalidated due to account changes")
 
                 # Check if user account is disabled
-                if user.status == 2:
+                if user.status == UserStatus.DISABLED:
                     raise ValueError("User account is disabled")
 
                 session = dao.get_session_by_jti(user_id=user.id, jti=jti)
