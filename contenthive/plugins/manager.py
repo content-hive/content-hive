@@ -671,28 +671,17 @@ class PluginManager:
 
     def _install_packages(self, to_install: list[str]) -> list[str]:
         """Blocking package installation (run in executor). Returns the list of packages actually installed."""
-        env = os.environ.copy()
-        # Ensure HOME is writable; in containers running as root, HOME may be '/'
-        # which causes pip to fail when writing to ~/.local or ~/.cache/pip
-        home = env.get("HOME", "/")
-        if not os.access(home, os.W_OK):
-            env["HOME"] = tempfile.gettempdir()
-
         subprocess.check_call(
             [
-                sys.executable,
-                "-m",
+                "uv",
                 "pip",
                 "install",
                 *to_install,
                 "--target",
                 str(self.deps_dir),
                 "--quiet",
-                "--root-user-action=ignore",
-                "--disable-pip-version-check",
-                "--no-cache-dir",
-            ],
-            env=env,
+                "--no-cache",
+            ]
         )
 
         return to_install

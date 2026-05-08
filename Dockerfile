@@ -1,5 +1,7 @@
 FROM python:3.13-slim-trixie
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 ARG APP_VERSION=0.1.0
 
 LABEL org.opencontainers.image.title="Content Hive" \
@@ -9,7 +11,10 @@ LABEL org.opencontainers.image.title="Content Hive" \
       org.opencontainers.image.version="${APP_VERSION}"
 
 ENV PYTHONUNBUFFERED=1 \
-    TZ=Asia/Shanghai
+    TZ=Asia/Shanghai \
+    UV_NO_CACHE=1 \
+    VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
@@ -18,8 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Create deps directory for runtime plugin dependencies
 RUN mkdir -p /app/deps && chmod 777 /app/deps
@@ -28,10 +33,6 @@ RUN mkdir -p /app/deps && chmod 777 /app/deps
 COPY contenthive ./contenthive
 COPY alembic ./alembic
 COPY alembic.ini .
-
-# Inject build-time version into const.py, then remove the script
-COPY scripts/write_version.py write_version.py
-RUN python write_version.py "${APP_VERSION}" && rm -rf write_version.py
 
 COPY entrypoint /entrypoint
 RUN chmod +x /entrypoint
