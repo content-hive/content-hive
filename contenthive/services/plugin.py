@@ -222,7 +222,7 @@ class PluginService:
                 success = await plugin_manager.async_reload(domain)
                 results[domain] = "reloaded" if success else "failed"
             except Exception as e:
-                results[domain] = f"error: {str(e)}"
+                results[domain] = f"error: {e!s}"
                 logger.exception(f"Failed to reload {domain}: {e}")
 
         return ReloadResponse(message="Configuration reloaded", plugins=results)

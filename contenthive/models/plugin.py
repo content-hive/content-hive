@@ -3,7 +3,7 @@ Models for plugin-related operations.
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import Field
@@ -12,7 +12,7 @@ from contenthive.models.api import APIBaseModel
 from contenthive.plugins.registry import PluginState
 
 
-class SettingFieldType(str, Enum):
+class SettingFieldType(StrEnum):
     STRING = "string"
     INTEGER = "integer"
     FLOAT = "float"

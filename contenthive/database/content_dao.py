@@ -131,7 +131,7 @@ class ContentDAO:
         except Exception as e:
             if commit:
                 session.rollback()
-            raise Exception(f"Failed to save platform: {e}")
+            raise Exception(f"Failed to save platform: {e}") from e
 
     def save_author(
         self,
@@ -212,7 +212,7 @@ class ContentDAO:
         except Exception as e:
             if commit:
                 session.rollback()
-            raise Exception(f"Failed to save author: {e}")
+            raise Exception(f"Failed to save author: {e}") from e
 
     def _save_media(self, media: MediaEntity, commit: bool = False) -> int:
         """
@@ -281,7 +281,7 @@ class ContentDAO:
         except Exception as e:
             if commit:
                 session.rollback()
-            raise Exception(f"Failed to save media: {e}")
+            raise Exception(f"Failed to save media: {e}") from e
 
     def save_medias(
         self, medias: list[ParserMediaInfo], commit: bool = False
@@ -451,7 +451,7 @@ class ContentDAO:
             session.rollback()
             raise Exception(
                 f"Failed to save parse result (pid: {result.pid}, platform: {result.platform.code}): {e}"
-            )
+            ) from e
 
     def _save_media_associations(
         self, parse_result_id: int, media: list[ParserMediaInfo]
@@ -592,10 +592,7 @@ class ContentDAO:
         else:
             sort_field = ParseResult.created_at
 
-        if order.lower() == "asc":
-            query = query.order_by(sort_field.asc())
-        else:
-            query = query.order_by(sort_field.desc())
+        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
 
         query = query.limit(limit).offset(offset)
         results_orm = session.execute(query).scalars().all()
@@ -612,7 +609,8 @@ class ContentDAO:
     ) -> tuple[list[ParseResultEntity], int]:
         """
         Sync parse results based on last sync time.
-        Returns all parse results (including deleted ones in association table) that were created or updated after the last sync time.
+        Returns all parse results (including deleted ones in association table)
+        that were created or updated after the last sync time.
 
         Args:
             user_id: Filter by user ID
@@ -755,10 +753,7 @@ class ContentDAO:
         }
         sort_field = sort_field_map.get(sort_by, Platform.id)
 
-        if order.lower() == "asc":
-            query = query.order_by(sort_field.asc())
-        else:
-            query = query.order_by(sort_field.desc())
+        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
 
         query = query.limit(limit).offset(offset)
         platforms_orm = session.execute(query).scalars().all()
@@ -828,10 +823,7 @@ class ContentDAO:
         }
         sort_field = sort_field_map.get(sort_by, Author.id)
 
-        if order.lower() == "asc":
-            query = query.order_by(sort_field.asc())
-        else:
-            query = query.order_by(sort_field.desc())
+        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
 
         query = query.limit(limit).offset(offset)
         authors_orm = session.execute(query).scalars().all()
@@ -893,7 +885,7 @@ class ContentDAO:
 
             # Soft delete each author association
             for author_id in author_ids:
-                success, file_paths = self.delete_author(
+                _success, file_paths = self.delete_author(
                     user_id, author_id, commit=False
                 )
                 all_file_paths.extend(file_paths)
@@ -913,7 +905,7 @@ class ContentDAO:
             logger.exception(
                 f"Database error when soft deleting platform {platform_id} for user {user_id}"
             )
-            raise Exception(f"Failed to soft delete platform association: {e}")
+            raise Exception(f"Failed to soft delete platform association: {e}") from e
 
     def delete_author(
         self, user_id: int, author_id: int, commit: bool = False
@@ -970,7 +962,7 @@ class ContentDAO:
 
             # Soft delete each parse result association
             for pr_id in parse_result_ids:
-                success, file_paths = self.delete_parse_result(
+                _success, file_paths = self.delete_parse_result(
                     user_id, pr_id, commit=False
                 )
                 all_file_paths.extend(file_paths)
@@ -990,7 +982,7 @@ class ContentDAO:
             logger.exception(
                 f"Database error when soft deleting author {author_id} for user {user_id}"
             )
-            raise Exception(f"Failed to soft delete author association: {e}")
+            raise Exception(f"Failed to soft delete author association: {e}") from e
 
     def delete_parse_result(
         self, user_id: int, parse_result_id: int, commit: bool = False

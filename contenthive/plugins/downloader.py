@@ -114,7 +114,8 @@ class GitHubPluginDownloader:
         """
         if not self.VALID_REF_PATTERN.match(ref):
             raise ValueError(
-                f"Invalid ref '{ref}': only alphanumeric characters, hyphens, dots, underscores, and slashes are allowed"
+                f"Invalid ref '{ref}': only alphanumeric characters, hyphens, dots, underscores,"
+                " and slashes are allowed"
             )
         if self._INVALID_REF_SEGMENTS.search(ref):
             raise ValueError(
@@ -183,10 +184,10 @@ class GitHubPluginDownloader:
             # Verify the resolved path is within extract_dir
             try:
                 target_path.relative_to(extract_dir)
-            except ValueError:
+            except ValueError as e:
                 raise ValueError(
                     f"Unsafe zip entry: '{member}' would extract to '{target_path}' (outside of '{extract_dir}')"
-                )
+                ) from e
 
             # Extract the member
             zip_file.extract(member, extract_dir)
@@ -419,8 +420,10 @@ class GitHubPluginDownloader:
 
         timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes timeout
 
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
-            async with session.get(url) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout, trust_env=True) as session,
+            session.get(url) as response,
+        ):
                 if response.status != 200:
                     raise Exception(
                         f"Failed to download archive: HTTP {response.status}"
@@ -567,26 +570,28 @@ class GitHubPluginDownloader:
             self._validate_ref(ref)
 
             owner, repo = self._parse_github_url(repo_url)
-            url = f"https://raw.githubusercontent.com/{quote(owner, safe='')}/{quote(repo, safe='')}/{quote(ref, safe='/')}/plugins-manifest.json"
+            url = (
+                f"https://raw.githubusercontent.com/{quote(owner, safe='')}/"
+                f"{quote(repo, safe='')}/{quote(ref, safe='/')}/plugins-manifest.json"
+            )
 
             logger.debug(f"Fetching remote manifest from {url}")
 
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(
                 timeout=timeout, trust_env=True
-            ) as session:
-                async with session.get(url) as response:
-                    if response.status == 404:
-                        logger.warning(
-                            f"plugins-manifest.json not found in remote repository ({url})"
-                        )
-                        return None
-                    if response.status != 200:
-                        logger.warning(
-                            f"Failed to fetch remote manifest: HTTP {response.status}"
-                        )
-                        return None
-                    text = await response.text()
+            ) as session, session.get(url) as response:
+                if response.status == 404:
+                    logger.warning(
+                        f"plugins-manifest.json not found in remote repository ({url})"
+                    )
+                    return None
+                if response.status != 200:
+                    logger.warning(
+                        f"Failed to fetch remote manifest: HTTP {response.status}"
+                    )
+                    return None
+                text = await response.text()
 
             manifest = json.loads(text)
             if not isinstance(manifest, dict) or "plugins" not in manifest:

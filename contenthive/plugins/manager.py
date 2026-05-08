@@ -182,9 +182,8 @@ class PluginManager:
 
         try:
             # Ensure plugin is loaded
-            if record.state == PluginState.INSTALLED:
-                if not await self.async_setup(domain):
-                    return False
+            if record.state == PluginState.INSTALLED and not await self.async_setup(domain):
+                return False
 
             module = record.instance
             if not module:

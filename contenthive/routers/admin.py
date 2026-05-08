@@ -44,7 +44,7 @@ async def create_user(
         raise DetailedHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ErrorDetail(code="USER_CREATION_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.get("/users", response_model=APIResponse[list[UserProfileResponse]])
@@ -61,7 +61,7 @@ async def list_users(
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(code="USER_LISTING_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.post(
@@ -91,7 +91,7 @@ async def reset_user_password(
         raise DetailedHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ErrorDetail(code="PASSWORD_RESET_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.patch("/users/{user_id}/status", response_model=APIResponse[OperationResult])
@@ -135,4 +135,4 @@ async def change_user_status(
         raise DetailedHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ErrorDetail(code="USER_STATUS_CHANGE_FAILED", message=str(e)),
-        )
+        ) from e

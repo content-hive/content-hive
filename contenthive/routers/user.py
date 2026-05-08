@@ -32,9 +32,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="v1/user/token")
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     credentials_exception = DetailedHTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=ErrorDetail(
-            code="INVALID_CREDENTIALS", message="Could not validate credentials"
-        ),
+        detail=ErrorDetail(code="INVALID_CREDENTIALS", message="Could not validate credentials"),
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -49,16 +47,12 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
 
         with UserDAO() as dao:
             user = dao.get_user_by_username(username)
-            if (
-                not user
-                or user.username != username
-                or user.token_version != token_version
-            ):
+            if not user or user.username != username or user.token_version != token_version:
                 raise credentials_exception
 
             return UserModel.from_entity(user)
     except Exception:
-        raise credentials_exception
+        raise credentials_exception from None
 
 
 async def get_current_active_user(
@@ -67,9 +61,7 @@ async def get_current_active_user(
     if current_user.status != UserStatus.ACTIVE:
         raise DetailedHTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=ErrorDetail(
-                code="INACTIVE_USER", message="User account is not active"
-            ),
+            detail=ErrorDetail(code="INACTIVE_USER", message="User account is not active"),
         )
     return current_user
 
@@ -89,7 +81,7 @@ async def get_current_admin_user(
 
 
 @router_v1.post("/token")
-async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+async def token(request: Request, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
     """"""
     response = await login(
         request,
@@ -108,9 +100,7 @@ async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     else:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(
-                code="TOKEN_RESPONSE_ERROR", message="Invalid token response format"
-            ),
+            detail=ErrorDetail(code="TOKEN_RESPONSE_ERROR", message="Invalid token response format"),
         )
 
 
@@ -118,32 +108,26 @@ async def token(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 async def login(request: Request, data: LoginRequest) -> APIResponse[LoginResponse]:
     """"""
     try:
-        result = token_service.authenticate_user(
-            username=data.username, password=data.password, request=request
-        )
+        result = token_service.authenticate_user(username=data.username, password=data.password, request=request)
         return APIResponse(status=ResponseStatus.SUCCESS, data=result)
     except Exception as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ErrorDetail(code="AUTHENTICATION_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.post("/refresh-token", response_model=APIResponse[RefreshTokenResponse])
-async def refresh_token(
-    request: Request, data: RefreshTokenRequest
-) -> APIResponse[RefreshTokenResponse]:
+async def refresh_token(request: Request, data: RefreshTokenRequest) -> APIResponse[RefreshTokenResponse]:
     """"""
     try:
-        result = token_service.refresh_access_token(
-            refresh_token=data.refresh_token, request=request
-        )
+        result = token_service.refresh_access_token(refresh_token=data.refresh_token, request=request)
         return APIResponse(status=ResponseStatus.SUCCESS, data=result)
     except Exception as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ErrorDetail(code="TOKEN_REFRESH_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.get("/profile", response_model=APIResponse[UserProfileResponse])
@@ -160,7 +144,7 @@ async def read_users_me(
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(code="USER_PROFILE_ERROR", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.post("/change-password", response_model=APIResponse[OperationResult])
@@ -186,4 +170,4 @@ async def change_password(
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(code="CHANGE_PASSWORD_ERROR", message=str(e)),
-        )
+        ) from e

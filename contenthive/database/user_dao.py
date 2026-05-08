@@ -124,8 +124,8 @@ class UserDAO:
                     updated_at=user.updated_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
 
     def get_user_by_id(self, user_id: int) -> UserEntity | None:
         """Retrieve a user by ID"""
@@ -148,8 +148,8 @@ class UserDAO:
                     updated_at=user.updated_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
 
     def get_profile_by_user_id(self, user_id: int) -> ProfileEntity | None:
         """Retrieve a user profile by user ID"""
@@ -166,8 +166,8 @@ class UserDAO:
                     updated_at=profile.updated_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
 
     def update_user_password(
         self, user_id: int, new_password_hash: str, force_password_change: bool = True
@@ -183,9 +183,9 @@ class UserDAO:
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def update_last_login(self, user_id: int) -> bool:
         """Update the last login time for a user"""
@@ -197,9 +197,9 @@ class UserDAO:
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def upsert_session(
         self,
@@ -276,8 +276,8 @@ class UserDAO:
                     last_accessed_at=sess.last_accessed_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
 
     def list_all_users(self) -> list[tuple[UserEntity, ProfileEntity]]:
         """List all users in the database"""
@@ -314,8 +314,8 @@ class UserDAO:
                     profile = ProfileEntity(user_id=user_orm.id)
                 users.append((user, profile))
             return users
-        except Exception:
-            raise ValueError("Database error occurred")
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
 
     def update_user_status(self, user_id: int, status: UserStatus) -> bool:
         """Update the active status of a user"""
@@ -328,9 +328,9 @@ class UserDAO:
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def cleanup_expired_sessions(self) -> int:
         """
@@ -349,9 +349,9 @@ class UserDAO:
                 session.delete(sess)
             session.commit()
             return count
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def revoke_session_by_jti(self, user_id: int, jti: str) -> bool:
         """
@@ -369,9 +369,9 @@ class UserDAO:
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def revoke_all_user_sessions(self, user_id: int) -> int:
         """
@@ -386,9 +386,9 @@ class UserDAO:
                 sess.revoked = True
             session.commit()
             return len(sessions)
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def delete_revoked_sessions(self) -> int:
         """
@@ -404,6 +404,6 @@ class UserDAO:
                 session.delete(sess)
             session.commit()
             return count
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e

@@ -449,10 +449,7 @@ class TaskDAO:
             }
             sort_field = sort_field_map.get(sort_by, MainTask.created_at)
 
-            if order.lower() == "asc":
-                stmt = stmt.order_by(sort_field.asc())
-            else:
-                stmt = stmt.order_by(sort_field.desc())
+            stmt = stmt.order_by(sort_field.asc()) if order.lower() == "asc" else stmt.order_by(sort_field.desc())
 
             stmt = stmt.limit(limit).offset(offset)
 

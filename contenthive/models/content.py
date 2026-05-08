@@ -4,7 +4,7 @@ Models for content-related operations.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -226,14 +226,14 @@ class PaginationInfo(APIBaseModel):
     total_pages: int = Field(..., description="Total number of pages", ge=0)
 
 
-class PaginatedResponse(APIBaseModel, Generic[T]):
+class PaginatedResponse[T](APIBaseModel):
     """Paginated response model"""
 
     items: list[T] = Field(..., description="List of items")
     pagination: PaginationInfo = Field(..., description="Pagination information")
 
 
-class SyncResponse(APIBaseModel, Generic[T]):
+class SyncResponse[T](APIBaseModel):
     """Sync response model with server timestamp"""
 
     items: list[T] = Field(..., description="List of items")

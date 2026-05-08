@@ -343,7 +343,8 @@ class UserParseResult(Base, TimestampMixin):
         nullable=False,
     )
 
-    # Extension fields can be added here if needed, such as flags or notes related to the user's interaction with the parse result.
+    # Extension fields can be added here if needed, such as flags or notes
+    # related to the user's interaction with the parse result.
 
 
 class MainTask(Base, TimestampMixin):

@@ -49,7 +49,7 @@ class TaskQueue:
                 *self._running_tasks.values(), return_exceptions=True
             )
             # Log any exceptions from running tasks
-            for task_id, result in zip(list(self._running_tasks.keys()), results):
+            for task_id, result in zip(list(self._running_tasks.keys()), results, strict=True):
                 if isinstance(result, Exception):
                     logger.error(f"Task {task_id} failed during shutdown: {result}")
             self._running_tasks.clear()

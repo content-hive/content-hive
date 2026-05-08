@@ -44,7 +44,7 @@ class ContentService:
 
         parser_domains = [
             domain
-            for domain in manager.services.keys()
+            for domain in manager.services
             if "can_parse" in manager.services.get(domain, {})
         ]
 
@@ -110,7 +110,7 @@ class ContentService:
             return result
         except Exception as e:
             logger.exception(f"Error fetching content from URL {url}")
-            raise ValueError(f"Failed to parse URL content: {e}")
+            raise ValueError(f"Failed to parse URL content: {e}") from e
 
     async def list_contents(
         self,
@@ -330,7 +330,8 @@ class ContentService:
             if success and file_paths:
                 deleted, failed = media_service.delete_media_files(file_paths)
                 logger.info(
-                    f"Deleted parse result {parse_result_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)"
+                    f"Deleted parse result {parse_result_id}: {len(file_paths)} files"
+                    f" ({deleted} deleted, {failed} failed)"
                 )
 
             return success

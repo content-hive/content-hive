@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -35,7 +35,7 @@ class ErrorDetail(APIBaseModel):
     )
 
 
-class APIResponse(APIBaseModel, Generic[T]):
+class APIResponse[T](APIBaseModel):
     """API response model"""
 
     status: ResponseStatus = Field(..., description="Response status")

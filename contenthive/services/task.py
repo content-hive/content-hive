@@ -510,7 +510,7 @@ class TaskService:
             return result
 
         except Exception as e:
-            error_msg = f"Task execution failed: {str(e)}"
+            error_msg = f"Task execution failed: {e!s}"
             logger.exception(f"Main task {task.task_id} (ID: {id}) failed")
             self.update_main_task_status(id, TaskStatus.FAILED, error_message=error_msg)
             raise
@@ -575,7 +575,8 @@ class TaskService:
             author_uid = parse_result.author.uid if parse_result.author else "unknown"
 
             logger.info(
-                f"[{task.task_id}] Parse completed: platform={platform_code}, author={author_uid}, media_count={media_count}"
+                f"[{task.task_id}] Parse completed: platform={platform_code},"
+                f" author={author_uid}, media_count={media_count}"
             )
 
             # ========== Phase 3: Save Parse Result ==========
@@ -586,7 +587,7 @@ class TaskService:
                     )
             except Exception as e:
                 logger.exception(f"[{task.task_id}] Failed to save parse result")
-                raise ValueError(f"Failed to save parse result to database: {e}")
+                raise ValueError(f"Failed to save parse result to database: {e}") from e
 
             # ========== Phase 4: Handle Media Downloads ==========
             if not parse_result.media or media_count == 0:
@@ -673,7 +674,8 @@ class TaskService:
             )
 
             logger.info(
-                f"[{task.task_id}] Download phase completed: {len(success_downloads)} succeeded, {len(failed_downloads)} failed"
+                f"[{task.task_id}] Download phase completed:"
+                f" {len(success_downloads)} succeeded, {len(failed_downloads)} failed"
             )
 
             # ========== Phase 6: Save Downloaded Media ==========
@@ -787,7 +789,7 @@ class TaskService:
         success_downloads: list[DownloadedMediaInfo],
         failed_downloads: list[dict[str, Any]],
         saved_media_count: int = 0,
-        saved_media_ids: list[int] = [],
+        saved_media_ids: list[int] | None = None,
     ) -> dict[str, Any]:
         """
         Build comprehensive task result dictionary.
@@ -1284,7 +1286,8 @@ class TaskService:
                 return
 
             logger.info(
-                f"Marking {len(waiting_tasks)} linked tasks as {primary_task.status.value} for primary task {primary_task_id}"
+                f"Marking {len(waiting_tasks)} linked tasks as {primary_task.status.value}"
+                f" for primary task {primary_task_id}"
             )
 
             # Mark all linked tasks with the same status and error
@@ -1304,7 +1307,8 @@ class TaskService:
                             commit=True,
                         )
                     logger.debug(
-                        f"Marked linked task {linked_task.task_id} (ID: {linked_task.id}) as {primary_task.status.value}"
+                        f"Marked linked task {linked_task.task_id} (ID: {linked_task.id})"
+                        f" as {primary_task.status.value}"
                     )
                 except Exception:
                     logger.exception(f"Failed to update linked task {linked_task.id}")

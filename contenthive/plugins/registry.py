@@ -1,10 +1,10 @@
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from contenthive.plugins.contracts import PluginConfigSchema
 
 
-class PluginState(str, Enum):
+class PluginState(StrEnum):
     """
     Plugin state enumeration (Home Assistant-style).
 

@@ -8,6 +8,7 @@ import mimetypes
 import os
 import shutil
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import quote
 
 import aiofiles
@@ -108,7 +109,7 @@ class MediaService:
                 )
             else:
                 logger.debug("Using built-in downloader")
-                media_urls = [media.url] + list(media.url_fallbacks or [])
+                media_urls = [media.url, *list(media.url_fallbacks or [])]
                 cover_urls = ([media.cover] if media.cover else []) + list(
                     media.cover_fallbacks or []
                 )
@@ -339,7 +340,7 @@ class MediaService:
 
     # Normalise extensions that mimetypes.guess_extension returns inconsistently
     # across platforms (e.g. .jpe / .jpeg → .jpg on some systems).
-    _EXT_NORMALISE: dict[str, str] = {
+    _EXT_NORMALISE: ClassVar[dict[str, str]] = {
         ".jpe": ".jpg",
         ".jpeg": ".jpg",
     }
@@ -404,8 +405,8 @@ class MediaService:
             )
         try:
             resolved = original.resolve(strict=True)
-        except OSError:
-            raise RuntimeError(f"Plugin returned non-existent path: {original}")
+        except OSError as e:
+            raise RuntimeError(f"Plugin returned non-existent path: {original}") from e
         if not resolved.is_file():
             raise RuntimeError(
                 f"Plugin returned invalid path (not a regular file): {resolved}"

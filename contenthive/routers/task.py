@@ -48,7 +48,7 @@ async def create_parser_task(
         raise DetailedHTTPException(
             status_code=500,
             detail=ErrorDetail(code="TASK_CREATION_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.delete("/parser/{task_id}", response_model=APIResponse[OperationResult])
@@ -113,7 +113,7 @@ async def cancel_parser_task(
         raise DetailedHTTPException(
             status_code=500,
             detail=ErrorDetail(code="TASK_CANCEL_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.get("/parser/{task_id}", response_model=APIResponse[MainTaskInfo])
@@ -161,7 +161,7 @@ async def get_parser_task(
         raise DetailedHTTPException(
             status_code=500,
             detail=ErrorDetail(code="TASK_QUERY_FAILED", message=str(e)),
-        )
+        ) from e
 
 
 @router_v1.get("/parser", response_model=APIResponse[PaginatedResponse[MainTaskInfo]])
@@ -206,4 +206,4 @@ async def list_parser_tasks(
     except Exception as e:
         raise DetailedHTTPException(
             status_code=500, detail=ErrorDetail(code="TASK_LIST_FAILED", message=str(e))
-        )
+        ) from e

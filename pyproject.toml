@@ -27,11 +27,15 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 88
+line-length = 120
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "RUF", "SIM"]
+ignore = [
+    "B008",    # FastAPI Query/Depends in function defaults is intentional
+    "UP007",   # Allow `X | Y` vs `Optional[X]` — pydantic handles both
+]
 
 [tool.ruff.format]
 quote-style = "double"

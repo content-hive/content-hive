@@ -38,15 +38,13 @@ class SecretManager:
     @staticmethod
     def password_strength(password: str) -> bool:
         """Check if the password meets strength requirements"""
-        if (
+        return not (
             len(password) < 8
             or not any(c.islower() for c in password)
             or not any(c.isupper() for c in password)
             or not any(c.isdigit() for c in password)
             or not any(c in "!@#$%^&*" for c in password)
-        ):
-            return False
-        return True
+        )
 
     @staticmethod
     def generate_random_password(length: int = 12) -> str:
@@ -146,8 +144,8 @@ class SecretManager:
         try:
             payload = jwt.decode(token, secret_key, algorithms=algorithms)
             return payload
-        except JWTError:
-            raise ValueError("Invalid token")
+        except JWTError as e:
+            raise ValueError("Invalid token") from e
 
 
 # Global singleton instance
