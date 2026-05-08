@@ -1,24 +1,25 @@
-
-from typing import Optional
 import os
 
-from contenthive.database.user_dao import UserDAO
 from contenthive.core.secret import secret_manager
+from contenthive.database.user_dao import UserDAO
 from contenthive.models.enumerates import UserStatus
 from contenthive.models.user import UserCreateResponse, UserProfileResponse
 
+
 class UserService:
-    def __init__(self, ):
+    def __init__(
+        self,
+    ):
         pass
 
     def create_user(
-            self,
-            created_by: int,
-            username: str,
-            password: str,
-            email: Optional[str] = None, 
-            is_admin: bool = False
-        ) -> UserCreateResponse:
+        self,
+        created_by: int,
+        username: str,
+        password: str,
+        email: str | None = None,
+        is_admin: bool = False,
+    ) -> UserCreateResponse:
         """Create a new user and return the user ID"""
         with UserDAO() as dao:
             if dao.user_exists(username=username, email=email):
@@ -27,17 +28,17 @@ class UserService:
             password_hash = secret_manager.hash_password(password)
             user_id = dao.create_user(username, password_hash, email, is_admin, created_by)
             user = dao.get_user_by_id(user_id)
-            
+
             if not user:
                 raise ValueError("Failed to create user")
-            
+
             return UserCreateResponse.from_entity(user)
-        
-    def create_admin_user(self) -> Optional[tuple[str, str]]:
+
+    def create_admin_user(self) -> tuple[str, str] | None:
         """
         Create initial admin user. Returns (username, password) only on creation,
         None if admin already exists or password was set via environment variable.
-        
+
         Password can be set via ADMIN_PASSWORD environment variable for automated setups,
         otherwise a secure random password is generated.
         """
@@ -59,23 +60,23 @@ class UserService:
             else:
                 # Generate secure random password
                 password = secret_manager.generate_random_password()
-            
+
             password_hash = secret_manager.hash_password(password)
 
             dao.create_user(
                 username=username,
                 password_hash=password_hash,
                 is_admin=True,
-                created_by=0
+                created_by=0,
             )
-            
+
             # Only return password if it was auto-generated
             # If set via env var, don't return it (assume deployer knows it)
             if os.getenv("ADMIN_PASSWORD"):
                 return None
-            
+
             return username, password
-    
+
     def change_user_password(self, user_id: int, new_password: str) -> bool:
         """Change the password for a given user"""
         if not secret_manager.password_strength(new_password):
@@ -85,19 +86,19 @@ class UserService:
             user = dao.get_user_by_id(user_id)
             if not user:
                 raise ValueError("User not found")
-            
+
             new_password_hash = secret_manager.hash_password(new_password)
             result = dao.update_user_password(user.id, new_password_hash, force_password_change=False)
             dao.revoke_all_user_sessions(user.id)
             return result
-    
+
     def reset_user_password(self, user_id: int) -> str:
         """Reset the password for a given user and return the new password"""
         with UserDAO() as dao:
             user = dao.get_user_by_id(user_id)
             if not user:
                 raise ValueError("User not found")
-            
+
             new_password = secret_manager.generate_random_password()
             new_password_hash = secret_manager.hash_password(new_password)
             result = dao.update_user_password(user.id, new_password_hash, force_password_change=True)
@@ -105,7 +106,7 @@ class UserService:
             if not result:
                 raise ValueError("Failed to update user password")
             return new_password
-    
+
     def get_user_profile(self, user_id: int) -> UserProfileResponse:
         """Retrieve user profile by user ID"""
         with UserDAO() as dao:
@@ -113,7 +114,7 @@ class UserService:
             profile = dao.get_profile_by_user_id(user_id)
             if not user or not profile:
                 raise ValueError("User not found")
-            
+
             return UserProfileResponse.from_entities(user, profile)
 
     def list_users(self) -> list[UserProfileResponse]:
@@ -128,8 +129,9 @@ class UserService:
             user = dao.get_user_by_id(user_id)
             if not user:
                 raise ValueError("User not found")
-            
+
             result = dao.update_user_status(user.id, status)
             return result
+
 
 user_service = UserService()

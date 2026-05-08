@@ -1,13 +1,15 @@
 import os
 from pathlib import Path
+
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings
-from pydantic import computed_field, Field
+
 
 class Settings(BaseSettings):
     """
     Application configuration settings.
     """
-    
+
     # Application settings
     environment: str = os.getenv("ENVIRONMENT", "production")
     debug: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
@@ -37,7 +39,6 @@ class Settings(BaseSettings):
         "Safari/537.36 Edg/143.0.0.0"
     )
 
-
     @computed_field
     @property
     def database_path(self) -> Path:
@@ -48,8 +49,10 @@ class Settings(BaseSettings):
     def media_dir(self) -> Path:
         return self.data_dir / "media"
 
+
 # Instantiate settings
 settings = Settings()
+
 
 def ensure_directories():
     """

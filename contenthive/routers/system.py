@@ -1,9 +1,10 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, BackgroundTasks, status
+
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 
 from contenthive.const import APP_NAME, APP_VERSION
+from contenthive.core.restart import RestartType, get_restart_manager
 from contenthive.logger import logger
-from contenthive.core.restart import get_restart_manager, RestartType
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.enumerates import ResponseStatus
 from contenthive.models.system import HealthResponse, RestartResponse
@@ -31,8 +32,8 @@ async def restart_application(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(
                 code="RESTART_MANAGER_NOT_INITIALIZED",
-                message="Restart manager not initialized"
-            )
+                message="Restart manager not initialized",
+            ),
         )
 
     restart_type = RestartType.SAFE_MODE if safe_mode else RestartType.RESTART
@@ -41,10 +42,7 @@ async def restart_application(
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,
-        data=RestartResponse(
-            type=restart_type.value,
-            message="Application will restart in 1 second"
-        )
+        data=RestartResponse(type=restart_type.value, message="Application will restart in 1 second"),
     )
 
 
@@ -52,9 +50,7 @@ async def restart_application(
 async def health_check() -> APIResponse[HealthResponse]:
     """Health check"""
     plugin_manager = get_plugin_manager()
-    plugin_updates_available = bool(
-        plugin_manager and any(plugin_manager._available_updates.values())
-    )
+    plugin_updates_available = bool(plugin_manager and any(plugin_manager._available_updates.values()))
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,
@@ -62,5 +58,5 @@ async def health_check() -> APIResponse[HealthResponse]:
             app=APP_NAME,
             version=APP_VERSION,
             plugin_updates_available=plugin_updates_available,
-        )
+        ),
     )

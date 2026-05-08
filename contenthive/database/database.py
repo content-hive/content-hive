@@ -1,14 +1,14 @@
 """Database configuration and initialization"""
+
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
 from alembic.config import Config
-from alembic import command
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from alembic import command
 from contenthive.config import settings
-from contenthive.database.orm_models import Base
 from contenthive.logger import logger
 
 # SQLAlchemy engine and session factory
@@ -23,7 +23,7 @@ def get_engine():
         _engine = create_engine(
             f"sqlite:///{settings.database_path}",
             connect_args={"check_same_thread": False},
-            echo=False
+            echo=False,
         )
     return _engine
 
@@ -52,6 +52,7 @@ def initialize_db():
     _run_migrations()
 
     from contenthive.services.user import user_service
+
     try:
         result = user_service.create_admin_user()
         if result:
@@ -66,7 +67,7 @@ def _write_admin_credentials(username: str, password: str) -> None:
     Only called on first-time admin user creation.
     """
     credentials_file = settings.data_dir / ".admin_credentials"
-    
+
     try:
         # Write credentials to file
         credentials_file.write_text(
@@ -77,13 +78,13 @@ def _write_admin_credentials(username: str, password: str) -> None:
             f"IMPORTANT: Change this password immediately after first login.\n"
             f"This file should be deleted after you've recorded the credentials.\n"
         )
-        
+
         # Set restrictive permissions (owner read/write only)
         credentials_file.chmod(0o600)
-        
+
         logger.info("Admin credentials saved to: %s", credentials_file)
         logger.warning("Please retrieve admin credentials and delete the credentials file")
-        
+
     except Exception as e:
         logger.exception("Could not write admin credentials file: %s", e)
         # Print directly to stderr (bypasses rotating log files) so the

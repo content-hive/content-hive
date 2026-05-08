@@ -2,7 +2,7 @@
 Plugin contract types. This is the stable interface between Content Hive
 and its plugins. Plugins must only import from contenthive.plugins.*.
 """
-from typing import Optional
+
 from pydantic import BaseModel, ConfigDict, Field
 
 # Re-export enums from enumerates so plugins only need to import from here
@@ -40,50 +40,55 @@ class PluginConfigSchema(BaseModel):
 
         CONFIG_SCHEMA = ConfigSchema
     """
+
     model_config = ConfigDict(extra="ignore")
 
 
 class ParserMediaInfo(BaseModel):
     """Media information exchanged between plugins and the core."""
+
     url: str
-    type: Optional[MediaType] = None
-    title: Optional[str] = None
-    cover: Optional[str] = None
-    duration: Optional[int] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    url_fallbacks: Optional[list[str]] = None
-    cover_fallbacks: Optional[list[str]] = None
+    type: MediaType | None = None
+    title: str | None = None
+    cover: str | None = None
+    duration: int | None = None
+    width: int | None = None
+    height: int | None = None
+    url_fallbacks: list[str] | None = None
+    cover_fallbacks: list[str] | None = None
 
 
 class ParserPlatformInfo(BaseModel):
     """Platform information exchanged between plugins and the core."""
+
     code: str
     name: str
     url: str
-    icon_url: Optional[str] = None
+    icon_url: str | None = None
 
 
 class ParserAuthorInfo(BaseModel):
     """Author information exchanged between plugins and the core."""
+
     uid: str
-    name: Optional[str] = None
+    name: str | None = None
     username: str
-    avatar: Optional[str] = None
-    url: Optional[str] = None
-    banner: Optional[str] = None
-    description: Optional[str] = None
+    avatar: str | None = None
+    url: str | None = None
+    banner: str | None = None
+    description: str | None = None
 
 
 class ParserResult(BaseModel):
     """Full parse result returned by a plugin's parse service."""
+
     pid: str
     url: str
-    title: Optional[str] = None
-    content: Optional[str] = None
+    title: str | None = None
+    content: str | None = None
     media: list[ParserMediaInfo] = Field(default_factory=list)
     author: ParserAuthorInfo
     platform: ParserPlatformInfo
-    post_time: Optional[int] = None
+    post_time: int | None = None
     parser: str
     state: ParserResultStatus

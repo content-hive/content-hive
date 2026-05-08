@@ -2,10 +2,11 @@
 Plugin management service.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from packaging.version import InvalidVersion
 from pydantic import TypeAdapter, ValidationError
 
 from contenthive.config import settings
@@ -28,11 +29,21 @@ from contenthive.models.plugin import (
     UpdatePluginConfigResponse,
     UpdatePluginsResponse,
 )
-from contenthive.plugins.config import FRAMEWORK_KEYS, plugin_get_config, plugin_save_config, remove_plugin_config, set_plugin_field
+from contenthive.plugins.config import (
+    FRAMEWORK_KEYS,
+    plugin_get_config,
+    plugin_save_config,
+    remove_plugin_config,
+    set_plugin_field,
+)
 from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
-from packaging.version import InvalidVersion
-from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, is_plugin_update_available
+from contenthive.plugins.manager import (
+    PluginEntryData,
+    PluginManager,
+    get_plugin_manager,
+    is_plugin_update_available,
+)
 from contenthive.plugins.registry import PluginState
 
 _PYTHON_TYPE_TO_FIELD_TYPE: dict[type, SettingFieldType] = {
@@ -45,6 +56,7 @@ _PYTHON_TYPE_TO_FIELD_TYPE: dict[type, SettingFieldType] = {
 
 class ConfigValidationError(Exception):
     """Raised when plugin config fails schema validation."""
+
     def __init__(self, errors: list[str]):
         self.errors = errors
         super().__init__("; ".join(errors))
@@ -83,17 +95,19 @@ def _schema_class_to_setting_items(schema_cls: type, config_obj: PluginConfigSch
         if isinstance(raw_value, Enum):
             raw_value = raw_value.value
 
-        items.append(SettingItem(
-            key=field_name,
-            type=field_type,
-            label=label,
-            description=field_info.description,
-            required=required,
-            secret=secret,
-            default=default,
-            options=options,
-            value=raw_value,
-        ))
+        items.append(
+            SettingItem(
+                key=field_name,
+                type=field_type,
+                label=label,
+                description=field_info.description,
+                required=required,
+                secret=secret,
+                default=default,
+                options=options,
+                value=raw_value,
+            )
+        )
     return items
 
 
@@ -141,14 +155,12 @@ def _validate_partial_config(
             # Enum: check that value is a string matching one of the enum member values
             valid_values = [e.value for e in annotation]
             if value not in valid_values:
-                errors.append(
-                    f"Key '{key}': '{value}' is not a valid option, must be one of {valid_values}"
-                )
+                errors.append(f"Key '{key}': '{value}' is not a valid option, must be one of {valid_values}")
         else:
             try:
                 TypeAdapter(annotation).validate_python(value, strict=True)
             except Exception:
-                expected = getattr(annotation, '__name__', str(annotation))
+                expected = getattr(annotation, "__name__", str(annotation))
                 actual = type(value).__name__
                 errors.append(f"Key '{key}': expected {expected}, got {actual} ({value!r})")
 
@@ -196,7 +208,7 @@ class PluginService:
                 success = await plugin_manager.async_reload(domain)
                 results[domain] = "reloaded" if success else "failed"
             except Exception as e:
-                results[domain] = f"error: {str(e)}"
+                results[domain] = f"error: {e!s}"
                 logger.exception(f"Failed to reload {domain}: {e}")
 
         return ReloadResponse(message="Configuration reloaded", plugins=results)
@@ -255,7 +267,9 @@ class PluginService:
             except InvalidVersion:
                 logger.warning(
                     "Plugin %s: invalid version string (local=%s, remote=%s)",
-                    domain, record.version, latest,
+                    domain,
+                    record.version,
+                    latest,
                 )
                 update_available = False
             plugins_info[domain] = PluginUpdateInfo(
@@ -265,7 +279,7 @@ class PluginService:
             )
 
         return CheckUpdatesResponse(
-            checked_at=plugin_manager._last_update_check or datetime.now(timezone.utc),
+            checked_at=plugin_manager._last_update_check or datetime.now(UTC),
             plugins=plugins_info,
         )
 
@@ -358,16 +372,18 @@ class PluginService:
             if not domain or not version:
                 continue
             local = installed.get(domain)
-            result.append(AvailablePluginInfo(
-                domain=domain,
-                name=plugin.get("name", domain),
-                version=version,
-                description=plugin.get("description"),
-                author=plugin.get("author"),
-                disclaimer=plugin.get("disclaimer"),
-                installed=local is not None,
-                installed_version=local.version if local else None,
-            ))
+            result.append(
+                AvailablePluginInfo(
+                    domain=domain,
+                    name=plugin.get("name", domain),
+                    version=version,
+                    description=plugin.get("description"),
+                    author=plugin.get("author"),
+                    disclaimer=plugin.get("disclaimer"),
+                    installed=local is not None,
+                    installed_version=local.version if local else None,
+                )
+            )
 
         return AvailablePluginsResponse(plugins=result)
 
@@ -396,7 +412,6 @@ class PluginService:
 
         return PluginListResponse(plugins=plugin_status)
 
-
     async def disable(self, domain: str) -> OperationResult:
         """Unload all active config entries for a plugin and mark it disabled.
 
@@ -416,17 +431,19 @@ class PluginService:
         if domain not in plugin_manager.plugins:
             raise ValueError(f"Plugin '{domain}' not found")
 
-        entries = [
-            entry for entry in plugin_manager.config_entries.values()
-            if entry.domain == domain
-        ]
+        entries = [entry for entry in plugin_manager.config_entries.values() if entry.domain == domain]
         for entry in entries:
             await plugin_manager.async_unload_entry(entry.entry_id)
 
         plugin_manager.plugins[domain].state = PluginState.DISABLED
         set_plugin_field(domain, "disabled", True)
 
-        return OperationResult(operation=OperationType.DISABLE, id=domain, success=True, message=f"Plugin '{domain}' disabled")
+        return OperationResult(
+            operation=OperationType.DISABLE,
+            id=domain,
+            success=True,
+            message=f"Plugin '{domain}' disabled",
+        )
 
     async def enable(self, domain: str) -> OperationResult:
         """Set up and activate a previously disabled plugin.
@@ -454,18 +471,28 @@ class PluginService:
             record = plugin_manager.plugins[domain]
             if record.state == PluginState.ENABLED:
                 set_plugin_field(domain, "disabled", False)
-                return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' is already enabled")
+                return OperationResult(
+                    operation=OperationType.ENABLE,
+                    id=domain,
+                    success=True,
+                    message=f"Plugin '{domain}' is already enabled",
+                )
 
         set_plugin_field(domain, "disabled", False)
 
         if not await plugin_manager.async_setup(domain):
             raise RuntimeError(f"Plugin '{domain}' setup failed")
-        
+
         entry = PluginEntryData(entry_id=entry_id, domain=domain, data={})
         if not await plugin_manager.async_setup_entry(entry):
             raise RuntimeError(f"Plugin '{domain}' enable failed")
 
-        return OperationResult(operation=OperationType.ENABLE, id=domain, success=True, message=f"Plugin '{domain}' enabled")
+        return OperationResult(
+            operation=OperationType.ENABLE,
+            id=domain,
+            success=True,
+            message=f"Plugin '{domain}' enabled",
+        )
 
     async def delete(self, domain: str) -> OperationResult:
         """Unload, remove from registry, and delete the plugin directory from disk.
@@ -491,8 +518,12 @@ class PluginService:
         except Exception as e:
             raise RuntimeError(f"Plugin '{domain}' deleted but failed to update plugins.yaml: {e}") from e
 
-        return OperationResult(operation=OperationType.DELETE, id=domain, success=True, message=f"Plugin '{domain}' deleted")
-
+        return OperationResult(
+            operation=OperationType.DELETE,
+            id=domain,
+            success=True,
+            message=f"Plugin '{domain}' deleted",
+        )
 
     def get_plugin_settings(self, domain: str) -> PluginConfigResponse:
         """Return the settings schema with current config values for a plugin.
@@ -522,7 +553,10 @@ class PluginService:
             config_obj = plugin_get_config(domain, schema_cls)
         except ValidationError as e:
             raise ConfigValidationError(
-                [f"Persisted config is invalid: {err['loc'][0] if err['loc'] else 'root'}: {err['msg']}" for err in e.errors()]
+                [
+                    f"Persisted config is invalid: {err['loc'][0] if err['loc'] else 'root'}: {err['msg']}"
+                    for err in e.errors()
+                ]
             ) from e
         return PluginConfigResponse(
             domain=domain,
@@ -569,7 +603,10 @@ class PluginService:
             current = plugin_get_config(domain, schema_cls)
         except ValidationError as e:
             raise ConfigValidationError(
-                [f"Persisted config is invalid: {err['loc'][0] if err['loc'] else 'root'}: {err['msg']}" for err in e.errors()]
+                [
+                    f"Persisted config is invalid: {err['loc'][0] if err['loc'] else 'root'}: {err['msg']}"
+                    for err in e.errors()
+                ]
             ) from e
         errors = _validate_partial_config(schema_cls, body.config, stored=current.model_dump())
         if errors:

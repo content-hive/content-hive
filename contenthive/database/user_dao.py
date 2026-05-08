@@ -1,16 +1,16 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from contenthive.database.database import get_engine, get_session_local
-from contenthive.database.orm_models import User, Profile, Session as SessionModel
+from contenthive.database.orm_models import Profile, User
+from contenthive.database.orm_models import Session as SessionModel
 from contenthive.models.enumerates import UserStatus
 from contenthive.models.user import ProfileEntity, SessionEntity, UserEntity
 
 
 class UserDAO:
-    
     def __init__(self):
         self.engine = get_engine()
         self.SessionLocal = get_session_local()
@@ -36,7 +36,7 @@ class UserDAO:
             self.session.close()
             self.session = None
 
-    def user_exists(self, username: Optional[str] = None, email: Optional[str] = None) -> bool:
+    def user_exists(self, username: str | None = None, email: str | None = None) -> bool:
         """Check if a user exists by username or email"""
         session = self._get_session()
         try:
@@ -53,15 +53,15 @@ class UserDAO:
             return result is not None
         except Exception:
             raise
-    
+
     def create_user(
-            self,
-            username: str,
-            password_hash: str,
-            email: Optional[str] = None,
-            is_admin: bool = False,
-            created_by: int = 0
-        ) -> int:
+        self,
+        username: str,
+        password_hash: str,
+        email: str | None = None,
+        is_admin: bool = False,
+        created_by: int = 0,
+    ) -> int:
         """Create a new user and return its ID"""
         session = self._get_session()
         try:
@@ -71,7 +71,7 @@ class UserDAO:
                 password_hash=password_hash,
                 status=UserStatus.ACTIVE,
                 is_admin=is_admin,
-                created_by=created_by
+                created_by=created_by,
             )
             session.add(user)
             session.flush()  # Flush to get the user_id without committing
@@ -84,7 +84,7 @@ class UserDAO:
             if "UNIQUE constraint failed" in str(e):
                 raise ValueError("Username or email already exists") from e
             raise
-    
+
     def _create_profile(self, user_id: int, commit: bool = True):
         """Create a profile for a user"""
         session = self._get_session()
@@ -97,8 +97,8 @@ class UserDAO:
             if commit:
                 session.rollback()
             raise ValueError("Profile already exists for this user") from e
-        
-    def get_user_by_username(self, username: str) -> Optional[UserEntity]:
+
+    def get_user_by_username(self, username: str) -> UserEntity | None:
         """Retrieve a user by username"""
         session = self._get_session()
         try:
@@ -120,10 +120,10 @@ class UserDAO:
                     updated_at=user.updated_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
 
-    def get_user_by_id(self, user_id: int) -> Optional[UserEntity]:
+    def get_user_by_id(self, user_id: int) -> UserEntity | None:
         """Retrieve a user by ID"""
         session = self._get_session()
         try:
@@ -144,10 +144,10 @@ class UserDAO:
                     updated_at=user.updated_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
-    
-    def get_profile_by_user_id(self, user_id: int) -> Optional[ProfileEntity]:
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
+
+    def get_profile_by_user_id(self, user_id: int) -> ProfileEntity | None:
         """Retrieve a user profile by user ID"""
         session = self._get_session()
         try:
@@ -162,8 +162,8 @@ class UserDAO:
                     updated_at=profile.updated_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
 
     def update_user_password(self, user_id: int, new_password_hash: str, force_password_change: bool = True) -> bool:
         """Update the password hash for a user"""
@@ -177,9 +177,9 @@ class UserDAO:
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def update_last_login(self, user_id: int) -> bool:
         """Update the last login time for a user"""
@@ -187,33 +187,28 @@ class UserDAO:
         try:
             user = session.get(User, user_id)
             if user:
-                user.last_login_at = datetime.now(timezone.utc)
+                user.last_login_at = datetime.now(UTC)
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
-
+            raise ValueError("Database error occurred") from e
 
     def upsert_session(
-            self,
-            user_id: int,
-            device_id: str,
-            token_jti: str,
-            expires_at: datetime,
-            ip_address: Optional[str] = None,
-            user_agent: Optional[str] = None
-        ) -> int:
+        self,
+        user_id: int,
+        device_id: str,
+        token_jti: str,
+        expires_at: datetime,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> int:
         """Create a new session and return its ID"""
         session = self._get_session()
         try:
-            from datetime import datetime, timezone
-            
             # Check if session exists
-            stmt = select(SessionModel).where(
-                (SessionModel.user_id == user_id) & (SessionModel.device_id == device_id)
-            )
+            stmt = select(SessionModel).where((SessionModel.user_id == user_id) & (SessionModel.device_id == device_id))
             existing_session = session.execute(stmt).scalar_one_or_none()
 
             if existing_session:
@@ -223,7 +218,7 @@ class UserDAO:
                 existing_session.ip_address = ip_address
                 existing_session.user_agent = user_agent
                 existing_session.revoked = False
-                existing_session.last_accessed_at = datetime.now(timezone.utc)
+                existing_session.last_accessed_at = datetime.now(UTC)
                 session.commit()
                 return existing_session.id
             else:
@@ -234,7 +229,7 @@ class UserDAO:
                     token_jti=token_jti,
                     expires_at=expires_at,
                     ip_address=ip_address,
-                    user_agent=user_agent
+                    user_agent=user_agent,
                 )
                 session.add(new_session)
                 session.flush()
@@ -245,15 +240,12 @@ class UserDAO:
             if "UNIQUE constraint failed" in str(e):
                 raise ValueError("Session with given device ID or token JTI already exists") from e
             raise ValueError("Database error occurred") from e
-        
 
-    def get_session_by_jti(self, user_id: int, jti: str) -> Optional[SessionEntity]:
+    def get_session_by_jti(self, user_id: int, jti: str) -> SessionEntity | None:
         """Retrieve a session by user ID and token JTI"""
         session = self._get_session()
         try:
-            stmt = select(SessionModel).where(
-                (SessionModel.user_id == user_id) & (SessionModel.token_jti == jti)
-            )
+            stmt = select(SessionModel).where((SessionModel.user_id == user_id) & (SessionModel.token_jti == jti))
             sess = session.execute(stmt).scalar_one_or_none()
             if sess:
                 return SessionEntity(
@@ -269,9 +261,9 @@ class UserDAO:
                     last_accessed_at=sess.last_accessed_at,
                 )
             return None
-        except Exception:
-            raise ValueError("Database error occurred")
-        
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
+
     def list_all_users(self) -> list[tuple[UserEntity, ProfileEntity]]:
         """List all users in the database"""
         session = self._get_session()
@@ -307,9 +299,9 @@ class UserDAO:
                     profile = ProfileEntity(user_id=user_orm.id)
                 users.append((user, profile))
             return users
-        except Exception:
-            raise ValueError("Database error occurred")
-        
+        except Exception as e:
+            raise ValueError("Database error occurred") from e
+
     def update_user_status(self, user_id: int, status: UserStatus) -> bool:
         """Update the active status of a user"""
         session = self._get_session()
@@ -321,9 +313,9 @@ class UserDAO:
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def cleanup_expired_sessions(self) -> int:
         """
@@ -332,8 +324,7 @@ class UserDAO:
         """
         session = self._get_session()
         try:
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stmt = select(SessionModel).where(SessionModel.expires_at < now)
             expired_sessions = session.execute(stmt).scalars().all()
             count = len(expired_sessions)
@@ -341,9 +332,9 @@ class UserDAO:
                 session.delete(sess)
             session.commit()
             return count
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def revoke_session_by_jti(self, user_id: int, jti: str) -> bool:
         """
@@ -352,18 +343,16 @@ class UserDAO:
         """
         session = self._get_session()
         try:
-            stmt = select(SessionModel).where(
-                (SessionModel.user_id == user_id) & (SessionModel.token_jti == jti)
-            )
+            stmt = select(SessionModel).where((SessionModel.user_id == user_id) & (SessionModel.token_jti == jti))
             sess = session.execute(stmt).scalar_one_or_none()
             if sess:
                 sess.revoked = True
                 session.commit()
                 return True
             return False
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def revoke_all_user_sessions(self, user_id: int) -> int:
         """
@@ -378,9 +367,9 @@ class UserDAO:
                 sess.revoked = True
             session.commit()
             return len(sessions)
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e
 
     def delete_revoked_sessions(self) -> int:
         """
@@ -389,13 +378,13 @@ class UserDAO:
         """
         session = self._get_session()
         try:
-            stmt = select(SessionModel).where(SessionModel.revoked == True)
+            stmt = select(SessionModel).where(SessionModel.revoked.is_(True))
             revoked_sessions = session.execute(stmt).scalars().all()
             count = len(revoked_sessions)
             for sess in revoked_sessions:
                 session.delete(sess)
             session.commit()
             return count
-        except Exception:
+        except Exception as e:
             session.rollback()
-            raise ValueError("Database error occurred")
+            raise ValueError("Database error occurred") from e

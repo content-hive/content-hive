@@ -1,23 +1,34 @@
-from typing import Optional
-from datetime import datetime, timezone
-from sqlalchemy import exists, or_, select, func
+from datetime import UTC, datetime
+
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from contenthive.database.database import get_engine, get_session_local
 from contenthive.database.orm_models import (
-    Platform, Author, Media, ParseResult, ParseResultMedia,
-    UserPlatform, UserAuthor, UserParseResult
+    Author,
+    Media,
+    ParseResult,
+    ParseResultMedia,
+    Platform,
+    UserAuthor,
+    UserParseResult,
+    UserPlatform,
 )
+from contenthive.logger import logger
 from contenthive.models.content import (
-    DownloadedMediaInfo,
-    ParseResultEntity, 
     AuthorEntity,
-    PlatformEntity, 
-    MediaEntity     
+    DownloadedMediaInfo,
+    MediaEntity,
+    ParseResultEntity,
+    PlatformEntity,
 )
 from contenthive.models.enumerates import MediaStatus
-from contenthive.plugins.contracts import ParserAuthorInfo, ParserMediaInfo, ParserPlatformInfo, ParserResult
-from contenthive.logger import logger
+from contenthive.plugins.contracts import (
+    ParserAuthorInfo,
+    ParserMediaInfo,
+    ParserPlatformInfo,
+    ParserResult,
+)
 
 
 class ContentDAO:
@@ -84,7 +95,7 @@ class ContentDAO:
                     code=platform.code,
                     name=platform.name,
                     url=str(platform.url),
-                    icon_url=str(platform.icon_url) if platform.icon_url else None
+                    icon_url=str(platform.icon_url) if platform.icon_url else None,
                 )
                 session.add(new_platform)
                 session.flush()
@@ -95,7 +106,7 @@ class ContentDAO:
                 (UserPlatform.user_id == user_id) & (UserPlatform.platform_id == platform_id)
             )
             user_platform = session.execute(stmt).scalar_one_or_none()
-            
+
             if not user_platform:
                 # Create new association
                 user_platform = UserPlatform(user_id=user_id, platform_id=platform_id)
@@ -113,9 +124,15 @@ class ContentDAO:
         except Exception as e:
             if commit:
                 session.rollback()
-            raise Exception(f"Failed to save platform: {e}")
+            raise Exception(f"Failed to save platform: {e}") from e
 
-    def save_author(self, author: ParserAuthorInfo, platform_id: int, user_id: int, commit: bool = False) -> int:
+    def save_author(
+        self,
+        author: ParserAuthorInfo,
+        platform_id: int,
+        user_id: int,
+        commit: bool = False,
+    ) -> int:
         """
         Save or update author information and create user association.
 
@@ -130,10 +147,7 @@ class ContentDAO:
         session = self._get_session()
         try:
             # Check if author exists globally by platform_id + uid
-            stmt = select(Author).where(
-                (Author.platform_id == platform_id) & 
-                (Author.uid == author.uid)
-            )
+            stmt = select(Author).where((Author.platform_id == platform_id) & (Author.uid == author.uid))
             existing_author = session.execute(stmt).scalar_one_or_none()
 
             if existing_author:
@@ -160,18 +174,16 @@ class ContentDAO:
                     avatar=str(author.avatar) if author.avatar else None,
                     url=str(author.url) if author.url else None,
                     banner=str(author.banner) if author.banner else None,
-                    description=author.description
+                    description=author.description,
                 )
                 session.add(new_author)
                 session.flush()
                 author_id = new_author.id
 
             # Create or update user-author association
-            stmt = select(UserAuthor).where(
-                (UserAuthor.user_id == user_id) & (UserAuthor.author_id == author_id)
-            )
+            stmt = select(UserAuthor).where((UserAuthor.user_id == user_id) & (UserAuthor.author_id == author_id))
             user_author = session.execute(stmt).scalar_one_or_none()
-            
+
             if not user_author:
                 # Create new association
                 user_author = UserAuthor(user_id=user_id, author_id=author_id)
@@ -189,7 +201,7 @@ class ContentDAO:
         except Exception as e:
             if commit:
                 session.rollback()
-            raise Exception(f"Failed to save author: {e}")
+            raise Exception(f"Failed to save author: {e}") from e
 
     def _save_media(self, media: MediaEntity, commit: bool = False) -> int:
         """
@@ -245,7 +257,7 @@ class ContentDAO:
                 height=media.height,
                 media_path=media.media_path,
                 cover_path=media.cover_path,
-                status=media.status
+                status=media.status,
             )
             session.add(new_media)
             session.flush()
@@ -258,7 +270,7 @@ class ContentDAO:
         except Exception as e:
             if commit:
                 session.rollback()
-            raise Exception(f"Failed to save media: {e}")
+            raise Exception(f"Failed to save media: {e}") from e
 
     def save_medias(self, medias: list[ParserMediaInfo], commit: bool = False) -> list[int]:
         """
@@ -313,7 +325,7 @@ class ContentDAO:
                 width=media.width,
                 height=media.height,
                 media_path=media.media_path,
-                cover_path=media.cover_path
+                cover_path=media.cover_path,
             )
             media_id = self._save_media(media_entity, commit=False)
             media_ids.append(media_id)
@@ -338,15 +350,12 @@ class ContentDAO:
         try:
             # Save platform and get ID
             platform_id = self.save_platform(result.platform, user_id, commit=False)
-            
+
             # Save author and get ID
             author_id = self.save_author(result.author, platform_id, user_id, commit=False)
 
             # Check if parse result already exists globally by platform_id + pid
-            stmt = select(ParseResult).where(
-                (ParseResult.pid == result.pid) &
-                (ParseResult.platform_id == platform_id)
-            )
+            stmt = select(ParseResult).where((ParseResult.pid == result.pid) & (ParseResult.platform_id == platform_id))
             existing_result = session.execute(stmt).scalar_one_or_none()
 
             if existing_result:
@@ -366,9 +375,7 @@ class ContentDAO:
                 session.flush()
 
                 # Clear old media associations
-                session.query(ParseResultMedia).filter(
-                    ParseResultMedia.parse_result_id == parse_result_id
-                ).delete()
+                session.query(ParseResultMedia).filter(ParseResultMedia.parse_result_id == parse_result_id).delete()
             else:
                 # Insert new parse result
                 new_result = ParseResult(
@@ -380,7 +387,7 @@ class ContentDAO:
                     platform_id=platform_id,
                     post_time=result.post_time,
                     parser=result.parser,
-                    state=result.state
+                    state=result.state,
                 )
                 session.add(new_result)
                 session.flush()
@@ -391,7 +398,7 @@ class ContentDAO:
                 (UserParseResult.user_id == user_id) & (UserParseResult.parse_result_id == parse_result_id)
             )
             user_parse_result = session.execute(stmt).scalar_one_or_none()
-            
+
             if not user_parse_result:
                 # Create new association
                 user_parse_result = UserParseResult(user_id=user_id, parse_result_id=parse_result_id)
@@ -403,7 +410,7 @@ class ContentDAO:
                 session.flush()
             else:
                 # Update updated_at to reflect re-parse, ensures sync detects the change
-                user_parse_result.updated_at = datetime.now(timezone.utc)
+                user_parse_result.updated_at = datetime.now(UTC)
                 session.flush()
 
             # Save media associations
@@ -415,12 +422,14 @@ class ContentDAO:
             return parse_result_id
         except Exception as e:
             session.rollback()
-            raise Exception(f"Failed to save parse result (pid: {result.pid}, platform: {result.platform.code}): {e}")
+            raise Exception(
+                f"Failed to save parse result (pid: {result.pid}, platform: {result.platform.code}): {e}"
+            ) from e
 
     def _save_media_associations(self, parse_result_id: int, media: list[ParserMediaInfo]) -> None:
         """
         Helper method to save media associations for a parse result.
-        
+
         Args:
             parse_result_id: Parse result ID
             media: List of media entities
@@ -429,11 +438,7 @@ class ContentDAO:
         # Save media
         media_ids = self.save_medias(media, commit=False)
         for order, media_id in enumerate(media_ids):
-            assoc = ParseResultMedia(
-                parse_result_id=parse_result_id,
-                media_id=media_id,
-                order=order
-            )
+            assoc = ParseResultMedia(parse_result_id=parse_result_id, media_id=media_id, order=order)
             session.add(assoc)
         session.flush()
 
@@ -444,53 +449,56 @@ class ContentDAO:
         Returns ParseResultEntity object.
         """
         session = self._get_session()
-        
+
         # Query with user access check through UserParseResult
-        query = session.query(ParseResult).join(
-            UserParseResult,
-            (UserParseResult.parse_result_id == ParseResult.id) &
-            (UserParseResult.user_id == user_id) &
-            (UserParseResult.deleted_at.is_(None))
-        ).filter(
-            ParseResult.id == parse_result_id,
-            ParseResult.deleted_at.is_(None)
+        query = (
+            session.query(ParseResult)
+            .join(
+                UserParseResult,
+                (UserParseResult.parse_result_id == ParseResult.id)
+                & (UserParseResult.user_id == user_id)
+                & (UserParseResult.deleted_at.is_(None)),
+            )
+            .filter(ParseResult.id == parse_result_id, ParseResult.deleted_at.is_(None))
         )
-        
+
         result_orm = query.first()
         if not result_orm:
             raise ValueError(f"Parse result with id {parse_result_id} not found or access denied")
 
         return ParseResultEntity.from_orm(result_orm)
 
-    def find_parse_result_by_url(self, url: str) -> Optional[ParseResultEntity]:
+    def find_parse_result_by_url(self, url: str) -> ParseResultEntity | None:
         """
         Find parse result by URL (globally, without user filtering).
         Used for task deduplication.
-        
+
         Args:
             url: URL to search for
-            
+
         Returns:
             ParseResultEntity object if found, None otherwise
         """
         session = self._get_session()
-        
-        stmt = select(ParseResult).where(
-            ParseResult.url == url,
-            ParseResult.deleted_at.is_(None)
-        )
-        
+
+        stmt = select(ParseResult).where(ParseResult.url == url, ParseResult.deleted_at.is_(None))
+
         result_orm = session.execute(stmt).scalar_one_or_none()
         return ParseResultEntity.from_orm(result_orm) if result_orm else None
 
-    def list_parse_results(self, user_id: int,
-                          platform_id: Optional[int] = None,
-                          author_id: Optional[int] = None,
-                          limit: int = 20, offset: int = 0,
-                          sort_by: str = "created_at", order: str = "desc") -> tuple[list[ParseResultEntity], int]:
+    def list_parse_results(
+        self,
+        user_id: int,
+        platform_id: int | None = None,
+        author_id: int | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        sort_by: str = "created_at",
+        order: str = "desc",
+    ) -> tuple[list[ParseResultEntity], int]:
         """
         List parse results with pagination and sorting.
-    
+
         Args:
             user_id: Filter by user ID
             platform_id: Filter by platform ID
@@ -505,13 +513,15 @@ class ContentDAO:
         session = self._get_session()
 
         # Build query with JOIN to UserParseResult
-        query = select(ParseResult).join(
-            UserParseResult,
-            (UserParseResult.parse_result_id == ParseResult.id) &
-            (UserParseResult.user_id == user_id) &
-            (UserParseResult.deleted_at.is_(None))
-        ).where(
-            ParseResult.deleted_at.is_(None)
+        query = (
+            select(ParseResult)
+            .join(
+                UserParseResult,
+                (UserParseResult.parse_result_id == ParseResult.id)
+                & (UserParseResult.user_id == user_id)
+                & (UserParseResult.deleted_at.is_(None)),
+            )
+            .where(ParseResult.deleted_at.is_(None))
         )
 
         if platform_id is not None:
@@ -521,13 +531,15 @@ class ContentDAO:
             query = query.where(ParseResult.author_id == author_id)
 
         # Get total count
-        count_query = select(func.count(ParseResult.id)).join(
-            UserParseResult,
-            (UserParseResult.parse_result_id == ParseResult.id) &
-            (UserParseResult.user_id == user_id) &
-            (UserParseResult.deleted_at.is_(None))
-        ).where(
-            ParseResult.deleted_at.is_(None)
+        count_query = (
+            select(func.count(ParseResult.id))
+            .join(
+                UserParseResult,
+                (UserParseResult.parse_result_id == ParseResult.id)
+                & (UserParseResult.user_id == user_id)
+                & (UserParseResult.deleted_at.is_(None)),
+            )
+            .where(ParseResult.deleted_at.is_(None))
         )
         if platform_id is not None:
             count_query = count_query.where(ParseResult.platform_id == platform_id)
@@ -545,10 +557,7 @@ class ContentDAO:
         else:
             sort_field = ParseResult.created_at
 
-        if order.lower() == "asc":
-            query = query.order_by(sort_field.asc())
-        else:
-            query = query.order_by(sort_field.desc())
+        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
 
         query = query.limit(limit).offset(offset)
         results_orm = session.execute(query).scalars().all()
@@ -556,13 +565,18 @@ class ContentDAO:
         results = [ParseResultEntity.from_orm(result_orm) for result_orm in results_orm]
         return results, total
 
-    def sync_parse_results(self, user_id: int,
-                          last_sync_time: Optional[datetime] = None,
-                          limit: int = 20, offset: int = 0) -> tuple[list[ParseResultEntity], int]:
+    def sync_parse_results(
+        self,
+        user_id: int,
+        last_sync_time: datetime | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[ParseResultEntity], int]:
         """
         Sync parse results based on last sync time.
-        Returns all parse results (including deleted ones in association table) that were created or updated after the last sync time.
-    
+        Returns all parse results (including deleted ones in association table)
+        that were created or updated after the last sync time.
+
         Args:
             user_id: Filter by user ID
             last_sync_time: Optional datetime of the last sync. If None, returns all results.
@@ -575,12 +589,13 @@ class ContentDAO:
 
         # Build query with JOIN to UserParseResult (include soft-deleted associations)
         # Eagerly load media_list -> media to avoid N+1 lazy-load queries per result
-        query = select(ParseResult).join(
-            UserParseResult,
-            (UserParseResult.parse_result_id == ParseResult.id) &
-            (UserParseResult.user_id == user_id)
-        ).options(
-            selectinload(ParseResult.media_list).selectinload(ParseResultMedia.media)
+        query = (
+            select(ParseResult)
+            .join(
+                UserParseResult,
+                (UserParseResult.parse_result_id == ParseResult.id) & (UserParseResult.user_id == user_id),
+            )
+            .options(selectinload(ParseResult.media_list).selectinload(ParseResultMedia.media))
         )
 
         # Filter by last_sync_time if provided
@@ -591,14 +606,14 @@ class ContentDAO:
                 .join(Media, ParseResultMedia.media_id == Media.id)
                 .where(
                     ParseResultMedia.parse_result_id == ParseResult.id,
-                    Media.updated_at > last_sync_time
+                    Media.updated_at > last_sync_time,
                 )
             )
             query = query.where(
                 or_(
                     ParseResult.updated_at > last_sync_time,
                     UserParseResult.updated_at > last_sync_time,
-                    media_update_subquery
+                    media_update_subquery,
                 )
             )
 
@@ -617,8 +632,7 @@ class ContentDAO:
         for result_orm in results_orm:
             # Check if association is deleted
             stmt = select(UserParseResult).where(
-                (UserParseResult.user_id == user_id) &
-                (UserParseResult.parse_result_id == result_orm.id)
+                (UserParseResult.user_id == user_id) & (UserParseResult.parse_result_id == result_orm.id)
             )
             user_parse_result = session.execute(stmt).scalar_one_or_none()
             association_deleted_at = user_parse_result.deleted_at if user_parse_result else None
@@ -641,40 +655,50 @@ class ContentDAO:
 
         return results, total
 
-    def list_platforms(self, user_id: int, limit: int = 100, offset: int = 0,
-                       sort_by: str = "id", order: str = "asc") -> tuple[list[PlatformEntity], int]:
+    def list_platforms(
+        self,
+        user_id: int,
+        limit: int = 100,
+        offset: int = 0,
+        sort_by: str = "id",
+        order: str = "asc",
+    ) -> tuple[list[PlatformEntity], int]:
         """
         List all platforms associated with the user, with pagination and sorting.
-        
+
         Args:
             user_id: Filter by user ID
             limit: Maximum number of results to return
             offset: Number of results to skip
             sort_by: Field to sort by (id, name, created_at, updated_at)
             order: Sort order (asc, desc)
-            
+
         Returns tuple of (list of PlatformEntity objects, total count).
         """
         session = self._get_session()
 
         # Build query with JOIN to UserPlatform
-        query = select(Platform).join(
-            UserPlatform,
-            (UserPlatform.platform_id == Platform.id) &
-            (UserPlatform.user_id == user_id) &
-            (UserPlatform.deleted_at.is_(None))
-        ).where(
-            Platform.deleted_at.is_(None)
+        query = (
+            select(Platform)
+            .join(
+                UserPlatform,
+                (UserPlatform.platform_id == Platform.id)
+                & (UserPlatform.user_id == user_id)
+                & (UserPlatform.deleted_at.is_(None)),
+            )
+            .where(Platform.deleted_at.is_(None))
         )
 
         # Get total count
-        count_query = select(func.count(Platform.id)).join(
-            UserPlatform,
-            (UserPlatform.platform_id == Platform.id) &
-            (UserPlatform.user_id == user_id) &
-            (UserPlatform.deleted_at.is_(None))
-        ).where(
-            Platform.deleted_at.is_(None)
+        count_query = (
+            select(func.count(Platform.id))
+            .join(
+                UserPlatform,
+                (UserPlatform.platform_id == Platform.id)
+                & (UserPlatform.user_id == user_id)
+                & (UserPlatform.deleted_at.is_(None)),
+            )
+            .where(Platform.deleted_at.is_(None))
         )
         total = session.execute(count_query).scalar() or 0
 
@@ -682,14 +706,11 @@ class ContentDAO:
         sort_field_map = {
             "name": Platform.name,
             "created_at": Platform.created_at,
-            "updated_at": Platform.updated_at
+            "updated_at": Platform.updated_at,
         }
         sort_field = sort_field_map.get(sort_by, Platform.id)
 
-        if order.lower() == "asc":
-            query = query.order_by(sort_field.asc())
-        else:
-            query = query.order_by(sort_field.desc())
+        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
 
         query = query.limit(limit).offset(offset)
         platforms_orm = session.execute(query).scalars().all()
@@ -697,12 +718,18 @@ class ContentDAO:
         platforms = [PlatformEntity.from_orm(p) for p in platforms_orm]
         return platforms, total
 
-    def list_authors(self, user_id: int, platform_id: Optional[int] = None,
-                    limit: int = 100, offset: int = 0,
-                    sort_by: str = "id", order: str = "asc") -> tuple[list[AuthorEntity], int]:
+    def list_authors(
+        self,
+        user_id: int,
+        platform_id: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        sort_by: str = "id",
+        order: str = "asc",
+    ) -> tuple[list[AuthorEntity], int]:
         """
         List authors associated with the user, with pagination and sorting, optionally filtered by platform_id.
-        
+
         Args:
             user_id: Filter by user ID
             platform_id: Optional filter by platform ID
@@ -710,32 +737,36 @@ class ContentDAO:
             offset: Number of results to skip
             sort_by: Field to sort by (id, name, created_at, updated_at)
             order: Sort order (asc, desc)
-            
+
         Returns tuple of (list of AuthorEntity objects with platform information, total count).
         """
         session = self._get_session()
 
         # Build query with JOIN to UserAuthor
-        query = select(Author).join(
-            UserAuthor,
-            (UserAuthor.author_id == Author.id) &
-            (UserAuthor.user_id == user_id) &
-            (UserAuthor.deleted_at.is_(None))
-        ).where(
-            Author.deleted_at.is_(None)
+        query = (
+            select(Author)
+            .join(
+                UserAuthor,
+                (UserAuthor.author_id == Author.id)
+                & (UserAuthor.user_id == user_id)
+                & (UserAuthor.deleted_at.is_(None)),
+            )
+            .where(Author.deleted_at.is_(None))
         )
 
         if platform_id is not None:
             query = query.where(Author.platform_id == platform_id)
 
         # Get total count
-        count_query = select(func.count(Author.id)).join(
-            UserAuthor,
-            (UserAuthor.author_id == Author.id) &
-            (UserAuthor.user_id == user_id) &
-            (UserAuthor.deleted_at.is_(None))
-        ).where(
-            Author.deleted_at.is_(None)
+        count_query = (
+            select(func.count(Author.id))
+            .join(
+                UserAuthor,
+                (UserAuthor.author_id == Author.id)
+                & (UserAuthor.user_id == user_id)
+                & (UserAuthor.deleted_at.is_(None)),
+            )
+            .where(Author.deleted_at.is_(None))
         )
         if platform_id is not None:
             count_query = count_query.where(Author.platform_id == platform_id)
@@ -745,14 +776,11 @@ class ContentDAO:
         sort_field_map = {
             "name": Author.name,
             "created_at": Author.created_at,
-            "updated_at": Author.updated_at
+            "updated_at": Author.updated_at,
         }
         sort_field = sort_field_map.get(sort_by, Author.id)
 
-        if order.lower() == "asc":
-            query = query.order_by(sort_field.asc())
-        else:
-            query = query.order_by(sort_field.desc())
+        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
 
         query = query.limit(limit).offset(offset)
         authors_orm = session.execute(query).scalars().all()
@@ -764,127 +792,131 @@ class ContentDAO:
         """
         Soft delete user's association with platform and cascade to related authors and parse results.
         Does NOT delete the platform itself as it's shared among users.
-        
+
         Args:
             user_id: User ID performing the deletion
             platform_id: Platform ID to delete association with
             commit: Whether to commit immediately (default: False)
-            
+
         Returns:
             Tuple of (success, list of media file paths to delete)
         """
         session = self._get_session()
         all_file_paths = []
-        
+
         try:
             # Verify user-platform association exists
             stmt = select(UserPlatform).where(
-                (UserPlatform.user_id == user_id) &
-                (UserPlatform.platform_id == platform_id) &
-                (UserPlatform.deleted_at.is_(None))
+                (UserPlatform.user_id == user_id)
+                & (UserPlatform.platform_id == platform_id)
+                & (UserPlatform.deleted_at.is_(None))
             )
             user_platform = session.execute(stmt).scalar_one_or_none()
-            
+
             if not user_platform:
                 logger.warning(f"Platform {platform_id} not found or already deleted for user {user_id}")
                 return False, all_file_paths
-            
+
             # Get all authors belonging to this platform for this user
-            stmt = select(Author.id).join(
-                UserAuthor,
-                (UserAuthor.author_id == Author.id) &
-                (UserAuthor.user_id == user_id) &
-                (UserAuthor.deleted_at.is_(None))
-            ).where(
-                (Author.platform_id == platform_id) &
-                (Author.deleted_at.is_(None))
+            stmt = (
+                select(Author.id)
+                .join(
+                    UserAuthor,
+                    (UserAuthor.author_id == Author.id)
+                    & (UserAuthor.user_id == user_id)
+                    & (UserAuthor.deleted_at.is_(None)),
+                )
+                .where((Author.platform_id == platform_id) & (Author.deleted_at.is_(None)))
             )
             author_ids = session.execute(stmt).scalars().all()
-            
+
             logger.debug(f"Soft deleting user {user_id}'s platform {platform_id} with {len(author_ids)} authors")
-            
+
             # Soft delete each author association
             for author_id in author_ids:
-                success, file_paths = self.delete_author(user_id, author_id, commit=False)
+                _success, file_paths = self.delete_author(user_id, author_id, commit=False)
                 all_file_paths.extend(file_paths)
-            
+
             # Soft delete user-platform association
-            user_platform.deleted_at = datetime.now(timezone.utc)
+            user_platform.deleted_at = datetime.now(UTC)
             session.flush()
-            
+
             if commit:
                 session.commit()
-            
+
             return True, all_file_paths
-            
+
         except Exception as e:
             if commit:
                 session.rollback()
             logger.exception(f"Database error when soft deleting platform {platform_id} for user {user_id}")
-            raise Exception(f"Failed to soft delete platform association: {e}")
+            raise Exception(f"Failed to soft delete platform association: {e}") from e
 
     def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
         Soft delete user's association with author and cascade to related parse results.
         Does NOT delete the author itself as it's shared among users.
-        
+
         Args:
             user_id: User ID performing the deletion
             author_id: Author ID to delete association with
             commit: Whether to commit immediately (default: False)
-            
+
         Returns:
             Tuple of (success, list of media file paths to delete)
         """
         session = self._get_session()
         all_file_paths = []
-        
+
         try:
             # Verify user-author association exists
             stmt = select(UserAuthor).where(
-                (UserAuthor.user_id == user_id) &
-                (UserAuthor.author_id == author_id) &
-                (UserAuthor.deleted_at.is_(None))
+                (UserAuthor.user_id == user_id)
+                & (UserAuthor.author_id == author_id)
+                & (UserAuthor.deleted_at.is_(None))
             )
             user_author = session.execute(stmt).scalar_one_or_none()
-            
+
             if not user_author:
                 logger.warning(f"Author {author_id} not found or already deleted for user {user_id}")
                 return False, all_file_paths
-            
+
             # Get all parse result IDs for this author for this user
-            stmt = select(ParseResult.id).join(
-                UserParseResult,
-                (UserParseResult.parse_result_id == ParseResult.id) &
-                (UserParseResult.user_id == user_id) &
-                (UserParseResult.deleted_at.is_(None))
-            ).where(
-                (ParseResult.author_id == author_id) &
-                (ParseResult.deleted_at.is_(None))
+            stmt = (
+                select(ParseResult.id)
+                .join(
+                    UserParseResult,
+                    (UserParseResult.parse_result_id == ParseResult.id)
+                    & (UserParseResult.user_id == user_id)
+                    & (UserParseResult.deleted_at.is_(None)),
+                )
+                .where((ParseResult.author_id == author_id) & (ParseResult.deleted_at.is_(None)))
             )
             parse_result_ids = session.execute(stmt).scalars().all()
-            
-            logger.debug(f"Soft deleting user {user_id}'s author {author_id} with {len(parse_result_ids)} parse results")
+
+            logger.debug(
+                f"Soft deleting user {user_id}'s author {author_id} with {len(parse_result_ids)} parse results"
+            )
 
             # Soft delete each parse result association
             for pr_id in parse_result_ids:
-                success, file_paths = self.delete_parse_result(user_id, pr_id, commit=False)
+                _success, file_paths = self.delete_parse_result(user_id, pr_id, commit=False)
                 all_file_paths.extend(file_paths)
 
             # Soft delete user-author association
-            user_author.deleted_at = datetime.now(timezone.utc)
+            user_author.deleted_at = datetime.now(UTC)
             session.flush()
-            
+
             if commit:
                 session.commit()
-            
+
             return True, all_file_paths
-            
+
         except Exception as e:
             if commit:
                 session.rollback()
             logger.exception(f"Database error when soft deleting author {author_id} for user {user_id}")
-            raise Exception(f"Failed to soft delete author association: {e}")
+            raise Exception(f"Failed to soft delete author association: {e}") from e
 
     def delete_parse_result(self, user_id: int, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
         """
@@ -906,52 +938,54 @@ class ContentDAO:
         try:
             # Verify user-parse_result association exists
             stmt = select(UserParseResult).where(
-                (UserParseResult.user_id == user_id) &
-                (UserParseResult.parse_result_id == parse_result_id) &
-                (UserParseResult.deleted_at.is_(None))
+                (UserParseResult.user_id == user_id)
+                & (UserParseResult.parse_result_id == parse_result_id)
+                & (UserParseResult.deleted_at.is_(None))
             )
             user_parse_result = session.execute(stmt).scalar_one_or_none()
-            
+
             if not user_parse_result:
                 logger.warning(f"Parse result {parse_result_id} not found or already deleted for user {user_id}")
                 raise ValueError(f"Parse result {parse_result_id} not found or already deleted")
-            
+
             # Get parse result to check media
-            result_orm = session.query(ParseResult).filter(
-                ParseResult.id == parse_result_id
-            ).first()
-            
+            result_orm = session.query(ParseResult).filter(ParseResult.id == parse_result_id).first()
+
             if not result_orm:
                 raise ValueError(f"Parse result {parse_result_id} not found")
-            
+
             # Check if parse result becomes completely orphaned (no other active user associations)
             stmt = select(func.count(UserParseResult.user_id)).where(
-                (UserParseResult.parse_result_id == parse_result_id) &
-                (UserParseResult.deleted_at.is_(None)) &
-                (UserParseResult.user_id != user_id)
+                (UserParseResult.parse_result_id == parse_result_id)
+                & (UserParseResult.deleted_at.is_(None))
+                & (UserParseResult.user_id != user_id)
             )
             other_users_count = session.execute(stmt).scalar()
-            
+
             # If parse result becomes orphaned, collect media paths and clean up
             if other_users_count == 0:
                 logger.debug(f"Parse result {parse_result_id} will be orphaned, collecting media")
-                
+
                 # Get orphaned media IDs (only used by this parse result and not by other active results)
                 orphaned_media_ids = []
                 for prm in result_orm.media_list:
                     media_id = prm.media_id
                     # Check if this media is used by other parse results with active user associations
-                    count = session.query(func.count(ParseResultMedia.parse_result_id)).join(
-                        ParseResult
-                    ).join(
-                        UserParseResult,
-                        (UserParseResult.parse_result_id == ParseResult.id) &
-                        (UserParseResult.deleted_at.is_(None))
-                    ).filter(
-                        ParseResultMedia.media_id == media_id,
-                        ParseResult.deleted_at.is_(None),
-                        ParseResult.id != parse_result_id
-                    ).scalar()
+                    count = (
+                        session.query(func.count(ParseResultMedia.parse_result_id))
+                        .join(ParseResult)
+                        .join(
+                            UserParseResult,
+                            (UserParseResult.parse_result_id == ParseResult.id)
+                            & (UserParseResult.deleted_at.is_(None)),
+                        )
+                        .filter(
+                            ParseResultMedia.media_id == media_id,
+                            ParseResult.deleted_at.is_(None),
+                            ParseResult.id != parse_result_id,
+                        )
+                        .scalar()
+                    )
                     if count == 0:  # Only used by this parse result
                         orphaned_media_ids.append(media_id)
 
@@ -965,27 +999,25 @@ class ContentDAO:
                             file_paths.append(media.cover_path)
 
                 # Hard delete orphaned media and associations
-                session.query(ParseResultMedia).filter(
-                    ParseResultMedia.parse_result_id == parse_result_id
-                ).delete()
+                session.query(ParseResultMedia).filter(ParseResultMedia.parse_result_id == parse_result_id).delete()
 
                 if orphaned_media_ids:
                     session.query(Media).filter(Media.id.in_(orphaned_media_ids)).delete()
                     logger.debug(f"Hard deleted {len(orphaned_media_ids)} orphaned media records")
-                
+
                 # Also soft delete the parse result itself if it's orphaned
-                result_orm.deleted_at = datetime.now(timezone.utc)
+                result_orm.deleted_at = datetime.now(UTC)
 
             # Soft delete user-parse_result association
-            user_parse_result.deleted_at = datetime.now(timezone.utc)
+            user_parse_result.deleted_at = datetime.now(UTC)
             session.flush()
-            
+
             if commit:
                 session.commit()
 
             return True, file_paths
 
-        except Exception as e:
+        except Exception:
             if commit:
                 session.rollback()
             logger.exception(f"Unexpected error when soft deleting parse result {parse_result_id} for user {user_id}")
