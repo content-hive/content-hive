@@ -98,9 +98,7 @@ class GitHubPluginDownloader:
 
         # Check against allowed pattern
         if not self.VALID_DOMAIN_PATTERN.match(domain):
-            logger.warning(
-                f"Domain contains invalid characters: {domain} (allowed: a-z, 0-9, -, _)"
-            )
+            logger.warning(f"Domain contains invalid characters: {domain} (allowed: a-z, 0-9, -, _)")
             return False
 
         return True
@@ -134,9 +132,7 @@ class GitHubPluginDownloader:
         """
         return ref.replace("/", "_").replace("\\", "_")
 
-    def _validate_path_safety(
-        self, target_path: Path, base_path: Path, entity_name: str = "Path"
-    ) -> bool:
+    def _validate_path_safety(self, target_path: Path, base_path: Path, entity_name: str = "Path") -> bool:
         """
         Validate that a target path is safely within a base path.
 
@@ -152,9 +148,7 @@ class GitHubPluginDownloader:
             target_path.resolve().relative_to(base_path.resolve())
             return True
         except ValueError:
-            logger.error(
-                f"{entity_name} escapes base directory: {target_path} (base: {base_path})"
-            )
+            logger.error(f"{entity_name} escapes base directory: {target_path} (base: {base_path})")
             return False
 
     def _safe_extract(self, zip_file: zipfile.ZipFile, extract_dir: Path) -> None:
@@ -192,9 +186,7 @@ class GitHubPluginDownloader:
             # Extract the member
             zip_file.extract(member, extract_dir)
 
-        logger.debug(
-            f"Safely extracted {len(zip_file.namelist())} files to {extract_dir}"
-        )
+        logger.debug(f"Safely extracted {len(zip_file.namelist())} files to {extract_dir}")
 
     async def download_plugins(
         self,
@@ -242,9 +234,7 @@ class GitHubPluginDownloader:
             with tempfile.TemporaryDirectory(prefix="contenthive_plugin_") as tmp:
                 tmp_path = Path(tmp)
 
-                archive_path = await self._download_archive(
-                    owner, repo, ref, ref_type, tmp_path
-                )
+                archive_path = await self._download_archive(owner, repo, ref, ref_type, tmp_path)
 
                 # Extract archive
                 safe_ref = self._sanitize_ref(ref)
@@ -325,25 +315,19 @@ class GitHubPluginDownloader:
             # Install plugin
             plugin_rel_path = plugin_info.get("path")
             if not plugin_rel_path:
-                logger.warning(
-                    f"Plugin {domain} missing 'path' in manifest, skipping..."
-                )
+                logger.warning(f"Plugin {domain} missing 'path' in manifest, skipping...")
                 results[domain] = False
                 continue
 
             plugin_rel_path = Path(plugin_rel_path)
             if plugin_rel_path.is_absolute():
-                logger.warning(
-                    f"Plugin {domain} has absolute path in manifest, skipping..."
-                )
+                logger.warning(f"Plugin {domain} has absolute path in manifest, skipping...")
                 results[domain] = False
                 continue
 
             plugin_path = (repo_root / plugin_rel_path).resolve()
 
-            if not self._validate_path_safety(
-                plugin_path, repo_root, f"Plugin {domain} path"
-            ):
+            if not self._validate_path_safety(plugin_path, repo_root, f"Plugin {domain} path"):
                 results[domain] = False
                 continue
 
@@ -352,9 +336,7 @@ class GitHubPluginDownloader:
                 results[domain] = False
                 continue
 
-            logger.debug(
-                f"Installing plugin: {domain} ({plugin_info.get('name', domain)})"
-            )
+            logger.debug(f"Installing plugin: {domain} ({plugin_info.get('name', domain)})")
             success = await self._install_plugin_directory(
                 plugin_path,
                 domain,
@@ -407,9 +389,7 @@ class GitHubPluginDownloader:
             encoded_ref = quote(ref, safe="")
             url = f"https://github.com/{encoded_owner}/{encoded_repo}/archive/{encoded_ref}.zip"
         else:
-            raise ValueError(
-                f"Invalid ref_type: {ref_type}. Must be 'branch', 'tag', or 'commit'"
-            )
+            raise ValueError(f"Invalid ref_type: {ref_type}. Must be 'branch', 'tag', or 'commit'")
 
         # Create a safe filename for the archive
         safe_ref = self._sanitize_ref(ref)
@@ -424,29 +404,25 @@ class GitHubPluginDownloader:
             aiohttp.ClientSession(timeout=timeout, trust_env=True) as session,
             session.get(url) as response,
         ):
-                if response.status != 200:
-                    raise Exception(
-                        f"Failed to download archive: HTTP {response.status}"
-                    )
+            if response.status != 200:
+                raise Exception(f"Failed to download archive: HTTP {response.status}")
 
-                total_size = int(response.headers.get("content-length", 0))
-                downloaded = 0
-                last_logged_mb = -1
+            total_size = int(response.headers.get("content-length", 0))
+            downloaded = 0
+            last_logged_mb = -1
 
-                with open(archive_path, "wb") as f:
-                    async for chunk in response.content.iter_chunked(8192):
-                        f.write(chunk)
-                        downloaded += len(chunk)
+            with open(archive_path, "wb") as f:
+                async for chunk in response.content.iter_chunked(8192):
+                    f.write(chunk)
+                    downloaded += len(chunk)
 
-                        # Log progress every MB
-                        if total_size > 0:
-                            current_mb = downloaded // (1024 * 1024)
-                            if current_mb > last_logged_mb:
-                                percent = (downloaded / total_size) * 100
-                                logger.debug(
-                                    f"Downloaded {percent:.1f}% ({current_mb}MB)"
-                                )
-                                last_logged_mb = current_mb
+                    # Log progress every MB
+                    if total_size > 0:
+                        current_mb = downloaded // (1024 * 1024)
+                        if current_mb > last_logged_mb:
+                            percent = (downloaded / total_size) * 100
+                            logger.debug(f"Downloaded {percent:.1f}% ({current_mb}MB)")
+                            last_logged_mb = current_mb
 
         logger.debug(f"Archive downloaded to {archive_path}")
         return archive_path
@@ -483,9 +459,7 @@ class GitHubPluginDownloader:
             target_dir = self.plugins_dir / domain
 
             # Validate target path safety
-            if not self._validate_path_safety(
-                target_dir, self.plugins_dir, "Target directory"
-            ):
+            if not self._validate_path_safety(target_dir, self.plugins_dir, "Target directory"):
                 return False
 
             # Check if plugin already exists
@@ -502,9 +476,7 @@ class GitHubPluginDownloader:
 
             # Write manifest.json derived from the central plugins-manifest entry
             manifest_path = target_dir / "manifest.json"
-            manifest_path.write_text(
-                json.dumps(plugin_info, ensure_ascii=False, indent=4), encoding="utf-8"
-            )
+            manifest_path.write_text(json.dumps(plugin_info, ensure_ascii=False, indent=4), encoding="utf-8")
 
             logger.debug(f"Plugin installed to: {target_dir}")
             return True
@@ -534,18 +506,14 @@ class GitHubPluginDownloader:
 
         parsed = urlparse(url)
         if parsed.netloc not in ("github.com", "www.github.com"):
-            raise ValueError(
-                f"Invalid GitHub URL: must be a github.com repository, got '{parsed.netloc}'"
-            )
+            raise ValueError(f"Invalid GitHub URL: must be a github.com repository, got '{parsed.netloc}'")
 
         # Strip leading slash, .git suffix, and trailing slash from path
         path = parsed.path.lstrip("/").removesuffix(".git").rstrip("/")
 
         parts = path.split("/")
         if len(parts) != 2 or not parts[0] or not parts[1]:
-            raise ValueError(
-                f"Invalid GitHub URL: expected github.com/owner/repo, got '{url}'"
-            )
+            raise ValueError(f"Invalid GitHub URL: expected github.com/owner/repo, got '{url}'")
 
         return parts[0], parts[1]
 
@@ -578,18 +546,12 @@ class GitHubPluginDownloader:
             logger.debug(f"Fetching remote manifest from {url}")
 
             timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(
-                timeout=timeout, trust_env=True
-            ) as session, session.get(url) as response:
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session, session.get(url) as response:
                 if response.status == 404:
-                    logger.warning(
-                        f"plugins-manifest.json not found in remote repository ({url})"
-                    )
+                    logger.warning(f"plugins-manifest.json not found in remote repository ({url})")
                     return None
                 if response.status != 200:
-                    logger.warning(
-                        f"Failed to fetch remote manifest: HTTP {response.status}"
-                    )
+                    logger.warning(f"Failed to fetch remote manifest: HTTP {response.status}")
                     return None
                 text = await response.text()
 

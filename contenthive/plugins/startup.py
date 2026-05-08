@@ -43,25 +43,15 @@ async def load_plugins_on_startup():
             ref=settings.plugins_repo_ref,
         )
         installed_domains = set(plugin_manager.plugins)
-        new_plugins = {
-            d: v for d, v in check_results.items() if d not in installed_domains and v
-        }
-        available_updates = {
-            d: v for d, v in check_results.items() if d in installed_domains and v
-        }
+        new_plugins = {d: v for d, v in check_results.items() if d not in installed_domains and v}
+        available_updates = {d: v for d, v in check_results.items() if d in installed_domains and v}
 
         if new_plugins:
-            logger.info(
-                "New plugins available: "
-                + ", ".join(f"{d} ({v})" for d, v in new_plugins.items())
-            )
+            logger.info("New plugins available: " + ", ".join(f"{d} ({v})" for d, v in new_plugins.items()))
         if available_updates:
             logger.info(
                 "Plugin updates available: "
-                + ", ".join(
-                    f"{d} ({plugin_manager.plugins[d].version} → {v})"
-                    for d, v in available_updates.items()
-                )
+                + ", ".join(f"{d} ({plugin_manager.plugins[d].version} → {v})" for d, v in available_updates.items())
             )
         if not new_plugins and not available_updates:
             logger.debug("All plugins are up to date")
@@ -108,14 +98,8 @@ async def load_plugins_on_startup():
             logger.warning(f"Plugin enable failed: {domain}")
 
     # Log summary
-    enabled_count = sum(
-        1
-        for record in plugin_manager.plugins.values()
-        if record.state == PluginState.ENABLED
-    )
-    logger.info(
-        f"Plugin loading complete: {enabled_count}/{len(plugin_manager.plugins)} enabled"
-    )
+    enabled_count = sum(1 for record in plugin_manager.plugins.values() if record.state == PluginState.ENABLED)
+    logger.info(f"Plugin loading complete: {enabled_count}/{len(plugin_manager.plugins)} enabled")
 
 
 async def shutdown_plugins():

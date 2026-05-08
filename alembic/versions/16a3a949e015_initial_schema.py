@@ -37,9 +37,7 @@ def upgrade() -> None:
         sa.Column("cover_path", sa.String(), nullable=True),
         sa.Column(
             "status",
-            sa.Enum(
-                "PENDING", "DOWNLOADING", "COMPLETED", "FAILED", name="mediastatus"
-            ),
+            sa.Enum("PENDING", "DOWNLOADING", "COMPLETED", "FAILED", name="mediastatus"),
             nullable=False,
         ),
         sa.Column("created_at", AwareDatetime(), nullable=False),
@@ -64,12 +62,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("code"),
     )
-    op.create_index(
-        op.f("ix_platforms_deleted_at"), "platforms", ["deleted_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_platforms_updated_at"), "platforms", ["updated_at"], unique=False
-    )
+    op.create_index(op.f("ix_platforms_deleted_at"), "platforms", ["deleted_at"], unique=False)
+    op.create_index(op.f("ix_platforms_updated_at"), "platforms", ["updated_at"], unique=False)
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -114,12 +108,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("platform_id", "uid", name="uq_platform_uid"),
     )
-    op.create_index(
-        op.f("ix_authors_deleted_at"), "authors", ["deleted_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_authors_updated_at"), "authors", ["updated_at"], unique=False
-    )
+    op.create_index(op.f("ix_authors_deleted_at"), "authors", ["deleted_at"], unique=False)
+    op.create_index(op.f("ix_authors_updated_at"), "authors", ["updated_at"], unique=False)
     op.create_table(
         "profiles",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -135,12 +125,8 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("user_id"),
     )
-    op.create_index(
-        op.f("ix_profiles_deleted_at"), "profiles", ["deleted_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_profiles_updated_at"), "profiles", ["updated_at"], unique=False
-    )
+    op.create_index(op.f("ix_profiles_deleted_at"), "profiles", ["deleted_at"], unique=False)
+    op.create_index(op.f("ix_profiles_updated_at"), "profiles", ["updated_at"], unique=False)
     op.create_table(
         "sessions",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -163,12 +149,8 @@ def upgrade() -> None:
         sa.UniqueConstraint("token_jti"),
         sa.UniqueConstraint("user_id", "device_id", name="uq_user_device"),
     )
-    op.create_index(
-        op.f("ix_sessions_deleted_at"), "sessions", ["deleted_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_sessions_updated_at"), "sessions", ["updated_at"], unique=False
-    )
+    op.create_index(op.f("ix_sessions_deleted_at"), "sessions", ["deleted_at"], unique=False)
+    op.create_index(op.f("ix_sessions_updated_at"), "sessions", ["updated_at"], unique=False)
     op.create_table(
         "user_platforms",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -240,12 +222,8 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id", "author_id"),
     )
-    op.create_index(
-        op.f("ix_user_authors_deleted_at"), "user_authors", ["deleted_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_authors_updated_at"), "user_authors", ["updated_at"], unique=False
-    )
+    op.create_index(op.f("ix_user_authors_deleted_at"), "user_authors", ["deleted_at"], unique=False)
+    op.create_index(op.f("ix_user_authors_updated_at"), "user_authors", ["updated_at"], unique=False)
     op.create_table(
         "main_tasks",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -253,9 +231,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column(
             "type",
-            sa.Enum(
-                "PARSE_CONTENT", "MEDIA_DOWNLOAD", "CONTENT_ANALYSIS", name="tasktype"
-            ),
+            sa.Enum("PARSE_CONTENT", "MEDIA_DOWNLOAD", "CONTENT_ANALYSIS", name="tasktype"),
             nullable=False,
         ),
         sa.Column(
@@ -286,41 +262,25 @@ def upgrade() -> None:
         sa.Column("created_at", AwareDatetime(), nullable=False),
         sa.Column("updated_at", AwareDatetime(), nullable=False),
         sa.Column("deleted_at", AwareDatetime(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["parse_result_id"], ["parse_results.id"], ondelete="SET NULL"
-        ),
-        sa.ForeignKeyConstraint(
-            ["primary_task_id"], ["main_tasks.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["parse_result_id"], ["parse_results.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["primary_task_id"], ["main_tasks.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_main_tasks_deleted_at"), "main_tasks", ["deleted_at"], unique=False
-    )
-    op.create_index(
-        op.f("ix_main_tasks_status"), "main_tasks", ["status"], unique=False
-    )
-    op.create_index(
-        op.f("ix_main_tasks_task_id"), "main_tasks", ["task_id"], unique=True
-    )
+    op.create_index(op.f("ix_main_tasks_deleted_at"), "main_tasks", ["deleted_at"], unique=False)
+    op.create_index(op.f("ix_main_tasks_status"), "main_tasks", ["status"], unique=False)
+    op.create_index(op.f("ix_main_tasks_task_id"), "main_tasks", ["task_id"], unique=True)
     op.create_index(op.f("ix_main_tasks_type"), "main_tasks", ["type"], unique=False)
-    op.create_index(
-        op.f("ix_main_tasks_updated_at"), "main_tasks", ["updated_at"], unique=False
-    )
+    op.create_index(op.f("ix_main_tasks_updated_at"), "main_tasks", ["updated_at"], unique=False)
     op.create_index(op.f("ix_main_tasks_url"), "main_tasks", ["url"], unique=False)
-    op.create_index(
-        op.f("ix_main_tasks_user_id"), "main_tasks", ["user_id"], unique=False
-    )
+    op.create_index(op.f("ix_main_tasks_user_id"), "main_tasks", ["user_id"], unique=False)
     op.create_table(
         "parse_result_media",
         sa.Column("parse_result_id", sa.Integer(), nullable=False),
         sa.Column("media_id", sa.Integer(), nullable=False),
         sa.Column("order", sa.Integer(), nullable=False),
         sa.ForeignKeyConstraint(["media_id"], ["media.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["parse_result_id"], ["parse_results.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["parse_result_id"], ["parse_results.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("parse_result_id", "media_id"),
     )
     op.create_table(
@@ -330,9 +290,7 @@ def upgrade() -> None:
         sa.Column("created_at", AwareDatetime(), nullable=False),
         sa.Column("updated_at", AwareDatetime(), nullable=False),
         sa.Column("deleted_at", AwareDatetime(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["parse_result_id"], ["parse_results.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["parse_result_id"], ["parse_results.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id", "parse_result_id"),
     )
@@ -355,9 +313,7 @@ def upgrade() -> None:
         sa.Column("main_task_id", sa.Integer(), nullable=False),
         sa.Column(
             "type",
-            sa.Enum(
-                "PARSE_CONTENT", "MEDIA_DOWNLOAD", "CONTENT_ANALYSIS", name="tasktype"
-            ),
+            sa.Enum("PARSE_CONTENT", "MEDIA_DOWNLOAD", "CONTENT_ANALYSIS", name="tasktype"),
             nullable=False,
         ),
         sa.Column(
@@ -382,23 +338,15 @@ def upgrade() -> None:
         sa.Column("created_at", AwareDatetime(), nullable=False),
         sa.Column("updated_at", AwareDatetime(), nullable=False),
         sa.Column("deleted_at", AwareDatetime(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["depends_on_id"], ["sub_tasks.id"], ondelete="SET NULL"
-        ),
-        sa.ForeignKeyConstraint(
-            ["main_task_id"], ["main_tasks.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["depends_on_id"], ["sub_tasks.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["main_task_id"], ["main_tasks.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("sub_task_id"),
     )
-    op.create_index(
-        op.f("ix_sub_tasks_deleted_at"), "sub_tasks", ["deleted_at"], unique=False
-    )
+    op.create_index(op.f("ix_sub_tasks_deleted_at"), "sub_tasks", ["deleted_at"], unique=False)
     op.create_index(op.f("ix_sub_tasks_status"), "sub_tasks", ["status"], unique=False)
     op.create_index(op.f("ix_sub_tasks_type"), "sub_tasks", ["type"], unique=False)
-    op.create_index(
-        op.f("ix_sub_tasks_updated_at"), "sub_tasks", ["updated_at"], unique=False
-    )
+    op.create_index(op.f("ix_sub_tasks_updated_at"), "sub_tasks", ["updated_at"], unique=False)
     # ### end Alembic commands ###
 
 
@@ -410,12 +358,8 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_sub_tasks_status"), table_name="sub_tasks")
     op.drop_index(op.f("ix_sub_tasks_deleted_at"), table_name="sub_tasks")
     op.drop_table("sub_tasks")
-    op.drop_index(
-        op.f("ix_user_parse_results_updated_at"), table_name="user_parse_results"
-    )
-    op.drop_index(
-        op.f("ix_user_parse_results_deleted_at"), table_name="user_parse_results"
-    )
+    op.drop_index(op.f("ix_user_parse_results_updated_at"), table_name="user_parse_results")
+    op.drop_index(op.f("ix_user_parse_results_deleted_at"), table_name="user_parse_results")
     op.drop_table("user_parse_results")
     op.drop_table("parse_result_media")
     op.drop_index(op.f("ix_main_tasks_user_id"), table_name="main_tasks")

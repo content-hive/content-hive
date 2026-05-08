@@ -126,9 +126,7 @@ def init_plugin_config_defaults(
                 raw = factory()
             else:
                 continue
-            domain_cfg[field_name] = TypeAdapter(field_info.annotation).dump_python(
-                raw, mode="json"
-            )
+            domain_cfg[field_name] = TypeAdapter(field_info.annotation).dump_python(raw, mode="json")
             added = True
 
         if not added:

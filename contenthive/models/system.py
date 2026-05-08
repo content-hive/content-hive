@@ -19,6 +19,4 @@ class HealthResponse(APIBaseModel):
 
     app: str = Field(..., description="Application name")
     version: str = Field(..., description="Application version")
-    plugin_updates_available: bool = Field(
-        ..., description="Whether any installed plugin has an update available"
-    )
+    plugin_updates_available: bool = Field(..., description="Whether any installed plugin has an update available")

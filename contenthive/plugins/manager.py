@@ -26,9 +26,7 @@ from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.registry import PluginRecord, PluginState
 
 
-def is_plugin_update_available(
-    latest_version: str | None, current_version: str
-) -> bool:
+def is_plugin_update_available(latest_version: str | None, current_version: str) -> bool:
     """Return True if latest_version is a valid PEP 440 version string strictly greater than current_version.
 
     Raises InvalidVersion if either version string cannot be parsed.
@@ -130,9 +128,7 @@ class PluginManager:
             return False
 
         if record.state not in [PluginState.INSTALLED, PluginState.DISABLED]:
-            self.context.logger.debug(
-                f"Plugins[Setup]: {domain} - Already in state {record.state}"
-            )
+            self.context.logger.debug(f"Plugins[Setup]: {domain} - Already in state {record.state}")
             return True
 
         try:
@@ -175,9 +171,7 @@ class PluginManager:
         record = self.plugins.get(domain)
 
         if not record:
-            self.context.logger.warning(
-                f"Plugins[Setup Entry Failed]: {domain} - Not found"
-            )
+            self.context.logger.warning(f"Plugins[Setup Entry Failed]: {domain} - Not found")
             return False
 
         try:
@@ -201,9 +195,7 @@ class PluginManager:
             record.state = PluginState.ENABLED
 
             self.context.logger.debug(f"Plugins[Setup Entry]: {domain} - Success")
-            await self.event_bus.fire(
-                "plugin_enabled", {"domain": domain, "entry_id": entry.entry_id}
-            )
+            await self.event_bus.fire("plugin_enabled", {"domain": domain, "entry_id": entry.entry_id})
             return True
 
         except Exception as e:
@@ -212,9 +204,7 @@ class PluginManager:
             self.context.logger.warning(f"Plugins[Setup Entry Failed]: {domain} - {e}")
             return False
 
-    async def async_forward_entry_setup(
-        self, entry: PluginEntryData, platform: str
-    ) -> bool:
+    async def async_forward_entry_setup(self, entry: PluginEntryData, platform: str) -> bool:
         """
         Forward setup to a platform (HA-style).
         Similar to: hass.config_entries.async_forward_entry_setup(entry, "parser")
@@ -242,22 +232,16 @@ class PluginManager:
                     self._platforms[domain][platform] = []
 
                 self._platforms[domain][platform].extend(entities)
-                self.context.logger.debug(
-                    f"Registered {len(entities)} {platform} entities for {domain}"
-                )
+                self.context.logger.debug(f"Registered {len(entities)} {platform} entities for {domain}")
 
             # Call platform's async_setup_entry
             if hasattr(platform_module, "async_setup_entry"):
-                await platform_module.async_setup_entry(
-                    self.context, entry, async_add_entities
-                )
+                await platform_module.async_setup_entry(self.context, entry, async_add_entities)
 
             return True
 
         except Exception as e:
-            self.context.logger.warning(
-                f"Failed to setup {platform} platform for {domain}: {e}", exc_info=True
-            )
+            self.context.logger.warning(f"Failed to setup {platform} platform for {domain}: {e}", exc_info=True)
             return False
 
     def get_config(self, domain: str) -> PluginConfigSchema:
@@ -297,9 +281,7 @@ class PluginManager:
         else:
             return callback(data)
 
-    async def async_check_updates(
-        self, repo_url: str, ref: str = "main"
-    ) -> dict[str, str | None]:
+    async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, str | None]:
         """
         Check for available plugin updates by comparing local versions against the remote manifest.
 
@@ -337,9 +319,7 @@ class PluginManager:
                 continue
 
             try:
-                update_available = is_plugin_update_available(
-                    remote_version_str, local_record.version
-                )
+                update_available = is_plugin_update_available(remote_version_str, local_record.version)
             except InvalidVersion:
                 logger.warning(
                     "Plugin %s: invalid version string (local=%s, remote=%s)",
@@ -367,9 +347,7 @@ class PluginManager:
         await self._async_load_manifest(plugin_dir, manifest_path)
 
         if domain not in self.plugins:
-            self.context.logger.warning(
-                f"Plugins[Activate Failed]: {domain} - manifest not loaded"
-            )
+            self.context.logger.warning(f"Plugins[Activate Failed]: {domain} - manifest not loaded")
             return False
 
         if not await self.async_setup(domain):
@@ -388,9 +366,7 @@ class PluginManager:
 
     async def async_reload(self, domain: str) -> bool:
         """Reload a plugin."""
-        entries = [
-            entry for entry in self.config_entries.values() if entry.domain == domain
-        ]
+        entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
 
         for entry in entries:
             await self.async_unload_entry(entry.entry_id)
@@ -406,9 +382,7 @@ class PluginManager:
                 try:
                     record.manifest = self._read_plugin_manifest(manifest_path, domain)
                 except Exception as e:
-                    self.context.logger.warning(
-                        f"Plugins[Reload]: {domain} - Failed to re-read manifest: {e}"
-                    )
+                    self.context.logger.warning(f"Plugins[Reload]: {domain} - Failed to re-read manifest: {e}")
 
         if await self.async_setup(domain):
             for entry in entries:
@@ -417,9 +391,7 @@ class PluginManager:
 
         return False
 
-    async def async_unload_platforms(
-        self, entry: PluginEntryData, platforms: list[str]
-    ) -> bool:
+    async def async_unload_platforms(self, entry: PluginEntryData, platforms: list[str]) -> bool:
         """
         Unload platforms for an entry (HA-style).
         Similar to: hass.config_entries.async_unload_platforms(entry, ["parser"])
@@ -470,17 +442,14 @@ class PluginManager:
 
             # Check if plugin has other active entries
             has_active = any(
-                e.domain == domain and e.state == PluginState.ENABLED
-                for e in self.config_entries.values()
+                e.domain == domain and e.state == PluginState.ENABLED for e in self.config_entries.values()
             )
 
             if not has_active:
                 record.state = PluginState.LOADED
 
             self.context.logger.debug(f"Plugins[Unload Entry]: {domain} - Success")
-            await self.event_bus.fire(
-                "plugin_disabled", {"domain": domain, "entry_id": entry_id}
-            )
+            await self.event_bus.fire("plugin_disabled", {"domain": domain, "entry_id": entry_id})
             return True
 
         except Exception as e:
@@ -501,9 +470,7 @@ class PluginManager:
             raise ValueError(f"Plugin '{domain}' not found")
 
         # Unload all config entries
-        entries = [
-            entry for entry in self.config_entries.values() if entry.domain == domain
-        ]
+        entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
         for entry in entries:
             await self.async_unload_entry(entry.entry_id)
 
@@ -550,13 +517,9 @@ class PluginManager:
             self.plugins[domain] = PluginRecord(manifest, None)
             self.context.logger.debug(f"Plugins[Discovered]: {domain}")
 
-            await self.event_bus.fire(
-                "plugin_discovered", {"domain": domain, "manifest": manifest}
-            )
+            await self.event_bus.fire("plugin_discovered", {"domain": domain, "manifest": manifest})
         except Exception as e:
-            self.context.logger.warning(
-                f"Plugins[Discovery Failed]: {plugin_dir.name} - {e}"
-            )
+            self.context.logger.warning(f"Plugins[Discovery Failed]: {plugin_dir.name} - {e}")
 
     def _read_plugin_manifest(self, manifest_path: Path, domain: str) -> dict:
         """Read and validate a single plugin's manifest.json.
@@ -583,9 +546,7 @@ class PluginManager:
 
         manifest_domain = data.get("domain")
         if manifest_domain != domain:
-            raise ValueError(
-                f"manifest domain '{manifest_domain}' does not match plugin domain '{domain}'"
-            )
+            raise ValueError(f"manifest domain '{manifest_domain}' does not match plugin domain '{domain}'")
 
         return data
 
@@ -602,32 +563,22 @@ class PluginManager:
         conflicts = self._detect_conflicts(requirements)
         if conflicts:
             for conflict in conflicts:
-                self.context.logger.warning(
-                    f"Plugins[Dependencies]: {domain} - Version conflict: {conflict}"
-                )
+                self.context.logger.warning(f"Plugins[Dependencies]: {domain} - Version conflict: {conflict}")
             return False
 
         try:
             to_install = self._filter_missing_requirements(requirements)
             if not to_install:
-                self.context.logger.debug(
-                    f"Plugins[Dependencies]: {domain} - All requirements already satisfied"
-                )
+                self.context.logger.debug(f"Plugins[Dependencies]: {domain} - All requirements already satisfied")
                 return True
 
-            self.context.logger.info(
-                f"Plugins[Dependencies]: {domain} - Installing {len(to_install)} packages"
-            )
+            self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installing {len(to_install)} packages")
 
             loop = asyncio.get_running_loop()
-            installed = await loop.run_in_executor(
-                None, self._install_packages, to_install
-            )
+            installed = await loop.run_in_executor(None, self._install_packages, to_install)
 
             if installed:
-                self.context.logger.info(
-                    f"Plugins[Dependencies]: {domain} - Installed {installed}"
-                )
+                self.context.logger.info(f"Plugins[Dependencies]: {domain} - Installed {installed}")
             return True
 
         except Exception:
@@ -658,9 +609,7 @@ class PluginManager:
             try:
                 req = Requirement(req_str)
                 installed = importlib.metadata.version(req.name)
-                if req.specifier and not req.specifier.contains(
-                    installed, prereleases=True
-                ):
+                if req.specifier and not req.specifier.contains(installed, prereleases=True):
                     missing.append(req_str)
             except importlib.metadata.PackageNotFoundError:
                 missing.append(req_str)
@@ -736,9 +685,7 @@ class PluginManager:
             spec = importlib.util.spec_from_file_location(module_name, platform_path)
 
             if spec is None or spec.loader is None:
-                self.context.logger.warning(
-                    f"Failed to create module spec for {platform_path}"
-                )
+                self.context.logger.warning(f"Failed to create module spec for {platform_path}")
                 return None
 
             module = importlib.util.module_from_spec(spec)
@@ -753,9 +700,7 @@ class PluginManager:
             return module
 
         except Exception as e:
-            self.context.logger.warning(
-                f"Failed to load {platform} platform for {domain}: {e}", exc_info=True
-            )
+            self.context.logger.warning(f"Failed to load {platform} platform for {domain}: {e}", exc_info=True)
             return None
 
     async def _async_cleanup_domain_platforms(self, domain: str) -> None:

@@ -24,9 +24,7 @@ from contenthive.services.content import content_service
 router_v1 = APIRouter(prefix="/v1/content", tags=["content"])
 
 
-@router_v1.get(
-    "/contents", response_model=APIResponse[PaginatedResponse[URLParserResult]]
-)
+@router_v1.get("/contents", response_model=APIResponse[PaginatedResponse[URLParserResult]])
 async def list_contents(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     platform_id: int | None = Query(None, description="Filter by platform ID"),
@@ -62,16 +60,12 @@ async def list_contents(
         )
 
 
-@router_v1.get(
-    "/platforms", response_model=APIResponse[PaginatedResponse[PlatformInfo]]
-)
+@router_v1.get("/platforms", response_model=APIResponse[PaginatedResponse[PlatformInfo]])
 async def list_platforms(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)"),
-    sort_by: str = Query(
-        "id", pattern="^(id|name|created_at|updated_at)$", description="Sort field"
-    ),
+    sort_by: str = Query("id", pattern="^(id|name|created_at|updated_at)$", description="Sort field"),
     order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order"),
 ) -> APIResponse[PaginatedResponse[PlatformInfo]]:
     try:
@@ -100,9 +94,7 @@ async def list_authors(
     platform_id: int | None = Query(None, description="Filter by platform ID"),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)"),
-    sort_by: str = Query(
-        "id", pattern="^(id|name|created_at|updated_at)$", description="Sort field"
-    ),
+    sort_by: str = Query("id", pattern="^(id|name|created_at|updated_at)$", description="Sort field"),
     order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order"),
 ) -> APIResponse[PaginatedResponse[AuthorInfo]]:
     try:
@@ -126,9 +118,7 @@ async def list_authors(
         )
 
 
-@router_v1.delete(
-    "/platforms/{platform_id}", response_model=APIResponse[OperationResult]
-)
+@router_v1.delete("/platforms/{platform_id}", response_model=APIResponse[OperationResult])
 async def delete_platform(
     platform_id: int,
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
@@ -174,9 +164,7 @@ async def delete_author(
         if not success:
             raise DetailedHTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=ErrorDetail(
-                    code="AUTHOR_NOT_FOUND", message=f"Author {author_id} not found"
-                ),
+                detail=ErrorDetail(code="AUTHOR_NOT_FOUND", message=f"Author {author_id} not found"),
             )
         return APIResponse(
             status=ResponseStatus.SUCCESS,
@@ -200,17 +188,13 @@ async def delete_author(
         )
 
 
-@router_v1.delete(
-    "/contents/{parse_result_id}", response_model=APIResponse[OperationResult]
-)
+@router_v1.delete("/contents/{parse_result_id}", response_model=APIResponse[OperationResult])
 async def delete_content(
     parse_result_id: int,
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
 ) -> APIResponse[OperationResult]:
     try:
-        success = await content_service.delete_parse_result(
-            current_user.id, parse_result_id
-        )
+        success = await content_service.delete_parse_result(current_user.id, parse_result_id)
         if not success:
             raise DetailedHTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

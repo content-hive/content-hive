@@ -22,12 +22,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Add url_fallbacks and cover_fallbacks JSON columns to media table."""
     with op.batch_alter_table("media", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column("url_fallbacks", sa.JSON(), nullable=False, server_default="[]")
-        )
-        batch_op.add_column(
-            sa.Column("cover_fallbacks", sa.JSON(), nullable=False, server_default="[]")
-        )
+        batch_op.add_column(sa.Column("url_fallbacks", sa.JSON(), nullable=False, server_default="[]"))
+        batch_op.add_column(sa.Column("cover_fallbacks", sa.JSON(), nullable=False, server_default="[]"))
 
 
 def downgrade() -> None:

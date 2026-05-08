@@ -32,9 +32,7 @@ class ContentService:
         """
         pass
 
-    async def _find_parser_for_url(
-        self, url: str, preferred_domain: str | None = None
-    ) -> str | None:
+    async def _find_parser_for_url(self, url: str, preferred_domain: str | None = None) -> str | None:
         """
         Find parser entity for URL.
         """
@@ -42,18 +40,12 @@ class ContentService:
         if not manager:
             raise Exception("Plugin manager not initialized")
 
-        parser_domains = [
-            domain
-            for domain in manager.services
-            if "can_parse" in manager.services.get(domain, {})
-        ]
+        parser_domains = [domain for domain in manager.services if "can_parse" in manager.services.get(domain, {})]
 
         # Try preferred parser first
         if preferred_domain and preferred_domain in parser_domains:
             try:
-                if await manager.call_service(
-                    preferred_domain, "can_parse", {"url": url}
-                ):
+                if await manager.call_service(preferred_domain, "can_parse", {"url": url}):
                     return preferred_domain
             except Exception:
                 logger.exception(f"Error checking preferred parser {preferred_domain}")
@@ -71,9 +63,7 @@ class ContentService:
 
         return None
 
-    async def parser_content(
-        self, url: HttpUrl, plugin_id: str | None = None
-    ) -> ParserResult | None:
+    async def parser_content(self, url: HttpUrl, plugin_id: str | None = None) -> ParserResult | None:
         """
         Fetch and parse content from the given URL using the appropriate parser plugin.
 
@@ -92,9 +82,7 @@ class ContentService:
                 raise Exception("Plugin manager not initialized")
 
             # Find parser for URL
-            domain = await self._find_parser_for_url(
-                str(url), preferred_domain=plugin_id
-            )
+            domain = await self._find_parser_for_url(str(url), preferred_domain=plugin_id)
 
             if not domain:
                 raise Exception(f"No parser found for URL: {url}")
@@ -155,9 +143,7 @@ class ContentService:
 
             return PaginatedResponse(
                 items=items,
-                pagination=PaginationInfo(
-                    page=page, page_size=page_size, total=total, total_pages=total_pages
-                ),
+                pagination=PaginationInfo(page=page, page_size=page_size, total=total, total_pages=total_pages),
             )
         except Exception:
             logger.exception("Error fetching contents from the database")
@@ -200,9 +186,7 @@ class ContentService:
 
             return PaginatedResponse(
                 items=items,
-                pagination=PaginationInfo(
-                    page=page, page_size=page_size, total=total, total_pages=total_pages
-                ),
+                pagination=PaginationInfo(page=page, page_size=page_size, total=total, total_pages=total_pages),
             )
         except Exception:
             logger.exception("Error fetching platforms from the database")
@@ -248,9 +232,7 @@ class ContentService:
 
             return PaginatedResponse(
                 items=items,
-                pagination=PaginationInfo(
-                    page=page, page_size=page_size, total=total, total_pages=total_pages
-                ),
+                pagination=PaginationInfo(page=page, page_size=page_size, total=total, total_pages=total_pages),
             )
         except Exception:
             logger.exception("Error fetching authors from the database")
@@ -269,9 +251,7 @@ class ContentService:
         """
         try:
             with ContentDAO() as dao:
-                success, file_paths = dao.delete_platform(
-                    user_id, platform_id, commit=True
-                )
+                success, file_paths = dao.delete_platform(user_id, platform_id, commit=True)
 
             if success and file_paths:
                 deleted, failed = media_service.delete_media_files(file_paths)
@@ -301,9 +281,7 @@ class ContentService:
 
             if success and file_paths:
                 deleted, failed = media_service.delete_media_files(file_paths)
-                logger.info(
-                    f"Deleted author {author_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)"
-                )
+                logger.info(f"Deleted author {author_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
 
             return success
         except Exception:
@@ -323,9 +301,7 @@ class ContentService:
         """
         try:
             with ContentDAO() as dao:
-                success, file_paths = dao.delete_parse_result(
-                    user_id, parse_result_id, commit=True
-                )
+                success, file_paths = dao.delete_parse_result(user_id, parse_result_id, commit=True)
 
             if success and file_paths:
                 deleted, failed = media_service.delete_media_files(file_paths)
@@ -376,9 +352,7 @@ class ContentService:
 
             return SyncResponse(
                 items=items,
-                pagination=PaginationInfo(
-                    page=page, page_size=page_size, total=total, total_pages=total_pages
-                ),
+                pagination=PaginationInfo(page=page, page_size=page_size, total=total, total_pages=total_pages),
                 sync_timestamp=sync_timestamp,
             )
         except Exception:

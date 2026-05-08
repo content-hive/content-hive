@@ -34,9 +34,7 @@ async def list_plugins(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
 ) -> APIResponse[PluginListResponse]:
     """List all installed plugins with their current state and version info"""
-    return APIResponse(
-        status=ResponseStatus.SUCCESS, data=plugin_service.list_plugins()
-    )
+    return APIResponse(status=ResponseStatus.SUCCESS, data=plugin_service.list_plugins())
 
 
 @router_v1.get("/available", response_model=APIResponse[AvailablePluginsResponse])
@@ -209,9 +207,7 @@ async def get_plugin_config(
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
-@router_v1.put(
-    "/{domain}/config", response_model=APIResponse[UpdatePluginConfigResponse]
-)
+@router_v1.put("/{domain}/config", response_model=APIResponse[UpdatePluginConfigResponse])
 async def update_plugin_config(
     domain: str,
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],

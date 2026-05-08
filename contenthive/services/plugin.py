@@ -62,9 +62,7 @@ class ConfigValidationError(Exception):
         super().__init__("; ".join(errors))
 
 
-def _schema_class_to_setting_items(
-    schema_cls: type, config_obj: PluginConfigSchema
-) -> list[SettingItem]:
+def _schema_class_to_setting_items(schema_cls: type, config_obj: PluginConfigSchema) -> list[SettingItem]:
     """Convert a PluginConfigSchema class + current config object into SettingItem list."""
     items: list[SettingItem] = []
     for field_name, field_info in schema_cls.model_fields.items():
@@ -75,9 +73,7 @@ def _schema_class_to_setting_items(
             field_type = SettingFieldType.ENUM
             options = [e.value for e in annotation]
         else:
-            field_type = _PYTHON_TYPE_TO_FIELD_TYPE.get(
-                annotation, SettingFieldType.STRING
-            )
+            field_type = _PYTHON_TYPE_TO_FIELD_TYPE.get(annotation, SettingFieldType.STRING)
             options = None
 
         # label: use title if set, fallback to field name
@@ -90,11 +86,7 @@ def _schema_class_to_setting_items(
         required = field_info.is_required()
 
         # default value: None for required fields or factory-based defaults
-        default = (
-            None
-            if required or field_info.default_factory is not None
-            else field_info.default
-        )
+        default = None if required or field_info.default_factory is not None else field_info.default
         if isinstance(default, Enum):
             default = default.value
 
@@ -149,9 +141,7 @@ def _validate_partial_config(
     # 1. Reject framework-reserved keys
     for key in incoming:
         if key in FRAMEWORK_KEYS:
-            errors.append(
-                f"Key '{key}' is reserved by the framework and cannot be set via API"
-            )
+            errors.append(f"Key '{key}' is reserved by the framework and cannot be set via API")
 
     declared_fields = schema_cls.model_fields
 
@@ -165,18 +155,14 @@ def _validate_partial_config(
             # Enum: check that value is a string matching one of the enum member values
             valid_values = [e.value for e in annotation]
             if value not in valid_values:
-                errors.append(
-                    f"Key '{key}': '{value}' is not a valid option, must be one of {valid_values}"
-                )
+                errors.append(f"Key '{key}': '{value}' is not a valid option, must be one of {valid_values}")
         else:
             try:
                 TypeAdapter(annotation).validate_python(value, strict=True)
             except Exception:
                 expected = getattr(annotation, "__name__", str(annotation))
                 actual = type(value).__name__
-                errors.append(
-                    f"Key '{key}': expected {expected}, got {actual} ({value!r})"
-                )
+                errors.append(f"Key '{key}': expected {expected}, got {actual} ({value!r})")
 
     # 3. Check required fields: satisfied when present in incoming OR in stored config
     satisfied = {k for k in incoming if k in declared_fields}
@@ -253,9 +239,7 @@ class PluginService:
             valid=is_valid,
             errors=errors,
             warnings=warnings,
-            message="Configuration is valid"
-            if is_valid
-            else "Configuration has errors",
+            message="Configuration is valid" if is_valid else "Configuration has errors",
         )
 
     async def check_updates(self) -> CheckUpdatesResponse:
@@ -350,9 +334,7 @@ class PluginService:
                     else:
                         failed.append(domain)
             except Exception as e:
-                logger.exception(
-                    f"Failed to activate plugin {domain} after update: {e}"
-                )
+                logger.exception(f"Failed to activate plugin {domain} after update: {e}")
                 failed.append(domain)
 
         return UpdatePluginsResponse(updated=updated, failed=failed)
@@ -449,11 +431,7 @@ class PluginService:
         if domain not in plugin_manager.plugins:
             raise ValueError(f"Plugin '{domain}' not found")
 
-        entries = [
-            entry
-            for entry in plugin_manager.config_entries.values()
-            if entry.domain == domain
-        ]
+        entries = [entry for entry in plugin_manager.config_entries.values() if entry.domain == domain]
         for entry in entries:
             await plugin_manager.async_unload_entry(entry.entry_id)
 
@@ -538,9 +516,7 @@ class PluginService:
         try:
             remove_plugin_config(domain)
         except Exception as e:
-            raise RuntimeError(
-                f"Plugin '{domain}' deleted but failed to update plugins.yaml: {e}"
-            ) from e
+            raise RuntimeError(f"Plugin '{domain}' deleted but failed to update plugins.yaml: {e}") from e
 
         return OperationResult(
             operation=OperationType.DELETE,
@@ -587,9 +563,7 @@ class PluginService:
             settings=_schema_class_to_setting_items(schema_cls, config_obj),
         )
 
-    def update_plugin_settings(
-        self, domain: str, body: UpdatePluginConfigRequest
-    ) -> UpdatePluginConfigResponse:
+    def update_plugin_settings(self, domain: str, body: UpdatePluginConfigRequest) -> UpdatePluginConfigResponse:
         """Validate and persist plugin config fields declared in CONFIG_SCHEMA.
 
         If the plugin has no CONFIG_SCHEMA, all incoming keys are ignored and an
@@ -634,9 +608,7 @@ class PluginService:
                     for err in e.errors()
                 ]
             ) from e
-        errors = _validate_partial_config(
-            schema_cls, body.config, stored=current.model_dump()
-        )
+        errors = _validate_partial_config(schema_cls, body.config, stored=current.model_dump())
         if errors:
             raise ConfigValidationError(errors)
 

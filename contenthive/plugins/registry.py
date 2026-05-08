@@ -72,9 +72,7 @@ class PluginRecord:
         if self.instance is None:
             return None
         schema = getattr(self.instance, "CONFIG_SCHEMA", None)
-        if schema is None or not (
-            isinstance(schema, type) and issubclass(schema, PluginConfigSchema)
-        ):
+        if schema is None or not (isinstance(schema, type) and issubclass(schema, PluginConfigSchema)):
             return None
         return schema
 

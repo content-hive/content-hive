@@ -74,9 +74,7 @@ async def cancel_parser_task(
         if not task:
             raise DetailedHTTPException(
                 status_code=404,
-                detail=ErrorDetail(
-                    code="TASK_NOT_FOUND", message=f"Task {task_id} not found"
-                ),
+                detail=ErrorDetail(code="TASK_NOT_FOUND", message=f"Task {task_id} not found"),
             )
 
         if task.user_id != current_user.id:
@@ -136,9 +134,7 @@ async def get_parser_task(
         if not task:
             raise DetailedHTTPException(
                 status_code=404,
-                detail=ErrorDetail(
-                    code="TASK_NOT_FOUND", message=f"Task {task_id} not found"
-                ),
+                detail=ErrorDetail(code="TASK_NOT_FOUND", message=f"Task {task_id} not found"),
             )
 
         # Check if user owns this task
@@ -171,9 +167,7 @@ async def list_parser_tasks(
     task_ids: list[str] | None = Query(None),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
-    sort_by: str = Query(
-        "created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"
-    ),
+    sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),
     order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
 ) -> APIResponse[PaginatedResponse[MainTaskInfo]]:
     """
@@ -204,6 +198,4 @@ async def list_parser_tasks(
 
         return APIResponse(status=ResponseStatus.SUCCESS, data=result)
     except Exception as e:
-        raise DetailedHTTPException(
-            status_code=500, detail=ErrorDetail(code="TASK_LIST_FAILED", message=str(e))
-        ) from e
+        raise DetailedHTTPException(status_code=500, detail=ErrorDetail(code="TASK_LIST_FAILED", message=str(e))) from e

@@ -28,9 +28,7 @@ class ErrorDetail(APIBaseModel):
 
     code: str = Field(..., description="Error code")
     message: str = Field(..., description="Error message")
-    details: dict[str, Any] | None = Field(
-        default=None, description="Detailed error information"
-    )
+    details: dict[str, Any] | None = Field(default=None, description="Detailed error information")
 
 
 class APIResponse[T](APIBaseModel):

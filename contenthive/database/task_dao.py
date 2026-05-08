@@ -158,9 +158,7 @@ class TaskDAO:
             logger.exception(f"Failed to create REUSED main task {task_id}")
             raise
 
-    def get_main_task_by_id(
-        self, id: int, include_sub_tasks: bool = False
-    ) -> MainTaskEntity | None:
+    def get_main_task_by_id(self, id: int, include_sub_tasks: bool = False) -> MainTaskEntity | None:
         """
         Get main task by database ID.
 
@@ -184,9 +182,7 @@ class TaskDAO:
             logger.exception(f"Failed to get main task by ID {id}")
             raise
 
-    def get_main_task_by_task_id(
-        self, task_id: str, include_sub_tasks: bool = False
-    ) -> MainTaskEntity | None:
+    def get_main_task_by_task_id(self, task_id: str, include_sub_tasks: bool = False) -> MainTaskEntity | None:
         """
         Get main task by task ID string.
 
@@ -258,9 +254,7 @@ class TaskDAO:
             logger.exception(f"Failed to update main task {id} status")
             raise
 
-    def update_main_task_result(
-        self, id: int, result: dict, commit: bool = True
-    ) -> bool:
+    def update_main_task_result(self, id: int, result: dict, commit: bool = True) -> bool:
         """
         Update main task result.
 
@@ -292,9 +286,7 @@ class TaskDAO:
             logger.exception(f"Failed to update main task {id} result")
             raise
 
-    def update_main_task_parse_result_id(
-        self, id: int, parse_result_id: int, commit: bool = True
-    ) -> bool:
+    def update_main_task_parse_result_id(self, id: int, parse_result_id: int, commit: bool = True) -> bool:
         """
         Update main task's associated parse result ID.
 
@@ -345,9 +337,7 @@ class TaskDAO:
         try:
             if task_ids:
                 session.execute(
-                    update(MainTask)
-                    .where(MainTask.id.in_(task_ids))
-                    .values(primary_task_id=new_primary_id)
+                    update(MainTask).where(MainTask.id.in_(task_ids)).values(primary_task_id=new_primary_id)
                 )
 
             session.execute(
@@ -359,9 +349,7 @@ class TaskDAO:
             session.commit()
         except Exception:
             session.rollback()
-            logger.exception(
-                f"Failed to bulk update linked tasks (new_primary={new_primary_id})"
-            )
+            logger.exception(f"Failed to bulk update linked tasks (new_primary={new_primary_id})")
             raise
 
     def list_main_tasks(
@@ -419,9 +407,7 @@ class TaskDAO:
                 stmt = stmt.where(MainTask.primary_task_id == primary_task_id)
 
             # Get total count with the same filters
-            count_stmt = select(func.count(MainTask.id)).where(
-                MainTask.deleted_at.is_(None)
-            )
+            count_stmt = select(func.count(MainTask.id)).where(MainTask.deleted_at.is_(None))
             if user_id is not None:
                 count_stmt = count_stmt.where(MainTask.user_id == user_id)
             if task_type is not None:
@@ -433,9 +419,7 @@ class TaskDAO:
             if role is not None:
                 count_stmt = count_stmt.where(MainTask.role == role)
             if primary_task_id is not None:
-                count_stmt = count_stmt.where(
-                    MainTask.primary_task_id == primary_task_id
-                )
+                count_stmt = count_stmt.where(MainTask.primary_task_id == primary_task_id)
 
             total = session.execute(count_stmt).scalar() or 0
 
@@ -693,9 +677,7 @@ class TaskDAO:
             logger.exception(f"Failed to update sub task {id} status")
             raise
 
-    def update_sub_task_progress(
-        self, id: int, progress: int, commit: bool = True
-    ) -> bool:
+    def update_sub_task_progress(self, id: int, progress: int, commit: bool = True) -> bool:
         """
         Update sub task progress.
 
@@ -728,9 +710,7 @@ class TaskDAO:
             logger.exception(f"Failed to update sub task {id} progress")
             raise
 
-    def update_sub_task_result(
-        self, id: int, result: dict, commit: bool = True
-    ) -> bool:
+    def update_sub_task_result(self, id: int, result: dict, commit: bool = True) -> bool:
         """
         Update sub task result.
 
@@ -804,9 +784,7 @@ class TaskDAO:
             logger.exception("Failed to list sub tasks")
             raise
 
-    def delete_sub_task(
-        self, id: int, soft_delete: bool = True, commit: bool = True
-    ) -> bool:
+    def delete_sub_task(self, id: int, soft_delete: bool = True, commit: bool = True) -> bool:
         """
         Delete a sub task (soft delete by default).
 

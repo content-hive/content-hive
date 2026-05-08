@@ -19,15 +19,11 @@ class TokenService:
     def __init__(self):
         pass
 
-    def authenticate_user(
-        self, username: str, password: str, request: Request
-    ) -> LoginResponse:
+    def authenticate_user(self, username: str, password: str, request: Request) -> LoginResponse:
         """Authenticate user and return token data"""
         with UserDAO() as dao:
             user = dao.get_user_by_username(username)
-            if not user or not secret_manager.verify_password(
-                password, user.password_hash
-            ):
+            if not user or not secret_manager.verify_password(password, user.password_hash):
                 raise ValueError("Invalid username or password")
 
             if user.status == 2:  # disabled
@@ -56,9 +52,7 @@ class TokenService:
                     "token_version": user.token_version,
                 }
             )
-            refresh_token_expires_at = datetime.now(UTC) + timedelta(
-                days=secret_manager.refresh_token_expire_days
-            )
+            refresh_token_expires_at = datetime.now(UTC) + timedelta(days=secret_manager.refresh_token_expire_days)
 
             device_info = self._extract_device_info(request)
 
@@ -82,9 +76,7 @@ class TokenService:
                 ),
             )
 
-    def refresh_access_token(
-        self, refresh_token: str, request: Request
-    ) -> RefreshTokenResponse:
+    def refresh_access_token(self, refresh_token: str, request: Request) -> RefreshTokenResponse:
         """Refresh access token using a valid refresh token"""
         try:
             payload = secret_manager.decode_token(token=refresh_token)
@@ -99,12 +91,7 @@ class TokenService:
             jti: str | None = payload.get("jti")
             token_version: int | None = payload.get("token_version")
 
-            if (
-                username is None
-                or user_id is None
-                or jti is None
-                or token_version is None
-            ):
+            if username is None or user_id is None or jti is None or token_version is None:
                 raise ValueError("Invalid token payload")
 
             with UserDAO() as dao:
@@ -114,9 +101,7 @@ class TokenService:
 
                 # Validate token_version to ensure token hasn't been invalidated
                 if user.token_version != token_version:
-                    raise ValueError(
-                        "Token has been invalidated due to account changes"
-                    )
+                    raise ValueError("Token has been invalidated due to account changes")
 
                 # Check if user account is disabled
                 if user.status == 2:
@@ -152,9 +137,7 @@ class TokenService:
                         "token_version": user.token_version,
                     }
                 )
-                refresh_token_expires_at = datetime.now(UTC) + timedelta(
-                    days=secret_manager.refresh_token_expire_days
-                )
+                refresh_token_expires_at = datetime.now(UTC) + timedelta(days=secret_manager.refresh_token_expire_days)
 
                 device_info = self._extract_device_info(request)
 

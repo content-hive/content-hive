@@ -64,9 +64,7 @@ async def list_users(
         ) from e
 
 
-@router_v1.post(
-    "/users/{user_id}/reset-password", response_model=APIResponse[ResetPasswordResponse]
-)
+@router_v1.post("/users/{user_id}/reset-password", response_model=APIResponse[ResetPasswordResponse])
 async def reset_user_password(
     user_id: int, current_user: Annotated[UserModel, Depends(get_current_admin_user)]
 ) -> APIResponse[ResetPasswordResponse]:
@@ -116,9 +114,7 @@ async def change_user_status(
         if not result:
             raise DetailedHTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=ErrorDetail(
-                    code="USER_NOT_FOUND", message=f"User {user_id} not found"
-                ),
+                detail=ErrorDetail(code="USER_NOT_FOUND", message=f"User {user_id} not found"),
             )
         return APIResponse(
             status=ResponseStatus.SUCCESS,

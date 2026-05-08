@@ -83,9 +83,7 @@ def _write_admin_credentials(username: str, password: str) -> None:
         credentials_file.chmod(0o600)
 
         logger.info("Admin credentials saved to: %s", credentials_file)
-        logger.warning(
-            "Please retrieve admin credentials and delete the credentials file"
-        )
+        logger.warning("Please retrieve admin credentials and delete the credentials file")
 
     except Exception as e:
         logger.exception("Could not write admin credentials file: %s", e)

@@ -24,24 +24,16 @@ class Settings(BaseSettings):
     logs_dir: Path = Path(os.getenv("LOGS_DIR", "/config/logs"))
     plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/config/plugins"))
 
-    plugins_repo_url: str = os.getenv(
-        "PLUGINS_REPO_URL", "https://github.com/content-hive/plugins.git"
-    )
-    plugins_repo_ref_type: str = os.getenv(
-        "PLUGINS_REPO_REF_TYPE", "branch"
-    )  # branch, tag, commit
+    plugins_repo_url: str = os.getenv("PLUGINS_REPO_URL", "https://github.com/content-hive/plugins.git")
+    plugins_repo_ref_type: str = os.getenv("PLUGINS_REPO_REF_TYPE", "branch")  # branch, tag, commit
     plugins_repo_ref: str = os.getenv("PLUGINS_REPO_REF", "main")
 
     # Token settings
-    access_token_expire_minutes: int = int(
-        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
-    )
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     # HTTP download settings
-    download_max_retries: int = Field(
-        default=int(os.getenv("DOWNLOAD_MAX_RETRIES", "3")), ge=0
-    )
+    download_max_retries: int = Field(default=int(os.getenv("DOWNLOAD_MAX_RETRIES", "3")), ge=0)
     download_user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 "
         "Safari/537.36 Edg/143.0.0.0"

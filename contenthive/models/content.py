@@ -4,15 +4,12 @@ Models for content-related operations.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TypeVar
 
 from pydantic import BaseModel, Field, HttpUrl
 
 from contenthive.database.orm_models import Author, Media, ParseResult, Platform
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import MediaStatus, MediaType, ParserResultStatus
-
-T = TypeVar("T")
 
 # Database Models
 
@@ -67,9 +64,7 @@ class AuthorEntity:
 
         if orm.platform is None:
             # Author's platform information is missing, cannot convert to AuthorEntity
-            raise ValueError(
-                f"Author ORM object (id={orm.id}) has no associated platform"
-            )
+            raise ValueError(f"Author ORM object (id={orm.id}) has no associated platform")
 
         return cls(
             id=orm.id,
@@ -157,14 +152,10 @@ class ParseResultEntity:
         """Convert ORM ParseResult object to entity"""
 
         if orm.author is None:
-            raise ValueError(
-                f"ParseResult ORM object (id={orm.id}) has no associated author"
-            )
+            raise ValueError(f"ParseResult ORM object (id={orm.id}) has no associated author")
 
         if orm.platform is None:
-            raise ValueError(
-                f"ParseResult ORM object (id={orm.id}) has no associated platform"
-            )
+            raise ValueError(f"ParseResult ORM object (id={orm.id}) has no associated platform")
 
         return cls(
             id=orm.id,
@@ -182,9 +173,7 @@ class ParseResultEntity:
             deleted_at=orm.deleted_at,
             author=AuthorEntity.from_orm(orm.author),
             platform=PlatformEntity.from_orm(orm.platform),
-            media=[MediaEntity.from_orm(prm.media) for prm in orm.media_list]
-            if orm.media_list
-            else [],
+            media=[MediaEntity.from_orm(prm.media) for prm in orm.media_list] if orm.media_list else [],
         )
 
 
@@ -194,19 +183,13 @@ class ParseResultEntity:
 class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
 
-    status: MediaStatus = Field(
-        ..., description="Download status: pending, downloading, completed, failed"
-    )
+    status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
     url: str = Field(..., description="Original media URL")
     type: MediaType | None = Field(None, description="Media type")
     title: str | None = Field(None, description="Media title")
     cover: str | None = Field(None, description="Original video cover URL")
-    url_fallbacks: list[str] = Field(
-        default_factory=list, description="Fallback media URLs"
-    )
-    cover_fallbacks: list[str] = Field(
-        default_factory=list, description="Fallback cover URLs"
-    )
+    url_fallbacks: list[str] = Field(default_factory=list, description="Fallback media URLs")
+    cover_fallbacks: list[str] = Field(default_factory=list, description="Fallback cover URLs")
     duration: int | None = Field(None, description="Video duration in seconds")
     width: int | None = Field(None, description="Media width in pixels")
     height: int | None = Field(None, description="Media height in pixels")
@@ -248,9 +231,7 @@ class MediaInfo(APIBaseModel):
     """Stored media item model (with local paths)"""
 
     id: int = Field(..., description="Media ID")
-    status: MediaStatus = Field(
-        ..., description="Download status: pending, downloading, completed, failed"
-    )
+    status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
     url: HttpUrl = Field(..., description="Original media URL")
     type: MediaType | None = Field(None, description="Media type")
     title: str | None = Field(None, description="Media title")
@@ -258,12 +239,8 @@ class MediaInfo(APIBaseModel):
     width: int | None = Field(None, description="Media width in pixels")
     height: int | None = Field(None, description="Media height in pixels")
     cover: HttpUrl | None = Field(None, description="Original video cover URL")
-    url_fallbacks: list[HttpUrl] = Field(
-        default_factory=list, description="Fallback media URLs"
-    )
-    cover_fallbacks: list[HttpUrl] = Field(
-        default_factory=list, description="Fallback cover URLs"
-    )
+    url_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback media URLs")
+    cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
     media_path: str | None = Field(None, description="Local media file path")
     cover_path: str | None = Field(None, description="Local cover file path")
 
@@ -345,21 +322,15 @@ class URLParserResult(APIBaseModel):
     url: HttpUrl = Field(..., description="The URL that was fetched")
     title: str | None = Field(None, description="Content title")
     content: str | None = Field(None, description="Content text")
-    media: list[MediaInfo] = Field(
-        default_factory=list, description="List of stored media items"
-    )
+    media: list[MediaInfo] = Field(default_factory=list, description="List of stored media items")
     author: AuthorInfo = Field(..., description="Author information")
     platform: PlatformInfo = Field(..., description="Platform information")
-    post_time: int | None = Field(
-        None, description="Post timestamp in seconds since epoch"
-    )
+    post_time: int | None = Field(None, description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
     state: ParserResultStatus = Field(..., description="Parsing state")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
-    deleted_at: datetime | None = Field(
-        None, description="Deletion timestamp (null if not deleted)"
-    )
+    deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
 
     @classmethod
     def from_entity(cls, entity: ParseResultEntity) -> "URLParserResult":

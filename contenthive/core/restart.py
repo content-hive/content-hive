@@ -42,9 +42,7 @@ class RestartManager:
         # 2. Send SIGTERM signal to trigger graceful shutdown
         os.kill(os.getpid(), signal.SIGTERM)
 
-    async def async_restart(
-        self, delay: float = 1.0, restart_type: RestartType = RestartType.RESTART
-    ):
+    async def async_restart(self, delay: float = 1.0, restart_type: RestartType = RestartType.RESTART):
         """
         Async restart (give time to complete current request)
         """

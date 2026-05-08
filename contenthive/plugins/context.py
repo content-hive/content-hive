@@ -19,12 +19,8 @@ class PluginContext:
         self.data: dict[str, Any] = {}
 
         # HA-style platform methods (injected by manager)
-        self.async_forward_entry_setup: (
-            Callable[..., Coroutine[Any, Any, bool]] | None
-        ) = None
-        self.async_unload_platforms: Callable[..., Coroutine[Any, Any, bool]] | None = (
-            None
-        )
+        self.async_forward_entry_setup: Callable[..., Coroutine[Any, Any, bool]] | None = None
+        self.async_unload_platforms: Callable[..., Coroutine[Any, Any, bool]] | None = None
         self.register_service: Callable[[str, str, Callable], None] | None = None
 
         # Config persistence (injected by manager); 'disabled' field is always excluded

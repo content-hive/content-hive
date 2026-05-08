@@ -87,11 +87,7 @@ class MediaService:
         manager = get_plugin_manager()
 
         try:
-            if (
-                plugin_domain
-                and manager
-                and manager.has_service(plugin_domain, "download")
-            ):
+            if plugin_domain and manager and manager.has_service(plugin_domain, "download"):
                 logger.debug(f"Using plugin '{plugin_domain}' download service")
                 plugin_result = await manager.call_service(
                     plugin_domain,
@@ -110,9 +106,7 @@ class MediaService:
             else:
                 logger.debug("Using built-in downloader")
                 media_urls = [media.url, *list(media.url_fallbacks or [])]
-                cover_urls = ([media.cover] if media.cover else []) + list(
-                    media.cover_fallbacks or []
-                )
+                cover_urls = ([media.cover] if media.cover else []) + list(media.cover_fallbacks or [])
                 media_path, cover_path = await self._download_single_media(
                     save_dir=save_dir,
                     media_urls=media_urls,
@@ -120,9 +114,7 @@ class MediaService:
                     cover_urls=cover_urls,
                 )
         except Exception:
-            logger.exception(
-                f"Failed to download media for content {content_id}: {media.url}"
-            )
+            logger.exception(f"Failed to download media for content {content_id}: {media.url}")
             return None
 
         return DownloadedMediaInfo(
@@ -137,14 +129,10 @@ class MediaService:
             width=media.width,
             height=media.height,
             media_path=self._get_relative_media_path(media_path),
-            cover_path=self._get_relative_media_path(cover_path)
-            if cover_path
-            else None,
+            cover_path=self._get_relative_media_path(cover_path) if cover_path else None,
         )
 
-    def _prepare_media_directory(
-        self, platform: str, author: str, content_id: str
-    ) -> Path:
+    def _prepare_media_directory(self, platform: str, author: str, content_id: str) -> Path:
         """
         Build and create the media save directory, return the Path.
 
@@ -189,13 +177,9 @@ class MediaService:
 
         if temp_media is None:
             raise RuntimeError("Plugin result missing required 'media_path'")
-        media_path = self._move_to_save_dir(
-            temp_media, save_dir, media_index, "media", media_url
-        )
+        media_path = self._move_to_save_dir(temp_media, save_dir, media_index, "media", media_url)
         cover_path = (
-            self._move_to_save_dir(
-                temp_cover, save_dir, media_index, "cover", media_cover
-            )
+            self._move_to_save_dir(temp_cover, save_dir, media_index, "cover", media_cover)
             if temp_cover and media_cover
             else None
         )
@@ -217,15 +201,9 @@ class MediaService:
         """
         headers = {"User-Agent": settings.download_user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-            tasks = [
-                self._download_file(session, media_urls, save_dir, media_index, "media")
-            ]
+            tasks = [self._download_file(session, media_urls, save_dir, media_index, "media")]
             if cover_urls:
-                tasks.append(
-                    self._download_file(
-                        session, cover_urls, save_dir, media_index, "cover"
-                    )
-                )
+                tasks.append(self._download_file(session, cover_urls, save_dir, media_index, "cover"))
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
         media_result = results[0]
@@ -270,9 +248,7 @@ class MediaService:
             url_last_error: Exception = Exception("Unknown error")
             for retry in range(settings.download_max_retries + 1):
                 try:
-                    async with session.get(
-                        url, timeout=aiohttp.ClientTimeout(total=60)
-                    ) as response:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
                         response.raise_for_status()
 
                         # Read first chunk to detect MIME type from magic bytes
@@ -400,22 +376,16 @@ class MediaService:
         original = Path(path)
         # Check the original path before resolve() follows any symlinks.
         if original.is_symlink():
-            raise RuntimeError(
-                f"Plugin returned a symlink, which is not allowed: {original}"
-            )
+            raise RuntimeError(f"Plugin returned a symlink, which is not allowed: {original}")
         try:
             resolved = original.resolve(strict=True)
         except OSError as e:
             raise RuntimeError(f"Plugin returned non-existent path: {original}") from e
         if not resolved.is_file():
-            raise RuntimeError(
-                f"Plugin returned invalid path (not a regular file): {resolved}"
-            )
+            raise RuntimeError(f"Plugin returned invalid path (not a regular file): {resolved}")
         return resolved
 
-    def _move_to_save_dir(
-        self, temp_path: Path, save_dir: Path, index: int, file_type: str, url: str
-    ) -> Path:
+    def _move_to_save_dir(self, temp_path: Path, save_dir: Path, index: int, file_type: str, url: str) -> Path:
         """
         Move a plugin's temporary file into save_dir, detecting its extension via
         magic bytes and naming it with the same convention as _download_file():
@@ -467,14 +437,9 @@ class MediaService:
                     resolved_path = abs_path.resolve()
 
                     # Check if path is within media directory
-                    if (
-                        resolved_path == media_root
-                        or media_root not in resolved_path.parents
-                    ):
+                    if resolved_path == media_root or media_root not in resolved_path.parents:
                         failed_count += 1
-                        logger.warning(
-                            f"Attempted to delete file outside media directory: {resolved_path}"
-                        )
+                        logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
                         continue
 
                     if resolved_path.exists():
@@ -488,9 +453,7 @@ class MediaService:
                 logger.warning(f"Failed to delete media file {media_path}: {e}")
 
         if deleted_count > 0 or failed_count > 0:
-            logger.info(
-                f"Media file cleanup: {deleted_count} deleted, {failed_count} failed"
-            )
+            logger.info(f"Media file cleanup: {deleted_count} deleted, {failed_count} failed")
 
         return deleted_count, failed_count
 

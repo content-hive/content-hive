@@ -38,15 +38,11 @@ async def restart_application(
 
     restart_type = RestartType.SAFE_MODE if safe_mode else RestartType.RESTART
     logger.warning(f"API restart requested: {restart_type.value}")
-    background_tasks.add_task(
-        restart_manager.async_restart, delay=1.0, restart_type=restart_type
-    )
+    background_tasks.add_task(restart_manager.async_restart, delay=1.0, restart_type=restart_type)
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,
-        data=RestartResponse(
-            type=restart_type.value, message="Application will restart in 1 second"
-        ),
+        data=RestartResponse(type=restart_type.value, message="Application will restart in 1 second"),
     )
 
 
@@ -54,9 +50,7 @@ async def restart_application(
 async def health_check() -> APIResponse[HealthResponse]:
     """Health check"""
     plugin_manager = get_plugin_manager()
-    plugin_updates_available = bool(
-        plugin_manager and any(plugin_manager._available_updates.values())
-    )
+    plugin_updates_available = bool(plugin_manager and any(plugin_manager._available_updates.values()))
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,

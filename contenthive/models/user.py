@@ -195,9 +195,7 @@ class UserProfileResponse(APIBaseModel):
     created_at: datetime | None = None
 
     @classmethod
-    def from_entities(
-        cls, user: UserEntity, profile: ProfileEntity | None
-    ) -> "UserProfileResponse":
+    def from_entities(cls, user: UserEntity, profile: ProfileEntity | None) -> "UserProfileResponse":
         return cls(
             user_id=user.id,
             username=user.username,

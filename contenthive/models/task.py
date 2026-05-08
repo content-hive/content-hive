@@ -134,9 +134,7 @@ class TaskCreateRequest(APIBaseModel):
     """Request model for creating a main task"""
 
     url: str = Field(..., description="URL to be processed")
-    plugin_id: str | None = Field(
-        None, description="Optional plugin ID to use for parsing"
-    )
+    plugin_id: str | None = Field(None, description="Optional plugin ID to use for parsing")
 
 
 # API Response Models
@@ -156,9 +154,7 @@ class SubTaskInfo(APIBaseModel):
     error_message: str | None = Field(None, description="Error message if failed")
     started_at: datetime | None = Field(None, description="Task start time")
     completed_at: datetime | None = Field(None, description="Task completion time")
-    depends_on_id: int | None = Field(
-        None, description="ID of sub task this depends on"
-    )
+    depends_on_id: int | None = Field(None, description="ID of sub task this depends on")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -192,28 +188,20 @@ class MainTaskInfo(APIBaseModel):
     type: TaskType = Field(..., description="Task type")
     status: TaskStatus = Field(..., description="Task status")
     url: str = Field(..., description="Target URL for the task")
-    role: TaskRole | None = Field(
-        None, description="Task role (primary, linked, reused)"
-    )
+    role: TaskRole | None = Field(None, description="Task role (primary, linked, reused)")
     parameters: dict[str, Any] = Field(..., description="Task parameters")
     result: dict[str, Any] | None = Field(None, description="Task result")
     error_message: str | None = Field(None, description="Error message if failed")
     started_at: datetime | None = Field(None, description="Task start time")
     completed_at: datetime | None = Field(None, description="Task completion time")
-    primary_task_id: int | None = Field(
-        None, description="ID of primary task if this is linked/reused"
-    )
+    primary_task_id: int | None = Field(None, description="ID of primary task if this is linked/reused")
     parse_result_id: int | None = Field(None, description="Associated parse result ID")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    sub_tasks: list[SubTaskInfo] = Field(
-        default_factory=list, description="List of sub tasks"
-    )
+    sub_tasks: list[SubTaskInfo] = Field(default_factory=list, description="List of sub tasks")
 
     @classmethod
-    def from_entity(
-        cls, entity: MainTaskEntity, include_sub_tasks: bool = False
-    ) -> "MainTaskInfo":
+    def from_entity(cls, entity: MainTaskEntity, include_sub_tasks: bool = False) -> "MainTaskInfo":
         """Create MainTaskInfo from MainTaskEntity"""
         sub_tasks = []
         if include_sub_tasks and entity.sub_tasks:
@@ -295,6 +283,4 @@ class TaskStatistics(APIBaseModel):
     completed_tasks: int = Field(..., description="Number of completed tasks")
     failed_tasks: int = Field(..., description="Number of failed tasks")
     canceled_tasks: int = Field(..., description="Number of canceled tasks")
-    by_type: dict[str, int] = Field(
-        default_factory=dict, description="Task count by type"
-    )
+    by_type: dict[str, int] = Field(default_factory=dict, description="Task count by type")
