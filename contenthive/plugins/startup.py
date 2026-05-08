@@ -1,9 +1,18 @@
-from contenthive.plugins.registry import PluginState
 from contenthive.config import settings
-from contenthive.plugins.context import PluginContext
-from contenthive.plugins.manager import PluginEntryData, PluginManager, get_plugin_manager, set_plugin_manager
-from contenthive.plugins.config import load_plugins_config, strip_framework_keys, init_plugin_config_defaults
 from contenthive.logger import logger
+from contenthive.plugins.config import (
+    init_plugin_config_defaults,
+    load_plugins_config,
+    strip_framework_keys,
+)
+from contenthive.plugins.context import PluginContext
+from contenthive.plugins.manager import (
+    PluginEntryData,
+    PluginManager,
+    get_plugin_manager,
+    set_plugin_manager,
+)
+from contenthive.plugins.registry import PluginState
 
 
 async def load_plugins_on_startup():
@@ -34,8 +43,12 @@ async def load_plugins_on_startup():
             ref=settings.plugins_repo_ref,
         )
         installed_domains = set(plugin_manager.plugins)
-        new_plugins = {d: v for d, v in check_results.items() if d not in installed_domains and v}
-        available_updates = {d: v for d, v in check_results.items() if d in installed_domains and v}
+        new_plugins = {
+            d: v for d, v in check_results.items() if d not in installed_domains and v
+        }
+        available_updates = {
+            d: v for d, v in check_results.items() if d in installed_domains and v
+        }
 
         if new_plugins:
             logger.info(
@@ -45,7 +58,10 @@ async def load_plugins_on_startup():
         if available_updates:
             logger.info(
                 "Plugin updates available: "
-                + ", ".join(f"{d} ({plugin_manager.plugins[d].version} → {v})" for d, v in available_updates.items())
+                + ", ".join(
+                    f"{d} ({plugin_manager.plugins[d].version} → {v})"
+                    for d, v in available_updates.items()
+                )
             )
         if not new_plugins and not available_updates:
             logger.debug("All plugins are up to date")
@@ -93,10 +109,13 @@ async def load_plugins_on_startup():
 
     # Log summary
     enabled_count = sum(
-        1 for record in plugin_manager.plugins.values()
+        1
+        for record in plugin_manager.plugins.values()
         if record.state == PluginState.ENABLED
     )
-    logger.info(f"Plugin loading complete: {enabled_count}/{len(plugin_manager.plugins)} enabled")
+    logger.info(
+        f"Plugin loading complete: {enabled_count}/{len(plugin_manager.plugins)} enabled"
+    )
 
 
 async def shutdown_plugins():
@@ -106,7 +125,7 @@ async def shutdown_plugins():
     plugin_manager = get_plugin_manager()
     if not plugin_manager:
         return
-    
+
     entries_to_unload = list(plugin_manager.config_entries.keys())
     for entry_id in entries_to_unload:
         await plugin_manager.async_unload_entry(entry_id)

@@ -1,13 +1,14 @@
 import json
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
-from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap
 from pydantic import TypeAdapter
 from pydantic_core import PydanticUndefined
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
 
 from contenthive.config import settings
 from contenthive.logger import logger
@@ -20,6 +21,7 @@ _yaml.preserve_quotes = True
 _yaml.width = 4096
 
 _config_lock = threading.Lock()
+
 
 def _config_path() -> Path:
     return settings.plugins_dir / "plugins.yaml"
@@ -124,7 +126,9 @@ def init_plugin_config_defaults(
                 raw = factory()
             else:
                 continue
-            domain_cfg[field_name] = TypeAdapter(field_info.annotation).dump_python(raw, mode="json")
+            domain_cfg[field_name] = TypeAdapter(field_info.annotation).dump_python(
+                raw, mode="json"
+            )
             added = True
 
         if not added:

@@ -1,6 +1,5 @@
 import logging
 import logging.config
-from typing import Optional
 
 from contenthive.config import settings
 
@@ -13,7 +12,7 @@ _FORMATTER_SPEC = {
 }
 
 
-def _build_config(log_file: Optional[str] = None) -> dict:
+def _build_config(log_file: str | None = None) -> dict:
     """
     Build a logging dictConfig dict.
 

@@ -4,7 +4,8 @@ Models for plugin-related operations.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any
+
 from pydantic import Field
 
 from contenthive.models.api import APIBaseModel
@@ -21,32 +22,44 @@ class SettingFieldType(str, Enum):
 
 class SettingItem(APIBaseModel):
     """A single setting field with its schema definition and current value."""
+
     key: str = Field(..., description="Setting key name")
     type: SettingFieldType = Field(..., description="Value type")
     label: str = Field(..., description="Human-readable label for UI display")
-    description: Optional[str] = Field(None, description="Detailed description")
+    description: str | None = Field(None, description="Detailed description")
     required: bool = Field(False, description="Whether this field is required")
     secret: bool = Field(False, description="Whether this is a sensitive value")
-    default: Optional[Union[str, int, float, bool]] = Field(None, description="Default value")
-    options: Optional[list[str]] = Field(None, description="Valid options for enum type")
-    value: Optional[Union[str, int, float, bool]] = Field(None, description="Current configured value")
+    default: str | int | float | bool | None = Field(None, description="Default value")
+    options: list[str] | None = Field(None, description="Valid options for enum type")
+    value: str | int | float | bool | None = Field(
+        None, description="Current configured value"
+    )
 
 
 class PluginConfigResponse(APIBaseModel):
     """Response for GET /v1/plugins/{domain}/config"""
+
     domain: str = Field(..., description="Plugin domain identifier")
-    settings: list[SettingItem] = Field(default_factory=list, description="Setting fields with current values")
+    settings: list[SettingItem] = Field(
+        default_factory=list, description="Setting fields with current values"
+    )
 
 
 class UpdatePluginConfigRequest(APIBaseModel):
     """Request body for PUT /v1/plugins/{domain}/config"""
-    config: dict[str, Any] = Field(..., description="Key-value pairs to update in plugin config")
+
+    config: dict[str, Any] = Field(
+        ..., description="Key-value pairs to update in plugin config"
+    )
 
 
 class UpdatePluginConfigResponse(APIBaseModel):
     """Response for PUT /v1/plugins/{domain}/config"""
+
     domain: str = Field(..., description="Plugin domain identifier")
-    settings: list[SettingItem] = Field(default_factory=list, description="Setting fields with updated values")
+    settings: list[SettingItem] = Field(
+        default_factory=list, description="Setting fields with updated values"
+    )
 
 
 class PluginInfo(APIBaseModel):
@@ -55,18 +68,26 @@ class PluginInfo(APIBaseModel):
     state: PluginState = Field(..., description="Plugin state")
     version: str = Field(..., description="Plugin version")
     name: str = Field(..., description="Plugin display name")
-    error: Optional[str] = Field(None, description="Error message if plugin is in FAILED state")
-    update_available: Optional[str] = Field(None, description="Latest version if an update is available, otherwise null")
-    description: Optional[str] = Field(None, description="Plugin description")
-    author: Optional[list[str]] = Field(None, description="Plugin author")
+    error: str | None = Field(
+        None, description="Error message if plugin is in FAILED state"
+    )
+    update_available: str | None = Field(
+        None, description="Latest version if an update is available, otherwise null"
+    )
+    description: str | None = Field(None, description="Plugin description")
+    author: list[str] | None = Field(None, description="Plugin author")
 
 
 class PluginUpdateInfo(APIBaseModel):
     """Update status for a single plugin"""
 
     current_version: str = Field(..., description="Currently installed version")
-    latest_version: Optional[str] = Field(None, description="Latest available version, null if fetch failed")
-    update_available: bool = Field(..., description="Whether a newer version is available")
+    latest_version: str | None = Field(
+        None, description="Latest available version, null if fetch failed"
+    )
+    update_available: bool = Field(
+        ..., description="Whether a newer version is available"
+    )
 
 
 class PluginListResponse(APIBaseModel):
@@ -91,7 +112,9 @@ class CheckConfigResponse(APIBaseModel):
 
     valid: bool = Field(..., description="Whether the configuration is valid")
     errors: list[str] = Field(default_factory=list, description="Configuration errors")
-    warnings: list[str] = Field(default_factory=list, description="Configuration warnings")
+    warnings: list[str] = Field(
+        default_factory=list, description="Configuration warnings"
+    )
     message: str = Field(..., description="Human-readable summary")
 
 
@@ -110,18 +133,25 @@ class AvailablePluginInfo(APIBaseModel):
     domain: str = Field(..., description="Plugin domain identifier")
     name: str = Field(..., description="Plugin display name")
     version: str = Field(..., description="Latest version in remote repository")
-    description: Optional[str] = Field(None, description="Plugin description")
-    author: Optional[list[str]] = Field(None, description="Plugin author")
-    disclaimer: Optional[str] = Field(None, description="Risk disclaimer to display before installation")
-    installed: bool = Field(..., description="Whether the plugin is currently installed")
-    installed_version: Optional[str] = Field(None, description="Installed version, if installed")
+    description: str | None = Field(None, description="Plugin description")
+    author: list[str] | None = Field(None, description="Plugin author")
+    disclaimer: str | None = Field(
+        None, description="Risk disclaimer to display before installation"
+    )
+    installed: bool = Field(
+        ..., description="Whether the plugin is currently installed"
+    )
+    installed_version: str | None = Field(
+        None, description="Installed version, if installed"
+    )
 
 
 class AvailablePluginsResponse(APIBaseModel):
     """Response model for listing all available plugins from remote repository"""
 
     plugins: list[AvailablePluginInfo] = Field(
-        default_factory=list, description="List of plugins available in the remote repository"
+        default_factory=list,
+        description="List of plugins available in the remote repository",
     )
 
 
@@ -130,12 +160,16 @@ class UpdatePluginsRequest(APIBaseModel):
 
     domains: list[str] = Field(
         default_factory=list,
-        description="List of plugin domains to update. Empty list means update all installed plugins."
+        description="List of plugin domains to update. Empty list means update all installed plugins.",
     )
 
 
 class UpdatePluginsResponse(APIBaseModel):
     """Response model for plugin update operation"""
 
-    updated: list[str] = Field(default_factory=list, description="Plugins successfully updated and reloaded")
-    failed: list[str] = Field(default_factory=list, description="Plugins that failed to download or reload")
+    updated: list[str] = Field(
+        default_factory=list, description="Plugins successfully updated and reloaded"
+    )
+    failed: list[str] = Field(
+        default_factory=list, description="Plugins that failed to download or reload"
+    )

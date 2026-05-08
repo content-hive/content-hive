@@ -1,10 +1,15 @@
 from typing import Annotated
+
 from fastapi import APIRouter, Body, Depends, status
 
 from contenthive.logger import logger
-from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
+from contenthive.models.api import (
+    APIResponse,
+    DetailedHTTPException,
+    ErrorDetail,
+    OperationResult,
+)
 from contenthive.models.enumerates import ResponseStatus
-from contenthive.models.api import OperationResult
 from contenthive.models.plugin import (
     AvailablePluginsResponse,
     CheckConfigResponse,
@@ -29,7 +34,9 @@ async def list_plugins(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
 ) -> APIResponse[PluginListResponse]:
     """List all installed plugins with their current state and version info"""
-    return APIResponse(status=ResponseStatus.SUCCESS, data=plugin_service.list_plugins())
+    return APIResponse(
+        status=ResponseStatus.SUCCESS, data=plugin_service.list_plugins()
+    )
 
 
 @router_v1.get("/available", response_model=APIResponse[AvailablePluginsResponse])
@@ -47,7 +54,7 @@ async def list_available_plugins(
                 code="REMOTE_MANIFEST_FETCH_FAILED",
                 message="Failed to fetch remote plugin manifest",
                 details={"error": str(e)},
-            )
+            ),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -62,7 +69,7 @@ async def reload_plugins(
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -77,7 +84,7 @@ async def check_plugin_config(
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -94,13 +101,16 @@ async def check_plugin_updates(
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         )
     except Exception as e:
         logger.warning(f"Plugin update check failed: {e}")
         raise DetailedHTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=ErrorDetail(code="UPDATE_CHECK_FAILED", message=f"Failed to fetch remote plugin manifest: {e}")
+            detail=ErrorDetail(
+                code="UPDATE_CHECK_FAILED",
+                message=f"Failed to fetch remote plugin manifest: {e}",
+            ),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -116,12 +126,12 @@ async def disable_plugin(
     except ValueError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
         )
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_DISABLE_FAILED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_DISABLE_FAILED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -137,12 +147,12 @@ async def enable_plugin(
     except ValueError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
         )
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_ENABLE_FAILED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_ENABLE_FAILED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -158,12 +168,12 @@ async def delete_plugin(
     except ValueError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
         )
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_DELETE_FAILED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_DELETE_FAILED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -180,7 +190,7 @@ async def get_plugin_config(
     except ValueError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
         )
     except ConfigValidationError as e:
         raise DetailedHTTPException(
@@ -189,17 +199,19 @@ async def get_plugin_config(
                 code="PERSISTED_CONFIG_INVALID",
                 message="Stored plugin config is invalid and cannot be read",
                 details={"errors": e.errors},
-            )
+            ),
         )
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
-@router_v1.put("/{domain}/config", response_model=APIResponse[UpdatePluginConfigResponse])
+@router_v1.put(
+    "/{domain}/config", response_model=APIResponse[UpdatePluginConfigResponse]
+)
 async def update_plugin_config(
     domain: str,
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
@@ -216,7 +228,7 @@ async def update_plugin_config(
     except ValueError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
         )
     except ConfigValidationError as e:
         raise DetailedHTTPException(
@@ -225,12 +237,12 @@ async def update_plugin_config(
                 code="CONFIG_VALIDATION_FAILED",
                 message="Plugin config validation failed",
                 details={"errors": e.errors},
-            )
+            ),
         )
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
@@ -250,12 +262,12 @@ async def update_plugins(
     except RuntimeError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         )
     except Exception as e:
         logger.error(f"Plugin update failed: {e}")
         raise DetailedHTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=ErrorDetail(code="PLUGIN_DOWNLOAD_FAILED", message=str(e))
+            detail=ErrorDetail(code="PLUGIN_DOWNLOAD_FAILED", message=str(e)),
         )
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
