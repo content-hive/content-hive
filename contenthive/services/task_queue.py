@@ -34,9 +34,7 @@ class TaskQueue:
         if self._worker_task is None or self._worker_task.done():
             self._shutdown = False
             self._worker_task = asyncio.create_task(self._worker())
-            logger.info(
-                f"Task queue worker started (max_concurrent={self._max_concurrent})"
-            )
+            logger.info(f"Task queue worker started (max_concurrent={self._max_concurrent})")
 
     async def stop(self):
         """Stop the queue worker gracefully."""
@@ -45,11 +43,10 @@ class TaskQueue:
             await self._worker_task
         # Wait for running tasks to complete
         if self._running_tasks:
-            results = await asyncio.gather(
-                *self._running_tasks.values(), return_exceptions=True
-            )
+            snapshot = list(self._running_tasks.items())
+            results = await asyncio.gather(*(t for _, t in snapshot), return_exceptions=True)
             # Log any exceptions from running tasks
-            for task_id, result in zip(list(self._running_tasks.keys()), results, strict=True):
+            for task_id, result in zip((tid for tid, _ in snapshot), results, strict=False):
                 if isinstance(result, Exception):
                     logger.error(f"Task {task_id} failed during shutdown: {result}")
             self._running_tasks.clear()
@@ -81,9 +78,7 @@ class TaskQueue:
             # Sort by priority (descending) and timestamp (ascending)
             self._queue = deque(sorted(self._queue, key=lambda x: (-x[1], x[2])))
 
-            logger.info(
-                f"Task {task_id} enqueued (priority={priority}, queue_size={len(self._queue)})"
-            )
+            logger.info(f"Task {task_id} enqueued (priority={priority}, queue_size={len(self._queue)})")
             return True
 
         except Exception:
@@ -149,9 +144,7 @@ class TaskQueue:
         while not self._shutdown:
             try:
                 # Clean up completed tasks
-                completed = [
-                    tid for tid, task in self._running_tasks.items() if task.done()
-                ]
+                completed = [tid for tid, task in self._running_tasks.items() if task.done()]
                 for tid in completed:
                     task = self._running_tasks[tid]
                     # Consume exception/result before deleting to prevent warnings
@@ -163,9 +156,7 @@ class TaskQueue:
                     except asyncio.CancelledError:
                         logger.warning(f"Task {tid} was cancelled")
                     except Exception:
-                        logger.exception(
-                            f"Unexpected error retrieving task {tid} result"
-                        )
+                        logger.exception(f"Unexpected error retrieving task {tid} result")
                     finally:
                         del self._running_tasks[tid]
 
@@ -181,9 +172,7 @@ class TaskQueue:
                     # Create task for execution
                     task = asyncio.create_task(self._execute_task(task_id))
                     # Add done callback to consume exceptions
-                    task.add_done_callback(
-                        lambda t, tid=task_id: self._task_done_callback(tid, t)
-                    )
+                    task.add_done_callback(lambda t, tid=task_id: self._task_done_callback(tid, t))
                     self._running_tasks[task_id] = task
 
                 # Wait a bit before next iteration
@@ -216,8 +205,8 @@ class TaskQueue:
             logger.info(f"Task {task_id} completed successfully")
             return result
 
-        except Exception as e:
-            logger.error(f"Task {task_id} execution failed: {e}")
+        except Exception:
+            logger.exception(f"Task {task_id} execution failed.")
 
             # If this was a PRIMARY task, mark all linked tasks as failed
             try:
@@ -225,9 +214,7 @@ class TaskQueue:
                 if task and task.role == TaskRole.PRIMARY:
                     await task_service.fail_linked_tasks(task_id)
             except Exception:
-                logger.exception(
-                    f"Failed to update linked tasks for failed primary task {task_id}"
-                )
+                logger.exception(f"Failed to update linked tasks for failed primary task {task_id}")
 
             raise
 

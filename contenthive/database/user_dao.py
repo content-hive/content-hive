@@ -36,16 +36,12 @@ class UserDAO:
             self.session.close()
             self.session = None
 
-    def user_exists(
-        self, username: str | None = None, email: str | None = None
-    ) -> bool:
+    def user_exists(self, username: str | None = None, email: str | None = None) -> bool:
         """Check if a user exists by username or email"""
         session = self._get_session()
         try:
             if username and email:
-                stmt = select(User.id).where(
-                    (User.username == username) | (User.email == email)
-                )
+                stmt = select(User.id).where((User.username == username) | (User.email == email))
             elif username:
                 stmt = select(User.id).where(User.username == username)
             elif email:
@@ -169,9 +165,7 @@ class UserDAO:
         except Exception as e:
             raise ValueError("Database error occurred") from e
 
-    def update_user_password(
-        self, user_id: int, new_password_hash: str, force_password_change: bool = True
-    ) -> bool:
+    def update_user_password(self, user_id: int, new_password_hash: str, force_password_change: bool = True) -> bool:
         """Update the password hash for a user"""
         session = self._get_session()
         try:
@@ -213,13 +207,8 @@ class UserDAO:
         """Create a new session and return its ID"""
         session = self._get_session()
         try:
-            from datetime import datetime
-
             # Check if session exists
-            stmt = select(SessionModel).where(
-                (SessionModel.user_id == user_id)
-                & (SessionModel.device_id == device_id)
-            )
+            stmt = select(SessionModel).where((SessionModel.user_id == user_id) & (SessionModel.device_id == device_id))
             existing_session = session.execute(stmt).scalar_one_or_none()
 
             if existing_session:
@@ -249,18 +238,14 @@ class UserDAO:
         except Exception as e:
             session.rollback()
             if "UNIQUE constraint failed" in str(e):
-                raise ValueError(
-                    "Session with given device ID or token JTI already exists"
-                ) from e
+                raise ValueError("Session with given device ID or token JTI already exists") from e
             raise ValueError("Database error occurred") from e
 
     def get_session_by_jti(self, user_id: int, jti: str) -> SessionEntity | None:
         """Retrieve a session by user ID and token JTI"""
         session = self._get_session()
         try:
-            stmt = select(SessionModel).where(
-                (SessionModel.user_id == user_id) & (SessionModel.token_jti == jti)
-            )
+            stmt = select(SessionModel).where((SessionModel.user_id == user_id) & (SessionModel.token_jti == jti))
             sess = session.execute(stmt).scalar_one_or_none()
             if sess:
                 return SessionEntity(
@@ -360,9 +345,7 @@ class UserDAO:
         """
         session = self._get_session()
         try:
-            stmt = select(SessionModel).where(
-                (SessionModel.user_id == user_id) & (SessionModel.token_jti == jti)
-            )
+            stmt = select(SessionModel).where((SessionModel.user_id == user_id) & (SessionModel.token_jti == jti))
             sess = session.execute(stmt).scalar_one_or_none()
             if sess:
                 sess.revoked = True
