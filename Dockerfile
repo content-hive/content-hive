@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install dependencies
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv version ${APP_VERSION} && uv lock && uv sync --no-dev --no-install-project
 
 # Create deps directory for runtime plugin dependencies
 RUN mkdir -p /app/deps && chmod 777 /app/deps
