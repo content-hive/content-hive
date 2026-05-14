@@ -447,6 +447,7 @@ class PluginManager:
 
             if not has_active:
                 record.state = PluginState.LOADED
+                self.services.pop(domain, None)
 
             self.context.logger.debug(f"Plugins[Unload Entry]: {domain} - Success")
             await self.event_bus.fire("plugin_disabled", {"domain": domain, "entry_id": entry_id})
