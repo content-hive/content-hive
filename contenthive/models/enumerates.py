@@ -54,6 +54,7 @@ class MediaType(StrEnum):
     LIVEPHOTO = "livephoto"
     AUDIO = "audio"
     GIF = "gif"
+    LINK = "link"
 
 
 class ParserResultStatus(StrEnum):
