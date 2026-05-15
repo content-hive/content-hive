@@ -319,6 +319,7 @@ class MediaService:
     _EXT_NORMALISE: ClassVar[dict[str, str]] = {
         ".jpe": ".jpg",
         ".jpeg": ".jpg",
+        ".htm": ".html",
     }
 
     @classmethod
