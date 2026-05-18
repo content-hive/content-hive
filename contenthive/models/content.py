@@ -23,8 +23,9 @@ class PlatformEntity:
     name: str = ""
     url: str = ""
     icon_url: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    deleted_at: datetime | None = None
 
     @classmethod
     def from_orm(cls, orm: Platform) -> "PlatformEntity":
@@ -37,6 +38,7 @@ class PlatformEntity:
             icon_url=orm.icon_url,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
+            deleted_at=orm.deleted_at,
         )
 
 
@@ -53,8 +55,9 @@ class AuthorEntity:
     url: str | None = None
     banner: str | None = None
     description: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    deleted_at: datetime | None = None
 
     platform: PlatformEntity = field(default_factory=PlatformEntity)
 
@@ -78,6 +81,7 @@ class AuthorEntity:
             description=orm.description,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
+            deleted_at=orm.deleted_at,
             platform=PlatformEntity.from_orm(orm.platform),
         )
 
@@ -99,8 +103,9 @@ class MediaEntity:
     height: int | None = None
     media_path: str | None = None
     cover_path: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    deleted_at: datetime | None = None
 
     @classmethod
     def from_orm(cls, orm: Media) -> "MediaEntity":
@@ -121,6 +126,7 @@ class MediaEntity:
             cover_path=orm.cover_path,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
+            deleted_at=orm.deleted_at,
         )
 
 
@@ -138,8 +144,8 @@ class ParseResultEntity:
     post_time: int | None = None
     parser: str = ""
     state: ParserResultStatus = ParserResultStatus.SUCCESS
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     deleted_at: datetime | None = None
 
     # Related entities (for joins) - must not be None
@@ -243,6 +249,9 @@ class MediaInfo(APIBaseModel):
     cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
     media_path: str | None = Field(None, description="Local media file path")
     cover_path: str | None = Field(None, description="Local cover file path")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
 
     @classmethod
     def from_entity(cls, entity: MediaEntity) -> "MediaInfo":
@@ -261,6 +270,9 @@ class MediaInfo(APIBaseModel):
             cover_fallbacks=entity.cover_fallbacks,  # type: ignore
             media_path=entity.media_path,
             cover_path=entity.cover_path,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+            deleted_at=entity.deleted_at,
         )
 
 
@@ -272,6 +284,9 @@ class PlatformInfo(APIBaseModel):
     code: str = Field(..., description="Platform code")
     url: HttpUrl = Field(..., description="Platform URL")
     icon_url: HttpUrl | None = Field(None, description="Platform icon URL")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
 
     @classmethod
     def from_entity(cls, entity: PlatformEntity) -> "PlatformInfo":
@@ -282,6 +297,9 @@ class PlatformInfo(APIBaseModel):
             code=entity.code,
             url=entity.url,  # type: ignore
             icon_url=entity.icon_url,  # type: ignore
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+            deleted_at=entity.deleted_at,
         )
 
 
@@ -297,6 +315,9 @@ class AuthorInfo(APIBaseModel):
     banner: HttpUrl | None = Field(None, description="Author banner URL")
     description: str | None = Field(None, description="Author description")
     platform: PlatformInfo = Field(..., description="Platform information")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
 
     @classmethod
     def from_entity(cls, entity: AuthorEntity) -> "AuthorInfo":
@@ -311,6 +332,9 @@ class AuthorInfo(APIBaseModel):
             banner=entity.banner,  # type: ignore
             description=entity.description,
             platform=PlatformInfo.from_entity(entity.platform),
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+            deleted_at=entity.deleted_at,
         )
 
 
@@ -347,7 +371,7 @@ class URLParserResult(APIBaseModel):
             post_time=entity.post_time,
             parser=entity.parser,
             state=entity.state,
-            created_at=(entity.created_at) if entity.created_at else datetime.now(UTC),
-            updated_at=(entity.updated_at) if entity.updated_at else datetime.now(UTC),
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
             deleted_at=entity.deleted_at,
         )
