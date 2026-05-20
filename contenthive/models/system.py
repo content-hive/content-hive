@@ -24,17 +24,23 @@ class HealthResponse(APIBaseModel):
 
 
 class StorageItemInfo(APIBaseModel):
+    """Size info for a single storage item (file or directory)"""
+
     size_bytes: int = Field(..., description="Size in bytes")
     size_human: str = Field(..., description="Human-readable size (e.g. 1.23 GB)")
 
 
 class MediaTypeStorageInfo(APIBaseModel):
+    """Storage usage for a single media type"""
+
     files: int = Field(..., description="Number of files")
     size_bytes: int = Field(..., description="Total size in bytes")
     size_human: str = Field(..., description="Human-readable total size")
 
 
 class MediaStorageInfo(APIBaseModel):
+    """Aggregated storage usage for the media directory, broken down by type"""
+
     total_files: int = Field(..., description="Total number of media files")
     total_size_bytes: int = Field(..., description="Total media size in bytes")
     total_size_human: str = Field(..., description="Human-readable total media size")
@@ -42,6 +48,8 @@ class MediaStorageInfo(APIBaseModel):
 
 
 class DiskInfo(APIBaseModel):
+    """Disk partition usage for the mount containing the data directory"""
+
     total_bytes: int = Field(..., description="Disk partition total capacity in bytes")
     used_bytes: int = Field(..., description="Used space in bytes")
     free_bytes: int = Field(..., description="Available space in bytes")
@@ -52,6 +60,8 @@ class DiskInfo(APIBaseModel):
 
 
 class StorageStatusResponse(APIBaseModel):
+    """Response model for the storage status endpoint"""
+
     disk: DiskInfo = Field(..., description="Disk partition usage for the data directory mount")
     database: StorageItemInfo = Field(..., description="Database file size")
     media: MediaStorageInfo = Field(..., description="Media directory usage breakdown")

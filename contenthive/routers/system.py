@@ -73,7 +73,8 @@ async def get_storage_status(
     try:
         return APIResponse(status=ResponseStatus.SUCCESS, data=await storage_service.get_storage_status())
     except Exception as e:
+        logger.exception("Failed to collect storage status")
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=ErrorDetail(code="STORAGE_STATUS_FAILED", message=str(e)),
+            detail=ErrorDetail(code="STORAGE_STATUS_FAILED", message="Failed to collect storage status"),
         ) from e

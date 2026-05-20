@@ -3,6 +3,7 @@ import os
 import shutil
 from contextlib import suppress
 from pathlib import Path
+from typing import NamedTuple
 
 from contenthive.config import settings
 from contenthive.models.enumerates import MediaStorageType
@@ -14,6 +15,11 @@ from contenthive.models.system import (
     StorageStatusResponse,
 )
 
+class _MediaStat(NamedTuple):
+    files: int
+    bytes: int
+
+
 _MEDIA_EXT_MAP: dict[str, MediaStorageType] = {
     ext: MediaStorageType.IMAGE for ext in ("jpg", "jpeg", "png", "webp", "bmp", "tiff", "avif", "heic", "gif")
 }
@@ -24,11 +30,12 @@ _MEDIA_EXT_MAP.update({ext: MediaStorageType.AUDIO for ext in ("mp3", "wav", "aa
 
 
 def _format_bytes(n: int) -> str:
+    size = float(n)
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024:
-            return f"{n:.2f} {unit}"
-        n /= 1024  # type: ignore[assignment]
-    return f"{n:.2f} PB"
+        if size < 1024:
+            return f"{size:.2f} {unit}"
+        size /= 1024
+    return f"{size:.2f} PB"
 
 
 def _dir_size(path: Path) -> int:
@@ -51,7 +58,7 @@ class StorageService:
 
         db_size = settings.database_path.stat().st_size if settings.database_path.exists() else 0
 
-        type_stats: dict[MediaStorageType, list[int]] = {t: [0, 0] for t in MediaStorageType}
+        type_stats: dict[MediaStorageType, _MediaStat] = {t: _MediaStat(0, 0) for t in MediaStorageType}
         if settings.media_dir.exists():
             for dirpath, _, filenames in os.walk(settings.media_dir):
                 for fname in filenames:
@@ -59,11 +66,11 @@ class StorageService:
                         fsize = os.path.getsize(os.path.join(dirpath, fname))
                         ext = os.path.splitext(fname)[1].lstrip(".").lower()
                         mtype = _MEDIA_EXT_MAP.get(ext, MediaStorageType.OTHER)
-                        type_stats[mtype][0] += 1
-                        type_stats[mtype][1] += fsize
+                        stat = type_stats[mtype]
+                        type_stats[mtype] = _MediaStat(stat.files + 1, stat.bytes + fsize)
 
-        total_media_files = sum(v[0] for v in type_stats.values())
-        total_media_bytes = sum(v[1] for v in type_stats.values())
+        total_media_files = sum(v.files for v in type_stats.values())
+        total_media_bytes = sum(v.bytes for v in type_stats.values())
         logs_bytes = _dir_size(settings.logs_dir)
         plugins_bytes = _dir_size(settings.plugins_dir)
 
@@ -84,9 +91,9 @@ class StorageService:
                 total_size_human=_format_bytes(total_media_bytes),
                 by_type={
                     t: MediaTypeStorageInfo(
-                        files=type_stats[t][0],
-                        size_bytes=type_stats[t][1],
-                        size_human=_format_bytes(type_stats[t][1]),
+                        files=type_stats[t].files,
+                        size_bytes=type_stats[t].bytes,
+                        size_human=_format_bytes(type_stats[t].bytes),
                     )
                     for t in MediaStorageType
                 },
