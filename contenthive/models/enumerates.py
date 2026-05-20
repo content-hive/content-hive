@@ -60,3 +60,10 @@ class MediaType(StrEnum):
 class ParserResultStatus(StrEnum):
     SUCCESS = "success"
     ERROR = "error"
+
+
+class MediaStorageType(StrEnum):
+    IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
+    OTHER = "other"

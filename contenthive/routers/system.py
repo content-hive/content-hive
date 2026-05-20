@@ -7,10 +7,11 @@ from contenthive.core.restart import RestartType, get_restart_manager
 from contenthive.logger import logger
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.enumerates import ResponseStatus
-from contenthive.models.system import HealthResponse, RestartResponse
+from contenthive.models.system import HealthResponse, RestartResponse, StorageStatusResponse
 from contenthive.models.user import UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
+from contenthive.services.storage import storage_service
 
 router_v1 = APIRouter(prefix="/v1/system", tags=["system"])
 
@@ -60,3 +61,20 @@ async def health_check() -> APIResponse[HealthResponse]:
             plugin_updates_available=plugin_updates_available,
         ),
     )
+
+
+@router_v1.get("/storage", response_model=APIResponse[StorageStatusResponse])
+async def get_storage_status(
+    _: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[StorageStatusResponse]:
+    """
+    Get server storage usage status (Admin only)
+    """
+    try:
+        return APIResponse(status=ResponseStatus.SUCCESS, data=await storage_service.get_storage_status())
+    except Exception as e:
+        logger.exception("Failed to collect storage status")
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="STORAGE_STATUS_FAILED", message="Failed to collect storage status"),
+        ) from e
