@@ -1,13 +1,15 @@
+import math
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
-from contenthive.logger import logger
+from contenthive.logger import logger, parse_log_file
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
+from contenthive.models.content import PaginatedResponse, PaginationInfo
 from contenthive.models.enumerates import ResponseStatus
-from contenthive.models.system import HealthResponse, RestartResponse, StorageStatusResponse
+from contenthive.models.system import HealthResponse, LogEntry, RestartResponse, StorageStatusResponse
 from contenthive.models.user import UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
@@ -78,3 +80,48 @@ async def get_storage_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(code="STORAGE_STATUS_FAILED", message="Failed to collect storage status"),
         ) from e
+
+
+@router_v1.get("/logs", response_model=APIResponse[PaginatedResponse[LogEntry]])
+async def get_logs(
+    _: Annotated[UserModel, Depends(get_current_admin_user)],
+    date: str | None = Query(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="Filter by date (YYYY-MM-DD). Defaults to the most recent 3 days.",
+    ),
+    level: str | None = Query(default=None, description="Filter by log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)"),
+    page: int = Query(default=1, ge=1, description="Page number"),
+    page_size: int = Query(default=100, ge=1, le=500, description="Items per page"),
+) -> APIResponse[PaginatedResponse[LogEntry]]:
+    """
+    Query structured application logs (Admin only).
+
+    Returns entries in reverse chronological order (newest first).
+    When no date is specified, returns logs from the most recent 3 days.
+    """
+    try:
+        raw = parse_log_file(date)
+    except Exception as e:
+        logger.exception("Failed to read log file")
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="LOG_READ_FAILED", message="Failed to read log file"),
+        ) from e
+
+    raw = list(reversed(raw))
+
+    if level:
+        raw = [e for e in raw if e["level"] == level.upper()]
+
+    total = len(raw)
+    total_pages = math.ceil(total / page_size) if total else 0
+    page_items = [LogEntry(**e) for e in raw[(page - 1) * page_size : page * page_size]]
+
+    return APIResponse(
+        status=ResponseStatus.SUCCESS,
+        data=PaginatedResponse(
+            items=page_items,
+            pagination=PaginationInfo(page=page, page_size=page_size, total=total, total_pages=total_pages),
+        ),
+    )

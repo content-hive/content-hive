@@ -15,6 +15,7 @@ from contenthive.models.system import (
     StorageStatusResponse,
 )
 
+
 class _MediaStat(NamedTuple):
     files: int
     bytes: int

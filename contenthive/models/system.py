@@ -59,6 +59,15 @@ class DiskInfo(APIBaseModel):
     free_human: str = Field(..., description="Human-readable available space")
 
 
+class LogEntry(APIBaseModel):
+    """A single structured log entry"""
+
+    timestamp: str = Field(..., description="Log timestamp (YYYY-MM-DD HH:MM:SS)")
+    level: str = Field(..., description="Log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)")
+    message: str = Field(..., description="Log message")
+    traceback: str | None = Field(default=None, description="Exception traceback, if any")
+
+
 class StorageStatusResponse(APIBaseModel):
     """Response model for the storage status endpoint"""
 

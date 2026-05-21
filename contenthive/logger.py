@@ -1,7 +1,67 @@
 import logging
 import logging.config
+import re
+from datetime import date as _date
+from datetime import timedelta
+from pathlib import Path
 
 from contenthive.config import settings
+
+_LOG_LINE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(\w+):\s{2}(.*)$")
+
+
+def _parse_path(path: Path) -> list[dict]:
+    entries: list[dict] = []
+    current: dict | None = None
+    tb_lines: list[str] = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            m = _LOG_LINE_RE.match(line)
+            if m:
+                if current is not None:
+                    current["traceback"] = "\n".join(tb_lines) or None
+                    entries.append(current)
+                current = {
+                    "timestamp": m.group(1),
+                    "level": m.group(2),
+                    "message": m.group(3),
+                    "traceback": None,
+                }
+                tb_lines = []
+            elif current is not None and line:
+                tb_lines.append(line)
+    if current is not None:
+        current["traceback"] = "\n".join(tb_lines) or None
+        entries.append(current)
+    return entries
+
+
+def parse_log_file(date_str: str | None = None) -> list[dict]:
+    """
+    Parse log file(s) and return structured entries in ascending time order.
+
+    - date_str=None: merge the most recent 3 days of logs
+    - date_str="YYYY-MM-DD": parse only that day; returns [] if file not found
+    """
+    today = _date.today().strftime("%Y-%m-%d")
+
+    def _path_for(d: str) -> Path:
+        return settings.logs_dir / ("contenthive.log" if d == today else f"contenthive.log.{d}")
+
+    if date_str is not None:
+        path = _path_for(date_str)
+        return _parse_path(path) if path.exists() else []
+
+    result: list[dict] = []
+    today_dt = _date.today()
+    for delta in range(2, -1, -1):  # 2 days ago → yesterday → today
+        d = (today_dt - timedelta(days=delta)).strftime("%Y-%m-%d")
+        path = _path_for(d)
+        if path.exists():
+            result.extend(_parse_path(path))
+    return result
+
 
 # Shared formatter spec used in every dictConfig call.
 _FORMATTER_SPEC = {
@@ -77,8 +137,8 @@ def _build_config(log_file: str | None = None) -> dict:
             },
             "uvicorn.access": {
                 "handlers": [],
-                "level": "INFO",
-                "propagate": True,
+                "level": "WARNING",
+                "propagate": False,
             },
         },
         "root": {
