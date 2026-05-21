@@ -35,13 +35,15 @@ def _build_config(log_file: str | None = None) -> dict:
 
     if log_file:
         handlers["file"] = {
-            "class": "logging.handlers.RotatingFileHandler",
+            "class": "logging.handlers.TimedRotatingFileHandler",
             "formatter": "standard",
             "level": "DEBUG",
             "filename": log_file,
-            "maxBytes": 10 * 1024 * 1024,
-            "backupCount": 5,
+            "when": "midnight",
+            "interval": 1,
+            "backupCount": 30,
             "encoding": "utf-8",
+            "utc": False,
         }
         root_handlers.append("file")
         app_handlers.append("file")
