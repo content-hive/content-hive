@@ -62,6 +62,7 @@ class DiskInfo(APIBaseModel):
 class LogEntry(APIBaseModel):
     """A single structured log entry"""
 
+    id: str = Field(..., description="Stable unique identifier: file date + line number (e.g. '2026-05-21:42')")
     timestamp: str = Field(..., description="Log timestamp in UTC ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)")
     level: str = Field(..., description="Log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)")
     message: str = Field(..., description="Log message")

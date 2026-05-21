@@ -34,13 +34,13 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
         raise ValueError("Invalid cursor") from e
 
 
-def _parse_path_ranged(path: Path, from_dt: datetime, to_dt: datetime) -> list[dict]:
+def _parse_path_ranged(path: Path, file_date: str, from_dt: datetime, to_dt: datetime) -> list[dict]:
     """Parse a log file, returning only entries in [from_dt, to_dt)."""
     entries: list[dict] = []
     current: dict | None = None
     tb_lines: list[str] = []
     with path.open(encoding="utf-8") as f:
-        for line in f:
+        for line_num, line in enumerate(f, start=1):
             line = line.rstrip("\n")
             m = _LOG_LINE_RE.match(line)
             if m:
@@ -55,6 +55,7 @@ def _parse_path_ranged(path: Path, from_dt: datetime, to_dt: datetime) -> list[d
                 if entry_dt < from_dt:
                     continue
                 current = {
+                    "id": f"{file_date}:{line_num}",
                     "timestamp": m.group(1),
                     "level": m.group(2),
                     "message": m.group(3),
@@ -99,7 +100,7 @@ def query_logs(
     while d <= to_dt.date():
         path = _path_for(d)
         if path.exists():
-            all_entries.extend(_parse_path_ranged(path, from_dt, to_dt))
+            all_entries.extend(_parse_path_ranged(path, d.strftime("%Y-%m-%d"), from_dt, to_dt))
         d += timedelta(days=1)
 
     if level:
