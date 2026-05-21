@@ -1,15 +1,20 @@
-import math
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
-from contenthive.logger import logger, parse_log_file
+from contenthive.logger import logger, query_logs
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
-from contenthive.models.content import PaginatedResponse, PaginationInfo
 from contenthive.models.enumerates import ResponseStatus
-from contenthive.models.system import HealthResponse, LogEntry, RestartResponse, StorageStatusResponse
+from contenthive.models.system import (
+    CursorPaginatedResponse,
+    HealthResponse,
+    LogEntry,
+    RestartResponse,
+    StorageStatusResponse,
+)
 from contenthive.models.user import UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
@@ -82,26 +87,49 @@ async def get_storage_status(
         ) from e
 
 
-@router_v1.get("/logs", response_model=APIResponse[PaginatedResponse[LogEntry]])
+@router_v1.get("/logs", response_model=APIResponse[CursorPaginatedResponse[LogEntry]])
 async def get_logs(
     _: Annotated[UserModel, Depends(get_current_admin_user)],
-    date: str | None = Query(
+    from_: datetime | None = Query(
         default=None,
-        pattern=r"^\d{4}-\d{2}-\d{2}$",
-        description="Filter by date (YYYY-MM-DD). Defaults to the most recent 3 days.",
+        alias="from",
+        description="Start of time range (inclusive). Defaults to 3 days before `to`.",
+    ),
+    to: datetime | None = Query(
+        default=None,
+        description=(
+            "End of time range (exclusive). Defaults to now. "
+            "To query across a large range, tile requests: [t0, t1) then [t1, t2)."
+        ),
     ),
     level: str | None = Query(default=None, description="Filter by log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)"),
-    page: int = Query(default=1, ge=1, description="Page number"),
-    page_size: int = Query(default=100, ge=1, le=500, description="Items per page"),
-) -> APIResponse[PaginatedResponse[LogEntry]]:
+    limit: int = Query(default=100, ge=1, le=500, description="Max items per page"),
+    cursor: str | None = Query(default=None, description="Pagination cursor returned by the previous response"),
+) -> APIResponse[CursorPaginatedResponse[LogEntry]]:
     """
     Query structured application logs (Admin only).
 
     Returns entries in reverse chronological order (newest first).
-    When no date is specified, returns logs from the most recent 3 days.
+    Time range is a half-open interval [from, to). Use `next_cursor` from the response
+    to fetch the next page; null means no more data.
     """
+    now = datetime.now(UTC).replace(tzinfo=None)
+    resolved_to = to.astimezone(UTC).replace(tzinfo=None) if to is not None else (now + timedelta(seconds=1))
+    resolved_from = from_.astimezone(UTC).replace(tzinfo=None) if from_ is not None else (resolved_to - timedelta(days=3))
+
+    if resolved_from > resolved_to:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(code="INVALID_TIME_RANGE", message="`from` must be before `to`"),
+        )
+
     try:
-        raw = parse_log_file(date)
+        items_raw, next_cursor = query_logs(resolved_from, resolved_to, level, limit, cursor)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(code="INVALID_CURSOR", message=str(e)),
+        ) from e
     except Exception as e:
         logger.exception("Failed to read log file")
         raise DetailedHTTPException(
@@ -109,19 +137,10 @@ async def get_logs(
             detail=ErrorDetail(code="LOG_READ_FAILED", message="Failed to read log file"),
         ) from e
 
-    raw = list(reversed(raw))
-
-    if level:
-        raw = [e for e in raw if e["level"] == level.upper()]
-
-    total = len(raw)
-    total_pages = math.ceil(total / page_size) if total else 0
-    page_items = [LogEntry(**e) for e in raw[(page - 1) * page_size : page * page_size]]
-
     return APIResponse(
         status=ResponseStatus.SUCCESS,
-        data=PaginatedResponse(
-            items=page_items,
-            pagination=PaginationInfo(page=page, page_size=page_size, total=total, total_pages=total_pages),
+        data=CursorPaginatedResponse(
+            items=[LogEntry(**e) for e in items_raw],
+            next_cursor=next_cursor,
         ),
     )

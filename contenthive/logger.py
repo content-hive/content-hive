@@ -1,16 +1,41 @@
+import base64
+import json
 import logging
 import logging.config
 import re
+import time as _time
 from datetime import date as _date
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from contenthive.config import settings
 
-_LOG_LINE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(\w+):\s{2}(.*)$")
+_LOG_LINE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s+(\w+):\s+(.*)$")
 
 
-def _parse_path(path: Path) -> list[dict]:
+_CURSOR_TS_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _encode_cursor(ts: str, idx: int) -> str:
+    payload = json.dumps({"ts": ts, "idx": idx}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[str, int]:
+    padding = 4 - len(cursor) % 4
+    if padding != 4:
+        cursor += "=" * padding
+    try:
+        data = json.loads(base64.urlsafe_b64decode(cursor).decode())
+        ts, idx = data["ts"], int(data["idx"])
+        datetime.strptime(ts, _CURSOR_TS_FMT)
+        return ts, idx
+    except (KeyError, ValueError, json.JSONDecodeError) as e:
+        raise ValueError("Invalid cursor") from e
+
+
+def _parse_path_ranged(path: Path, from_dt: datetime, to_dt: datetime) -> list[dict]:
+    """Parse a log file, returning only entries in [from_dt, to_dt)."""
     entries: list[dict] = []
     current: dict | None = None
     tb_lines: list[str] = []
@@ -22,13 +47,19 @@ def _parse_path(path: Path) -> list[dict]:
                 if current is not None:
                     current["traceback"] = "\n".join(tb_lines) or None
                     entries.append(current)
+                current = None
+                tb_lines = []
+                entry_dt = datetime.strptime(m.group(1), _CURSOR_TS_FMT)
+                if entry_dt >= to_dt:
+                    break
+                if entry_dt < from_dt:
+                    continue
                 current = {
                     "timestamp": m.group(1),
                     "level": m.group(2),
                     "message": m.group(3),
                     "traceback": None,
                 }
-                tb_lines = []
             elif current is not None and line:
                 tb_lines.append(line)
     if current is not None:
@@ -37,37 +68,80 @@ def _parse_path(path: Path) -> list[dict]:
     return entries
 
 
-def parse_log_file(date_str: str | None = None) -> list[dict]:
+def query_logs(
+    from_dt: datetime,
+    to_dt: datetime,
+    level: str | None = None,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> tuple[list[dict], str | None]:
     """
-    Parse log file(s) and return structured entries in ascending time order.
+    Query log entries in [from_dt, to_dt), newest first.
 
-    - date_str=None: merge the most recent 3 days of logs
-    - date_str="YYYY-MM-DD": parse only that day; returns [] if file not found
+    Returns (items, next_cursor). next_cursor is None when no more data exists.
+    Cursor semantics: skips all entries newer than cursor_ts, then skips the first
+    cursor_idx entries at cursor_ts. Out-of-range cursors produce deterministic results:
+    cursor_ts < from_dt returns empty; cursor_ts >= to_dt is equivalent to no cursor.
     """
-    today = _date.today().strftime("%Y-%m-%d")
+    today = _date.today()
 
-    def _path_for(d: str) -> Path:
-        return settings.logs_dir / ("contenthive.log" if d == today else f"contenthive.log.{d}")
+    def _path_for(d: _date) -> Path:
+        d_str = d.strftime("%Y-%m-%d")
+        return settings.logs_dir / ("contenthive.log" if d == today else f"contenthive.log.{d_str}")
 
-    if date_str is not None:
-        path = _path_for(date_str)
-        return _parse_path(path) if path.exists() else []
+    cursor_ts: str | None = None
+    cursor_idx: int = 0
+    if cursor is not None:
+        cursor_ts, cursor_idx = _decode_cursor(cursor)
 
-    result: list[dict] = []
-    today_dt = _date.today()
-    for delta in range(2, -1, -1):  # 2 days ago → yesterday → today
-        d = (today_dt - timedelta(days=delta)).strftime("%Y-%m-%d")
+    all_entries: list[dict] = []
+    d = from_dt.date()
+    while d <= to_dt.date():
         path = _path_for(d)
         if path.exists():
-            result.extend(_parse_path(path))
-    return result
+            all_entries.extend(_parse_path_ranged(path, from_dt, to_dt))
+        d += timedelta(days=1)
+
+    if level:
+        all_entries = [e for e in all_entries if e["level"] == level.upper()]
+
+    all_entries.reverse()
+
+    if cursor_ts is not None:
+        skip = 0
+        for e in all_entries:
+            if e["timestamp"] > cursor_ts:
+                skip += 1
+            elif e["timestamp"] == cursor_ts:
+                skip += cursor_idx
+                break
+            else:
+                break
+        all_entries = all_entries[skip:]
+
+    fetched = all_entries[: limit + 1]
+    items = fetched[:limit]
+
+    next_cursor: str | None = None
+    if len(fetched) > limit and items:
+        last_ts = items[-1]["timestamp"]
+        base_idx = cursor_idx if cursor_ts == last_ts else 0
+        same_ts_count = sum(1 for e in items if e["timestamp"] == last_ts)
+        next_cursor = _encode_cursor(last_ts, base_idx + same_ts_count)
+
+    return items, next_cursor
+
+
+class _UTCFormatter(logging.Formatter):
+    converter = _time.gmtime
 
 
 # Shared formatter spec used in every dictConfig call.
 _FORMATTER_SPEC = {
     "standard": {
-        "format": "%(asctime)s %(levelname)s:\t  %(message)s",
-        "datefmt": "%Y-%m-%d %H:%M:%S",
+        "()": _UTCFormatter,
+        "fmt": "%(asctime)s %(levelname)s:\t  %(message)s",
+        "datefmt": "%Y-%m-%dT%H:%M:%SZ",
     }
 }
 
@@ -103,7 +177,7 @@ def _build_config(log_file: str | None = None) -> dict:
             "interval": 1,
             "backupCount": 30,
             "encoding": "utf-8",
-            "utc": False,
+            "utc": True,
         }
         root_handlers.append("file")
         app_handlers.append("file")
@@ -138,7 +212,7 @@ def _build_config(log_file: str | None = None) -> dict:
             "uvicorn.access": {
                 "handlers": [],
                 "level": "WARNING",
-                "propagate": False,
+                "propagate": True,
             },
         },
         "root": {

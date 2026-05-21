@@ -62,10 +62,17 @@ class DiskInfo(APIBaseModel):
 class LogEntry(APIBaseModel):
     """A single structured log entry"""
 
-    timestamp: str = Field(..., description="Log timestamp (YYYY-MM-DD HH:MM:SS)")
+    timestamp: str = Field(..., description="Log timestamp in UTC ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)")
     level: str = Field(..., description="Log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)")
     message: str = Field(..., description="Log message")
     traceback: str | None = Field(default=None, description="Exception traceback, if any")
+
+
+class CursorPaginatedResponse[T](APIBaseModel):
+    """Cursor-paginated response"""
+
+    items: list[T] = Field(..., description="Items for this page")
+    next_cursor: str | None = Field(default=None, description="Opaque token for the next page; null means no more data")
 
 
 class StorageStatusResponse(APIBaseModel):
