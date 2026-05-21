@@ -28,6 +28,8 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
     try:
         data = json.loads(base64.urlsafe_b64decode(cursor).decode())
         ts, idx = data["ts"], int(data["idx"])
+        if idx < 0:
+            raise ValueError("idx must be >= 0")
         datetime.strptime(ts, _CURSOR_TS_FMT)
         return ts, idx
     except (KeyError, ValueError, json.JSONDecodeError) as e:
@@ -84,7 +86,7 @@ def query_logs(
     cursor_idx entries at cursor_ts. Out-of-range cursors produce deterministic results:
     cursor_ts < from_dt returns empty; cursor_ts >= to_dt is equivalent to no cursor.
     """
-    today = _date.today()
+    today = to_dt.date()
 
     def _path_for(d: _date) -> Path:
         d_str = d.strftime("%Y-%m-%d")
@@ -95,32 +97,29 @@ def query_logs(
     if cursor is not None:
         cursor_ts, cursor_idx = _decode_cursor(cursor)
 
-    all_entries: list[dict] = []
-    d = from_dt.date()
-    while d <= to_dt.date():
+    level_filter = level.upper() if level else None
+    fetched: list[dict] = []
+    skipped_at_cursor_ts = 0
+    d = to_dt.date()
+    from_date = from_dt.date()
+    while d >= from_date and len(fetched) <= limit:
         path = _path_for(d)
         if path.exists():
-            all_entries.extend(_parse_path_ranged(path, d.strftime("%Y-%m-%d"), from_dt, to_dt))
-        d += timedelta(days=1)
+            day_entries = _parse_path_ranged(path, d.strftime("%Y-%m-%d"), from_dt, to_dt)
+            if level_filter:
+                day_entries = [e for e in day_entries if e["level"] == level_filter]
+            for e in reversed(day_entries):
+                if cursor_ts is not None:
+                    if e["timestamp"] > cursor_ts:
+                        continue
+                    if e["timestamp"] == cursor_ts and skipped_at_cursor_ts < cursor_idx:
+                        skipped_at_cursor_ts += 1
+                        continue
+                fetched.append(e)
+                if len(fetched) > limit:
+                    break
+        d -= timedelta(days=1)
 
-    if level:
-        all_entries = [e for e in all_entries if e["level"] == level.upper()]
-
-    all_entries.reverse()
-
-    if cursor_ts is not None:
-        skip = 0
-        for e in all_entries:
-            if e["timestamp"] > cursor_ts:
-                skip += 1
-            elif e["timestamp"] == cursor_ts:
-                skip += cursor_idx
-                break
-            else:
-                break
-        all_entries = all_entries[skip:]
-
-    fetched = all_entries[: limit + 1]
     items = fetched[:limit]
 
     next_cursor: str | None = None

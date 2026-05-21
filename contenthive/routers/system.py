@@ -114,8 +114,11 @@ async def get_logs(
     to fetch the next page; null means no more data.
     """
     now = datetime.now(UTC).replace(tzinfo=None)
-    resolved_to = to.astimezone(UTC).replace(tzinfo=None) if to is not None else (now + timedelta(seconds=1))
-    resolved_from = from_.astimezone(UTC).replace(tzinfo=None) if from_ is not None else (resolved_to - timedelta(days=3))
+    def _to_utc_naive(dt: datetime) -> datetime:
+        return dt.replace(tzinfo=None) if dt.tzinfo is None else dt.astimezone(UTC).replace(tzinfo=None)
+
+    resolved_to = _to_utc_naive(to) if to is not None else (now + timedelta(seconds=1))
+    resolved_from = _to_utc_naive(from_) if from_ is not None else (resolved_to - timedelta(days=3))
 
     if resolved_from > resolved_to:
         raise DetailedHTTPException(
