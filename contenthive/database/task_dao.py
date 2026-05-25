@@ -512,7 +512,10 @@ class TaskDAO:
             if include_sub_tasks:
                 stmt = stmt.options(joinedload(MainTask.sub_tasks))
 
-            stmt = stmt.order_by(sort_field.asc()) if order == "asc" else stmt.order_by(sort_field.desc())
+            if order == "asc":
+                stmt = stmt.order_by(sort_field.asc(), MainTask.id.asc())
+            else:
+                stmt = stmt.order_by(sort_field.desc(), MainTask.id.desc())
             stmt = stmt.limit(limit)
 
             result = session.execute(stmt).unique().scalars().all()

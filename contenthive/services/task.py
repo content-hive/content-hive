@@ -4,6 +4,7 @@ Task service for managing and executing tasks.
 
 import asyncio
 import base64
+import binascii
 import hashlib
 import json
 import uuid
@@ -39,8 +40,8 @@ def _decode_cursor(cursor: str) -> tuple[int, str]:
         cursor += "=" * padding
     try:
         data = json.loads(base64.urlsafe_b64decode(cursor).decode())
-        return int(data["id"]), data["value"]
-    except (KeyError, ValueError, json.JSONDecodeError) as e:
+        return int(data["id"]), str(data["value"])
+    except (KeyError, ValueError, json.JSONDecodeError, binascii.Error, UnicodeDecodeError) as e:
         raise ValueError("Invalid cursor") from e
 
 
@@ -367,6 +368,7 @@ class TaskService:
             limit: Number of items per page (1-100)
             sort_by: Field to sort by (id, created_at, updated_at)
             order: Sort direction (asc, desc)
+            include_sub_tasks: Whether to eagerly load sub tasks
 
         Returns:
             CursorPaginatedResponse containing items and next_cursor

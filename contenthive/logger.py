@@ -1,4 +1,5 @@
 import base64
+import binascii
 import json
 import logging
 import logging.config
@@ -32,7 +33,7 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
             raise ValueError("idx must be >= 0")
         datetime.strptime(ts, _CURSOR_TS_FMT)
         return ts, idx
-    except (KeyError, ValueError, json.JSONDecodeError) as e:
+    except (KeyError, ValueError, json.JSONDecodeError, binascii.Error, UnicodeDecodeError) as e:
         raise ValueError("Invalid cursor") from e
 
 
