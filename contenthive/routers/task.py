@@ -10,6 +10,7 @@ from contenthive.models.api import (
 )
 from contenthive.models.content import PaginatedResponse
 from contenthive.models.enumerates import OperationType, ResponseStatus, TaskStatus
+from contenthive.models.system import CursorPaginatedResponse
 from contenthive.models.task import MainTaskInfo, TaskCreateRequest
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_active_user
@@ -114,6 +115,47 @@ async def cancel_parser_task(
         ) from e
 
 
+@router_v1.get("/parser/cursor", response_model=APIResponse[CursorPaginatedResponse[MainTaskInfo]])
+async def list_parser_tasks_with_cursor(
+    current_user: Annotated[UserModel, Depends(get_current_active_user)],
+    status: list[TaskStatus] | None = Query(None),
+    task_ids: list[str] | None = Query(None),
+    cursor: str | None = Query(None, description="Pagination cursor from previous response; omit for first page"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
+    sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),
+    order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
+    include_sub_tasks: bool = Query(False, description="Whether to include sub tasks in the response"),
+) -> APIResponse[CursorPaginatedResponse[MainTaskInfo]]:
+    """
+    List parser tasks using cursor-based (keyset) pagination.
+
+    Pass next_cursor from the previous response to fetch the next page.
+    A null next_cursor means there are no more pages.
+    """
+    try:
+        result = task_service.list_main_tasks_by_user_with_cursor(
+            user_id=current_user.id,
+            status=status,
+            task_ids=task_ids,
+            cursor=cursor,
+            limit=limit,
+            sort_by=sort_by,
+            order=order,
+            include_sub_tasks=include_sub_tasks,
+        )
+        return APIResponse(status=ResponseStatus.SUCCESS, data=result)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=400,
+            detail=ErrorDetail(code="INVALID_CURSOR", message=str(e)),
+        ) from e
+    except Exception as e:
+        raise DetailedHTTPException(
+            status_code=500,
+            detail=ErrorDetail(code="TASK_LIST_FAILED", message=str(e)),
+        ) from e
+
+
 @router_v1.get("/parser/{task_id}", response_model=APIResponse[MainTaskInfo])
 async def get_parser_task(
     task_id: str, current_user: Annotated[UserModel, Depends(get_current_active_user)]
@@ -169,6 +211,7 @@ async def list_parser_tasks(
     page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: str = Query("created_at", pattern="^(id|created_at|updated_at)$", description="Sort field"),
     order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
+    include_sub_tasks: bool = Query(False, description="Whether to include sub tasks in the response"),
 ) -> APIResponse[PaginatedResponse[MainTaskInfo]]:
     """
     List parser tasks for the current user with optional status filter and pagination.
@@ -181,6 +224,7 @@ async def list_parser_tasks(
         page_size: Number of items per page (default: 20)
         sort_by: Field to sort by (default: created_at)
         order: Sort order - asc or desc (default: desc)
+        include_sub_tasks: Whether to include sub tasks in the response (default: false)
 
     Returns:
         API response with paginated list of tasks
@@ -194,6 +238,7 @@ async def list_parser_tasks(
             page_size=page_size,
             sort_by=sort_by,
             order=order,
+            include_sub_tasks=include_sub_tasks,
         )
 
         return APIResponse(status=ResponseStatus.SUCCESS, data=result)

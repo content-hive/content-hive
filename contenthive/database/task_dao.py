@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from contenthive.database.database import get_engine, get_session_local
@@ -441,6 +441,87 @@ class TaskDAO:
             return [MainTaskEntity.from_orm(task) for task in result], total
         except Exception:
             logger.exception("Failed to list main tasks")
+            raise
+
+    def list_main_tasks_with_cursor(
+        self,
+        user_id: int | None = None,
+        status: list[TaskStatus] | None = None,
+        task_ids: list[str] | None = None,
+        cursor_id: int | None = None,
+        cursor_value: datetime | int | None = None,
+        limit: int = 20,
+        sort_by: str = "created_at",
+        order: str = "desc",
+        include_sub_tasks: bool = False,
+    ) -> list[MainTaskEntity]:
+        """
+        List main tasks using keyset (cursor) pagination.
+
+        Args:
+            user_id: Filter by user ID
+            status: Filter by status. Ignored when task_ids is provided.
+            task_ids: Filter by task IDs. When provided, status filter is ignored.
+            cursor_id: Database id of the last item from the previous page
+            cursor_value: Sort field value of the last item from the previous page
+            limit: Maximum number of results (caller should pass limit+1 to detect has_more)
+            sort_by: Column to sort by (id, created_at, updated_at)
+            order: Sort direction (asc, desc)
+            include_sub_tasks: Whether to eagerly load sub tasks
+
+        Returns:
+            List of MainTaskEntity objects
+        """
+        session = self._get_session()
+        try:
+            stmt = select(MainTask).where(MainTask.deleted_at.is_(None))
+
+            if user_id is not None:
+                stmt = stmt.where(MainTask.user_id == user_id)
+
+            if task_ids:
+                stmt = stmt.where(MainTask.task_id.in_(task_ids))
+            elif status:
+                stmt = stmt.where(MainTask.status.in_(status))
+
+            sort_field_map = {
+                "id": MainTask.id,
+                "created_at": MainTask.created_at,
+                "updated_at": MainTask.updated_at,
+            }
+            sort_field = sort_field_map.get(sort_by, MainTask.created_at)
+
+            if cursor_id is not None and cursor_value is not None:
+                if sort_by == "id":
+                    keyset_cond = (
+                        MainTask.id < cursor_id if order == "desc" else MainTask.id > cursor_id
+                    )
+                else:
+                    if order == "desc":
+                        keyset_cond = or_(
+                            sort_field < cursor_value,
+                            and_(sort_field == cursor_value, MainTask.id < cursor_id),
+                        )
+                    else:
+                        keyset_cond = or_(
+                            sort_field > cursor_value,
+                            and_(sort_field == cursor_value, MainTask.id > cursor_id),
+                        )
+                stmt = stmt.where(keyset_cond)
+
+            if include_sub_tasks:
+                stmt = stmt.options(joinedload(MainTask.sub_tasks))
+
+            if order == "asc":
+                stmt = stmt.order_by(sort_field.asc(), MainTask.id.asc())
+            else:
+                stmt = stmt.order_by(sort_field.desc(), MainTask.id.desc())
+            stmt = stmt.limit(limit)
+
+            result = session.execute(stmt).unique().scalars().all()
+            return [MainTaskEntity.from_orm(task) for task in result]
+        except Exception:
+            logger.exception("Failed to list main tasks with cursor")
             raise
 
     def find_running_primary_task_by_url(
