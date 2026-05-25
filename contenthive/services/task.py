@@ -3,8 +3,11 @@ Task service for managing and executing tasks.
 """
 
 import asyncio
+import base64
 import hashlib
+import json
 import uuid
+from datetime import datetime
 from typing import Any
 
 from contenthive.database.content_dao import ContentDAO
@@ -16,11 +19,29 @@ from contenthive.models.content import (
     PaginationInfo,
 )
 from contenthive.models.enumerates import MediaStatus, TaskRole, TaskStatus, TaskType
+from contenthive.models.system import CursorPaginatedResponse
 from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
 from contenthive.plugins.contracts import ParserMediaInfo, ParserResult
 from contenthive.services.content import content_service
 from contenthive.services.media import media_service
 from contenthive.services.task_queue import task_queue
+
+
+def _encode_cursor(id: int, value: datetime | int) -> str:
+    data = {"id": id, "value": value.isoformat() if isinstance(value, datetime) else value}
+    payload = json.dumps(data, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[int, str]:
+    padding = 4 - len(cursor) % 4
+    if padding != 4:
+        cursor += "=" * padding
+    try:
+        data = json.loads(base64.urlsafe_b64decode(cursor).decode())
+        return int(data["id"]), data["value"]
+    except (KeyError, ValueError, json.JSONDecodeError) as e:
+        raise ValueError("Invalid cursor") from e
 
 
 class TaskService:
@@ -280,6 +301,7 @@ class TaskService:
         page_size: int = 20,
         sort_by: str = "created_at",
         order: str = "desc",
+        include_sub_tasks: bool = False,
     ) -> PaginatedResponse[MainTaskInfo]:
         """
         List main tasks for a specific user with pagination.
@@ -292,6 +314,7 @@ class TaskService:
             page_size: Number of items per page
             sort_by: Field to sort by (id, created_at, updated_at)
             order: Sort direction (asc, desc)
+            include_sub_tasks: Whether to eagerly load sub tasks
 
         Returns:
             PaginatedResponse containing list of MainTaskInfo and pagination info
@@ -308,9 +331,10 @@ class TaskService:
                     offset=offset,
                     sort_by=sort_by,
                     order=order,
+                    include_sub_tasks=include_sub_tasks,
                 )
 
-            items = [MainTaskInfo.from_entity(task) for task in tasks]
+            items = [MainTaskInfo.from_entity(task, include_sub_tasks=include_sub_tasks) for task in tasks]
             total_pages = (total + page_size - 1) // page_size  # Ceiling division
 
             return PaginatedResponse(
@@ -320,6 +344,74 @@ class TaskService:
         except Exception:
             logger.exception(f"Error listing main tasks for user {user_id}")
             raise
+
+    def list_main_tasks_by_user_with_cursor(
+        self,
+        user_id: int,
+        status: list[TaskStatus] | None = None,
+        task_ids: list[str] | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+        sort_by: str = "created_at",
+        order: str = "desc",
+        include_sub_tasks: bool = False,
+    ) -> CursorPaginatedResponse[MainTaskInfo]:
+        """
+        List main tasks for a specific user using cursor (keyset) pagination.
+
+        Args:
+            user_id: User ID to filter tasks
+            status: Optional task status filter. Ignored when task_ids is provided.
+            task_ids: Optional list of task IDs to filter by. When provided, status filter is ignored.
+            cursor: Opaque cursor from the previous response; omit for the first page
+            limit: Number of items per page (1-100)
+            sort_by: Field to sort by (id, created_at, updated_at)
+            order: Sort direction (asc, desc)
+
+        Returns:
+            CursorPaginatedResponse containing items and next_cursor
+        """
+        cursor_id: int | None = None
+        cursor_value: datetime | str | int | None = None
+
+        if cursor is not None:
+            cursor_id, cursor_value_raw = _decode_cursor(cursor)
+            cursor_value = (
+                datetime.fromisoformat(cursor_value_raw)
+                if sort_by in {"created_at", "updated_at"}
+                else int(cursor_value_raw)
+            )
+
+        with TaskDAO() as dao:
+            tasks = dao.list_main_tasks_with_cursor(
+                user_id=user_id,
+                status=status,
+                task_ids=task_ids,
+                cursor_id=cursor_id,
+                cursor_value=cursor_value,
+                limit=limit + 1,
+                sort_by=sort_by,
+                order=order,
+                include_sub_tasks=include_sub_tasks,
+            )
+
+        has_more = len(tasks) > limit
+        tasks = tasks[:limit]
+
+        next_cursor: str | None = None
+        if has_more and tasks:
+            last = tasks[-1]
+            sort_value_map = {
+                "id": last.id,
+                "created_at": last.created_at,
+                "updated_at": last.updated_at,
+            }
+            next_cursor = _encode_cursor(last.id, sort_value_map.get(sort_by, last.created_at))
+
+        return CursorPaginatedResponse(
+            items=[MainTaskInfo.from_entity(task, include_sub_tasks=include_sub_tasks) for task in tasks],
+            next_cursor=next_cursor,
+        )
 
     # Sub Task Methods
 
