@@ -78,10 +78,10 @@ class PluginManager:
     Plugins are loaded as modules, not classes.
     """
 
-    def __init__(self, plugins_dir: Path, context, deps_dir: Path | None = None):
+    def __init__(self, plugins_dir: Path, context, deps_dir: Path):
         self.plugins_dir = plugins_dir
         self.context = context
-        self.deps_dir = deps_dir or Path("/app/deps")
+        self.deps_dir = deps_dir
         self._ensure_deps_dir_on_path()
         self.plugins: dict[str, PluginRecord] = {}
         self.config_entries: dict[str, PluginEntryData] = {}

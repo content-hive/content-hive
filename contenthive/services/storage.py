@@ -11,9 +11,12 @@ from contenthive.models.system import (
     DiskInfo,
     MediaStorageInfo,
     MediaTypeStorageInfo,
+    PluginItemStorageInfo,
+    PluginStorageInfo,
     StorageItemInfo,
     StorageStatusResponse,
 )
+from contenthive.plugins.manager import get_plugin_manager
 
 
 class _MediaStat(NamedTuple):
@@ -73,7 +76,32 @@ class StorageService:
         total_media_files = sum(v.files for v in type_stats.values())
         total_media_bytes = sum(v.bytes for v in type_stats.values())
         logs_bytes = _dir_size(settings.logs_dir)
-        plugins_bytes = _dir_size(settings.plugins_dir)
+        plugin_manager = get_plugin_manager()
+        by_plugin: dict[str, PluginItemStorageInfo] = {}
+        other_bytes = 0
+        if settings.plugins_dir.exists():
+            for entry in sorted(settings.plugins_dir.iterdir()):
+                if entry.is_dir():
+                    sz = _dir_size(entry)
+                    if plugin_manager and entry.name in plugin_manager.plugins:
+                        by_plugin[entry.name] = PluginItemStorageInfo(
+                            name=plugin_manager.plugins[entry.name].name,
+                            size_bytes=sz,
+                            size_human=_format_bytes(sz),
+                        )
+                    else:
+                        other_bytes += sz
+                else:
+                    with suppress(OSError):
+                        other_bytes += entry.stat().st_size
+        if other_bytes:
+            by_plugin["other"] = PluginItemStorageInfo(
+                name="Other",
+                size_bytes=other_bytes,
+                size_human=_format_bytes(other_bytes),
+            )
+        plugins_size_bytes = sum(v.size_bytes for v in by_plugin.values())
+        plugins_deps_bytes = _dir_size(settings.plugins_deps_dir)
 
         return StorageStatusResponse(
             disk=DiskInfo(
@@ -100,7 +128,15 @@ class StorageService:
                 },
             ),
             logs=StorageItemInfo(size_bytes=logs_bytes, size_human=_format_bytes(logs_bytes)),
-            plugins=StorageItemInfo(size_bytes=plugins_bytes, size_human=_format_bytes(plugins_bytes)),
+            plugins=PluginStorageInfo(
+                plugins_size_bytes=plugins_size_bytes,
+                plugins_size_human=_format_bytes(plugins_size_bytes),
+                by_plugin=by_plugin,
+                dependencies_size_bytes=plugins_deps_bytes,
+                dependencies_size_human=_format_bytes(plugins_deps_bytes),
+                total_size_bytes=plugins_size_bytes + plugins_deps_bytes,
+                total_size_human=_format_bytes(plugins_size_bytes + plugins_deps_bytes),
+            ),
         )
 
 
