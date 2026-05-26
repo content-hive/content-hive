@@ -91,13 +91,16 @@ class StorageService:
                         )
                     else:
                         other_bytes += sz
+                else:
+                    with suppress(OSError):
+                        other_bytes += entry.stat().st_size
         if other_bytes:
             by_plugin["other"] = PluginItemStorageInfo(
                 name="Other",
                 size_bytes=other_bytes,
                 size_human=_format_bytes(other_bytes),
             )
-        plugins_size_bytes = _dir_size(settings.plugins_dir)
+        plugins_size_bytes = sum(v.size_bytes for v in by_plugin.values())
         plugins_deps_bytes = _dir_size(settings.plugins_deps_dir)
 
         return StorageStatusResponse(
