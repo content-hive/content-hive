@@ -23,7 +23,7 @@ async def load_plugins_on_startup():
     context = PluginContext(logger=logger)
 
     # Create plugin manager with context
-    plugin_manager = PluginManager(settings.plugins_dir, context)
+    plugin_manager = PluginManager(settings.plugins_dir, context, deps_dir=settings.plugins_deps_dir)
     set_plugin_manager(plugin_manager)
 
     # Inject HA-style methods into context for plugins to use

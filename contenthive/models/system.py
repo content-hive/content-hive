@@ -76,6 +76,26 @@ class CursorPaginatedResponse[T](APIBaseModel):
     next_cursor: str | None = Field(default=None, description="Opaque token for the next page; null means no more data")
 
 
+class PluginItemStorageInfo(APIBaseModel):
+    """Storage usage for a single plugin, with display name"""
+
+    name: str = Field(..., description="Plugin display name from manifest")
+    size_bytes: int = Field(..., description="Plugin directory size in bytes")
+    size_human: str = Field(..., description="Human-readable plugin size")
+
+
+class PluginStorageInfo(APIBaseModel):
+    """Storage usage for plugins and their dependencies"""
+
+    plugins_size_bytes: int = Field(..., description="Total plugin directory size in bytes (including non-plugin files)")
+    plugins_size_human: str = Field(..., description="Human-readable total plugin directory size")
+    by_plugin: dict[str, PluginItemStorageInfo] = Field(..., description="Per-plugin code size breakdown")
+    dependencies_size_bytes: int = Field(..., description="Installed dependencies size in bytes")
+    dependencies_size_human: str = Field(..., description="Human-readable dependencies size")
+    total_size_bytes: int = Field(..., description="Total size in bytes (plugins + dependencies)")
+    total_size_human: str = Field(..., description="Human-readable total size")
+
+
 class StorageStatusResponse(APIBaseModel):
     """Response model for the storage status endpoint"""
 
@@ -83,4 +103,4 @@ class StorageStatusResponse(APIBaseModel):
     database: StorageItemInfo = Field(..., description="Database file size")
     media: MediaStorageInfo = Field(..., description="Media directory usage breakdown")
     logs: StorageItemInfo = Field(..., description="Logs directory size")
-    plugins: StorageItemInfo = Field(..., description="Plugins directory size")
+    plugins: PluginStorageInfo = Field(..., description="Plugins directory and dependencies size")

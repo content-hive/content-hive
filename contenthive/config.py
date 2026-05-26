@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path(os.getenv("DATA_DIR", "/config/data"))
     logs_dir: Path = Path(os.getenv("LOGS_DIR", "/config/logs"))
     plugins_dir: Path = Path(os.getenv("PLUGINS_DIR", "/config/plugins"))
+    plugins_deps_dir: Path = Path(os.getenv("PLUGINS_DEPS_DIR", "/app/deps"))
 
     plugins_repo_url: str = os.getenv("PLUGINS_REPO_URL", "https://github.com/content-hive/plugins.git")
     plugins_repo_ref_type: str = os.getenv("PLUGINS_REPO_REF_TYPE", "branch")  # branch, tag, commit
