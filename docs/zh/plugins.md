@@ -4,7 +4,7 @@ Content Hive 采用 Home Assistant 风格的插件架构。每个受支持的平
 
 插件通过 GitHub 仓库统一分发，通过 REST API 进行管理。
 
-如需了解系统内部架构，请参阅 [plugin-system.zh.md](plugin-system.zh.md)。
+如需了解系统内部架构，请参阅[插件系统设计](/zh/plugin-system)。
 
 ---
 
@@ -226,7 +226,7 @@ async def async_setup_entry(context, entry, async_add_entities):
 | `platform` | `ParserPlatformInfo` | 平台信息 |
 | `post_time` | `int \| None` | 发布时间（Unix 时间戳）|
 | `parser` | `str` | 解析器标识（通常为 `DOMAIN`）|
-| `state` | `ParserResultStatus` | `SUCCESS` 或 `FAILED` |
+| `state` | `ParserResultStatus` | `SUCCESS` 或 `ERROR` |
 
 ### `ParserMediaInfo`
 

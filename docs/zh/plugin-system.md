@@ -2,7 +2,7 @@
 
 本文档描述 Content Hive 插件系统的内部架构、生命周期机制和各模块的设计细节，面向维护者和贡献者。
 
-如需开发插件，请参阅 [plugins.zh.md](plugins.zh.md)（中文开发者指南）或 [plugins.en.md](plugins.en.md)（English）。
+如需开发插件，请参阅[插件开发者指南](/zh/plugins)。
 
 ---
 
