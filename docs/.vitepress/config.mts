@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: "Content Hive",
   description: "Content Hive service docs",
+  base: '/content-hive/',
 
   locales: {
     zh: {
@@ -79,7 +80,7 @@ export default defineConfig({
 
   themeConfig: {
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/XaoflySho/content-hive' }
+      { icon: 'github', link: 'https://github.com/content-hive/content-hive' }
     ]
   }
 })
