@@ -179,7 +179,6 @@ PluginEntryData {
 | `async_check_updates(repo_url, ref)` | 仅拉取远端 `plugins-manifest.json`，进行语义版本比较，缓存结果 |
 | `register_service(domain, service, callback)` | 注册命名服务 |
 | `call_service(domain, service, data)` | 调用已注册的服务 |
-| `get_parser_entities()` | 获取所有已注册的解析器实体列表 |
 
 **热重载实现细节**（`async_reload`）：
 

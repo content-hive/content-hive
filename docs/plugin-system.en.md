@@ -181,7 +181,6 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | `async_check_updates(repo_url, ref)` | Fetches only the remote `plugins-manifest.json`, performs semantic version comparison, caches results |
 | `register_service(domain, service, callback)` | Registers a named service callable |
 | `call_service(domain, service, data)` | Calls a registered service |
-| `get_parser_entities()` | Returns all registered parser entity instances |
 
 **Hot-reload implementation** (`async_reload`):
 

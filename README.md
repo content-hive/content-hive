@@ -16,7 +16,7 @@ Self-hosted content parser and media downloader for social platforms, powered by
 ```yaml
 services:
   content-hive:
-    image: content-hive:latest
+    image: ghcr.io/content-hive/content-hive:latest  # or docker.io/DOCKERHUB_USER/content-hive:latest
     container_name: content-hive
     ports:
       - "6123:6123"
@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
 ```
 
-On first start, an admin account is created automatically. If `ADMIN_PASSWORD` is not set, a random password is generated and printed to the logs.
+On first start, an admin account is created automatically. If `ADMIN_PASSWORD` is not set, a random password is generated and written to `/config/data/.admin_credentials` (permissions 600); the log will show the file path. Delete this file after recording the credentials.
 
 ## Documentation
 

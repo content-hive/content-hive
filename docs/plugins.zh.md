@@ -48,20 +48,25 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 
 **parser.py**
 ```python
+from typing import Any
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.contracts import (
     ParserResult, ParserAuthorInfo, ParserPlatformInfo, ParserResultStatus
 )
 from contenthive.plugins.manager import PluginEntryData
 
+DOMAIN = "my_parser"
+
 class MyParser:
     def __init__(self, context: PluginContext, entry: PluginEntryData):
         self.context = context
 
-    def can_parse(self, url: str) -> bool:
+    def can_parse(self, data: dict[str, Any]) -> bool:
+        url = data.get("url", "")
         return "example.com" in url
 
-    async def parse(self, url: str) -> ParserResult:
+    async def parse(self, data: dict[str, Any]) -> ParserResult:
+        url = data.get("url")
         return ParserResult(
             pid="unique-id",
             url=url,
@@ -71,7 +76,7 @@ class MyParser:
             author=ParserAuthorInfo(uid="123", username="author"),
             platform=ParserPlatformInfo(code="example", name="Example", url="https://example.com"),
             post_time=None,
-            parser="my_parser",
+            parser=DOMAIN,
             state=ParserResultStatus.SUCCESS,
         )
 
@@ -81,7 +86,11 @@ class MyParser:
 
 async def async_setup_entry(context, entry, async_add_entities):
     parser = MyParser(context, entry)
-    await async_add_entities([parser])
+    await async_add_entities([parser])  # 注册实体，卸载时触发 async_will_remove
+
+    # 注册服务——ContentService 通过这两个服务发现并调用解析器
+    context.register_service(DOMAIN, "can_parse", parser.can_parse)
+    context.register_service(DOMAIN, "parse", parser.parse)
 ```
 
 ---
@@ -179,15 +188,23 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 async def async_setup_entry(context, entry, async_add_entities):
     parser = MyParser(context, entry)
     await parser.async_setup()       # 可选，如创建 HTTP session
+
+    # 注册实体，卸载时触发 async_will_remove
     await async_add_entities([parser])
+
+    # 注册服务——ContentService 通过这两个服务发现并调用解析器
+    context.register_service(DOMAIN, "can_parse", parser.can_parse)
+    context.register_service(DOMAIN, "parse", parser.parse)
 ```
+
+> `can_parse` 和 `parse` 是 ContentService 发现和执行解析器的唯一入口，未注册这两个服务的插件不会被调用。
 
 ### 解析器需实现的方法
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `can_parse` | `(url: str) -> bool` | 返回 `True` 表示此插件可以处理该 URL |
-| `parse` | `async (url: str) -> ParserResult` | 解析内容并返回结果 |
+| `can_parse` | `(data: dict) -> bool` | 返回 `True` 表示此插件可以处理 `data["url"]` |
+| `parse` | `async (data: dict) -> ParserResult` | 解析 `data["url"]` 并返回结果 |
 | `async_will_remove` | `async () -> None` | 清理资源（关闭 HTTP session 等）|
 
 ---
@@ -322,7 +339,7 @@ context.register_service(DOMAIN, "download", my_download)
 | 插件状态 | `manager.plugins[domain].state` |
 | 错误信息 | `manager.plugins[domain].error` |
 | 配置 Schema | `manager.plugins[domain].config_schema` |
-| 已注册解析器 | `manager.get_parser_entities()` |
+| 已激活的解析器域 | `[d for d, s in manager.services.items() if "can_parse" in s]` |
 | 可用更新缓存 | `manager._available_updates` |
 | 触发热重载 | `await manager.async_reload(domain)` |
 | 监听事件 | `manager.event_bus.listen("plugin_enabled", callback)` |

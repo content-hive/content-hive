@@ -46,20 +46,25 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 
 **parser.py**
 ```python
+from typing import Any
 from contenthive.plugins.context import PluginContext
 from contenthive.plugins.contracts import (
     ParserResult, ParserAuthorInfo, ParserPlatformInfo, ParserResultStatus
 )
 from contenthive.plugins.manager import PluginEntryData
 
+DOMAIN = "my_parser"
+
 class MyParser:
     def __init__(self, context: PluginContext, entry: PluginEntryData):
         self.context = context
 
-    def can_parse(self, url: str) -> bool:
+    def can_parse(self, data: dict[str, Any]) -> bool:
+        url = data.get("url", "")
         return "example.com" in url
 
-    async def parse(self, url: str) -> ParserResult:
+    async def parse(self, data: dict[str, Any]) -> ParserResult:
+        url = data.get("url")
         return ParserResult(
             pid="unique-id",
             url=url,
@@ -69,7 +74,7 @@ class MyParser:
             author=ParserAuthorInfo(uid="123", username="author"),
             platform=ParserPlatformInfo(code="example", name="Example", url="https://example.com"),
             post_time=None,
-            parser="my_parser",
+            parser=DOMAIN,
             state=ParserResultStatus.SUCCESS,
         )
 
@@ -79,7 +84,11 @@ class MyParser:
 
 async def async_setup_entry(context, entry, async_add_entities):
     parser = MyParser(context, entry)
-    await async_add_entities([parser])
+    await async_add_entities([parser])  # registers parser for cleanup on unload
+
+    # Register services so ContentService can discover and call this parser
+    context.register_service(DOMAIN, "can_parse", parser.can_parse)
+    context.register_service(DOMAIN, "parse", parser.parse)
 ```
 
 ---
@@ -179,8 +188,16 @@ Platform modules are registered by calling `context.async_forward_entry_setup(en
 async def async_setup_entry(context, entry, async_add_entities):
     parser = MyParser(context, entry)
     await parser.async_setup()       # optional initialization
+
+    # Register for lifecycle cleanup (async_will_remove is called on unload)
     await async_add_entities([parser])
+
+    # Register services — required for ContentService to discover and call this parser
+    context.register_service(DOMAIN, "can_parse", parser.can_parse)
+    context.register_service(DOMAIN, "parse", parser.parse)
 ```
+
+> `can_parse` and `parse` are the two services ContentService calls to discover and execute parsers. Without registering them, the plugin will load but never receive any URLs.
 
 ### Parser interface
 
@@ -188,8 +205,8 @@ Your parser class must implement:
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `can_parse` | `(url: str) -> bool` | Return `True` if this plugin can handle the given URL |
-| `parse` | `async (url: str) -> ParserResult` | Fetch and return parsed content |
+| `can_parse` | `(data: dict) -> bool` | Return `True` if `data["url"]` is handled by this plugin |
+| `parse` | `async (data: dict) -> ParserResult` | Fetch and return parsed content for `data["url"]` |
 | `async_will_remove` | `async () -> None` | Clean up resources (close HTTP sessions, etc.) |
 
 ---
@@ -322,7 +339,7 @@ The core media pipeline checks for a `download` service before falling back to i
 | Plugin state | `manager.plugins[domain].state` |
 | Error details | `manager.plugins[domain].error` |
 | Config schema | `manager.plugins[domain].config_schema` |
-| Registered parsers | `manager.get_parser_entities()` |
+| Domains with active parsers | `[d for d, s in manager.services.items() if "can_parse" in s]` |
 | Available updates cache | `manager._available_updates` |
 | Trigger hot-reload | `await manager.async_reload(domain)` |
 | Listen for events | `manager.event_bus.listen("plugin_enabled", callback)` |
