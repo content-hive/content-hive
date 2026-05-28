@@ -1,5 +1,13 @@
 # Content Hive - Copilot Instructions
 
+## Agent Adapters
+
+This file is the source of truth for repository conventions and architecture rules.
+
+- `CLAUDE.md` is intentionally a lightweight adapter for Claude workflows (mainly command quick-reference and entry pointers).
+- Do not duplicate full coding conventions across both files.
+- If a rule changes, update this file first and keep `CLAUDE.md` minimal.
+
 ## Project Overview
 
 Content Hive is a content parsing service built on **FastAPI + Python 3.13**, using SQLite as the database and an extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
