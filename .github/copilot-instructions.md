@@ -19,7 +19,7 @@ Content Hive is a content parsing service built on **FastAPI + Python 3.13**, us
 ## Architecture Layers
 
 ```
-Router → Service → DAO (Data Access Object) → ORM Model
+Router -> Service -> DAO (Data Access Object) -> ORM Model
 ```
 
 - `contenthive/routers/`: FastAPI routes — responsible only for request parsing and auth; delegates business logic to Services
@@ -41,7 +41,7 @@ Router → Service → DAO (Data Access Object) → ORM Model
 
 ### Imports
 
-- All imports must be placed at the top of the file, grouped in the standard order: standard library → third-party → internal
+- All imports must be placed at the top of the file, grouped in the standard order: standard library -> third-party -> internal
 - **Do not use inline imports** (imports inside functions or methods) unless resolving a circular import that cannot be fixed by restructuring, or loading optional/heavy dependencies that should not be imported until the code path is reached
 
 ### API Models
