@@ -4,6 +4,8 @@ Content Hive uses a Home Assistant-style plugin architecture. Each supported pla
 
 Plugins are distributed via a GitHub repository and managed through the REST API.
 
+For internal architecture details, see [Plugin System Internals](/en/plugin-system).
+
 ---
 
 ## Quick Start
@@ -228,7 +230,7 @@ Import from `contenthive.plugins.contracts`. Do not import from core internals.
 | `platform` | `ParserPlatformInfo` | Platform information |
 | `post_time` | `int \| None` | Unix timestamp of the post |
 | `parser` | `str` | Parser identifier (usually `DOMAIN`) |
-| `state` | `ParserResultStatus` | `SUCCESS` or `FAILED` |
+| `state` | `ParserResultStatus` | `SUCCESS` or `ERROR` |
 
 ### `ParserMediaInfo`
 

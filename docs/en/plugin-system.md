@@ -2,7 +2,7 @@
 
 This document describes the internal architecture, lifecycle mechanism, and module design of the Content Hive plugin system. It is intended for maintainers and contributors.
 
-To write a plugin, see [plugins.en.md](plugins.en.md) (developer guide) or [plugins.zh.md](plugins.zh.md) (中文).
+To write a plugin, see the [Plugin Developer Guide](/en/plugins).
 
 ---
 
