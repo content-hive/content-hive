@@ -20,7 +20,6 @@
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token 有效期（分钟）|
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token 有效期（天）|
 | `DOWNLOAD_MAX_RETRIES` | `3` | 媒体下载失败最大重试次数 |
-| `DOWNLOAD_USER_AGENT` | 内置浏览器 UA 字符串 | 媒体下载请求使用的 HTTP User-Agent |
 
 ## 持久化数据
 

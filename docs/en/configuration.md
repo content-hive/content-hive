@@ -20,7 +20,6 @@ All settings are configured via environment variables.
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token validity in minutes |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token validity in days |
 | `DOWNLOAD_MAX_RETRIES` | `3` | Maximum retries for media download failures |
-| `DOWNLOAD_USER_AGENT` | built-in browser UA string | HTTP User-Agent used for media download requests |
 
 ## Persistent Data
 
