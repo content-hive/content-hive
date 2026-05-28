@@ -56,7 +56,7 @@ Router → Service → DAO (context manager) → ORM Model → SQLite
 
 ### API Models
 - Inherit from `APIBaseModel` (`contenthive/models/api.py`)
-- Endpoints return `APIResponse[T]` (status, data, error, timestamp)
+- Endpoints return `APIResponse[T]` (status, data, error, timestamp), except OAuth2 compatibility endpoint `/v1/user/token` which returns `{"access_token": "...", "token_type": "bearer"}`
 - Raise errors via `DetailedHTTPException` with `ErrorDetail(code, message, details)`
 
 ### Database

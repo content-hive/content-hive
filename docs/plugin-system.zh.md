@@ -169,7 +169,7 @@ PluginEntryData {
 | 方法 | 说明 |
 |------|------|
 | `async_discover()` | 并发扫描 `plugins/` 目录，读取所有 `manifest.json`，创建 `PluginRecord`（state=INSTALLED）|
-| `async_setup(domain, config)` | 安装依赖（线程池执行 `uv pip install`）→ 动态导入模块 → 调用 `async_setup(context, config)` → state=LOADED |
+| `async_setup(domain)` | 安装依赖（线程池执行 `uv pip install`）→ 动态导入模块 → 调用 `async_setup(context)` → state=LOADED |
 | `async_setup_entry(entry)` | 调用插件的 `async_setup_entry(context, entry)` → 存储条目 → state=ENABLED |
 | `async_forward_entry_setup(entry, platform)` | 加载平台子模块（如 `parser.py`），以 `contenthive_plugin_{domain}.{platform}` 注入 `sys.modules`，调用平台的 `async_setup_entry` |
 | `async_unload_entry(entry_id)` | 调用插件的 `async_unload_entry` → 删除条目 → 若无其他活跃条目则 state=LOADED |

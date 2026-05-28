@@ -145,12 +145,12 @@ DISABLED                                                  FAILED
 
 ## 生命周期钩子（`__init__.py`）
 
-### `async_setup(context, config) -> bool` *（可选）*
+### `async_setup(context) -> bool` *（可选）*
 
 模块加载时调用一次，用于不依赖用户配置的初始化工作。
 
 ```python
-async def async_setup(context: PluginContext, config: dict) -> bool:
+async def async_setup(context: PluginContext) -> bool:
     context.logger.info("插件模块已加载")
     return True
 ```

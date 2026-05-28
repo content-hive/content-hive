@@ -14,10 +14,11 @@ Content Hive 是一个自托管服务，用于从社交媒体平台解析内容�
 每个平台（Twitter、YouTube、TikTok、小红书等）都是独立插件。插件通过 GitHub 仓库统一分发，支持通过 API 进行安装、更新和热重载，无需重启服务。
 
 ### 任务去重机制
-当多个用户同时提交同一 URL 时，Content Hive 通过三角色机制避免重复执行：
+当多个用户同时提交同一 URL 时，Content Hive 通过共享执行机制避免重复工作：
 - **PRIMARY**（主任务）— 第一个提交，负责实际解析和下载
 - **LINKED**（关联任务）— PRIMARY 运行期间提交的相同 URL，等待 PRIMARY 完成后共享结果
-- **REUSED**（复用任务）— 提交已处理过的 URL，直接返回缓存结果
+
+任务模型中也保留了 **REUSED**（复用任务）类型用于缓存复用场景，但在线去重主路径目前以 PRIMARY/LINKED 为主。
 
 这套机制确保同一 URL 无论被多少用户提交，实际网络请求和解析工作只执行一次。
 
@@ -89,12 +90,14 @@ docker compose up -d
 | `DATA_DIR` | `/config/data` | 数据库和媒体文件目录 |
 | `LOGS_DIR` | `/config/logs` | 日志文件目录 |
 | `PLUGINS_DIR` | `/config/plugins` | 插件安装目录 |
+| `PLUGINS_DEPS_DIR` | `/app/deps` | 插件依赖安装目录 |
 | `PLUGINS_REPO_URL` | `https://github.com/content-hive/plugins.git` | 插件分发仓库地址 |
 | `PLUGINS_REPO_REF_TYPE` | `branch` | 仓库 ref 类型：`branch`、`tag` 或 `commit` |
 | `PLUGINS_REPO_REF` | `main` | 仓库 ref 值 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token 有效期（分钟）|
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token 有效期（天）|
 | `DOWNLOAD_MAX_RETRIES` | `3` | 媒体下载失败最大重试次数 |
+| `DOWNLOAD_USER_AGENT` | 内置浏览器 UA 字符串 | 媒体下载请求使用的 HTTP User-Agent |
 
 ### 持久化数据
 
@@ -121,9 +124,11 @@ docker compose up -d
 | `/v1/task` | 提交 URL 解析任务、查询任务状态、取消任务 |
 | `/v1/content` | 查询已解析的内容，列出平台和作者 |
 | `/v1/plugins` | 插件管理：安装、更新、配置、启用/禁用 |
-| `/v1/users` | 用户注册、登录、令牌刷新、修改密码 |
+| `/v1/user` | 用户登录、令牌刷新、个人资料、修改密码 |
 | `/v1/admin` | 管理员专属：用户管理 |
 | `/v1/system` | 健康检查、存储状态、日志查看、应用重启 |
+
+说明：`/v1/user/token` 是 OAuth2 兼容端点，直接返回 `{ "access_token": "...", "token_type": "bearer" }`，不使用统一 `APIResponse` 包装。
 
 ---
 

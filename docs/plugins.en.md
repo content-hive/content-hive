@@ -145,12 +145,12 @@ DISABLED                                                  FAILED
 
 ## Lifecycle Hooks (`__init__.py`)
 
-### `async_setup(context, config) -> bool` *(optional)*
+### `async_setup(context) -> bool` *(optional)*
 
 Called once when the plugin module is loaded. Use for one-time initialization that does not depend on user configuration.
 
 ```python
-async def async_setup(context: PluginContext, config: dict) -> bool:
+async def async_setup(context: PluginContext) -> bool:
     context.logger.info("Plugin loaded")
     return True
 ```

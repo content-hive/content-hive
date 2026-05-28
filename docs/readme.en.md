@@ -12,10 +12,11 @@ Content Hive is a self-hosted service that parses content from social media plat
 Each platform (Twitter, YouTube, TikTok, etc.) is implemented as an independent plugin. Plugins are distributed via a GitHub repository and can be installed, updated, and hot-reloaded through the API.
 
 ### Task Deduplication
-When the same URL is submitted by multiple users simultaneously, Content Hive uses a three-role mechanism to avoid redundant work:
-- **PRIMARY** — the first submission; executes the parse and download
-- **LINKED** — subsequent submissions of the same URL while PRIMARY is running; waits for PRIMARY to complete
-- **REUSED** — submissions of a URL that has already been processed; returns the cached result immediately
+When the same URL is submitted by multiple users simultaneously, Content Hive avoids redundant work with a shared-execution mechanism:
+- **PRIMARY** — the first submission; executes parse and download
+- **LINKED** — subsequent submissions of the same URL while PRIMARY is running; waits for PRIMARY and shares its result
+
+The task model also includes **REUSED** as a task type for cache-reuse workflows, but the online dedup path primarily relies on PRIMARY/LINKED.
 
 ### Async Task Queue
 Tasks are executed concurrently with configurable limits and priority scheduling (FIFO within the same priority level). Tasks can be cancelled before execution starts.
@@ -81,12 +82,14 @@ All settings are configured via environment variables.
 | `DATA_DIR` | `/config/data` | Directory for database and media files |
 | `LOGS_DIR` | `/config/logs` | Directory for log files |
 | `PLUGINS_DIR` | `/config/plugins` | Directory for installed plugins |
+| `PLUGINS_DEPS_DIR` | `/app/deps` | Directory for plugin dependency installation |
 | `PLUGINS_REPO_URL` | `https://github.com/content-hive/plugins.git` | Plugin distribution repository |
 | `PLUGINS_REPO_REF_TYPE` | `branch` | Repository ref type: `branch`, `tag`, or `commit` |
 | `PLUGINS_REPO_REF` | `main` | Repository ref value |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token validity in minutes |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token validity in days |
 | `DOWNLOAD_MAX_RETRIES` | `3` | Maximum retries for media download failures |
+| `DOWNLOAD_USER_AGENT` | built-in browser UA string | HTTP User-Agent used for media download requests |
 
 ### Persistent Data
 
@@ -113,9 +116,11 @@ Interactive API documentation is available at `http://localhost:6123/docs` (Swag
 | `/v1/task` | Submit URLs for parsing, check task status, cancel tasks |
 | `/v1/content` | Query parsed content, list platforms and authors |
 | `/v1/plugins` | Manage plugins (install, update, configure, enable/disable) |
-| `/v1/users` | User registration, login, token refresh, password change |
+| `/v1/user` | User login, token refresh, profile, and password change |
 | `/v1/admin` | Admin-only: user management |
 | `/v1/system` | Health check, storage stats, log viewer, application restart |
+
+Note: `/v1/user/token` is an OAuth2 compatibility endpoint and returns `{ "access_token": "...", "token_type": "bearer" }` directly instead of the unified `APIResponse` envelope.
 
 ---
 

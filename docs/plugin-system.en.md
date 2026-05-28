@@ -171,7 +171,7 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | Method | Description |
 |--------|-------------|
 | `async_discover()` | Concurrently scans `plugins/` directory, reads all `manifest.json` files, creates `PluginRecord` objects (state=INSTALLED) |
-| `async_setup(domain, config)` | Installs dependencies (runs `uv pip install` in a thread pool) → dynamically imports module → calls `async_setup(context, config)` → state=LOADED |
+| `async_setup(domain)` | Installs dependencies (runs `uv pip install` in a thread pool) → dynamically imports module → calls `async_setup(context)` → state=LOADED |
 | `async_setup_entry(entry)` | Calls the plugin's `async_setup_entry(context, entry)` → stores entry → state=ENABLED |
 | `async_forward_entry_setup(entry, platform)` | Loads the platform submodule (e.g. `parser.py`), injects it into `sys.modules` as `contenthive_plugin_{domain}.{platform}`, calls the platform's `async_setup_entry` |
 | `async_unload_entry(entry_id)` | Calls the plugin's `async_unload_entry` → removes entry → state reverts to LOADED if no other active entries remain |

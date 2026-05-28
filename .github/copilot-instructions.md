@@ -57,6 +57,7 @@ Router -> Service -> DAO (Data Access Object) -> ORM Model
       error: Optional[ErrorDetail]
       timestamp: datetime
   ```
+- Exception: OAuth2 compatibility endpoint `/v1/user/token` returns `{"access_token": "...", "token_type": "bearer"}` directly.
 - Errors must be raised using `DetailedHTTPException` with an `ErrorDetail` object (containing `code`, `message`, `details`)
 
 ### Database Models
@@ -129,7 +130,7 @@ Plugins live under `PLUGINS_DIR` (default: `/config/plugins`). Each plugin is a 
 ### Plugin Lifecycle Functions (`__init__.py`)
 
 ```python
-async def async_setup(context: PluginContext, config: dict) -> bool:
+async def async_setup(context: PluginContext) -> bool:
     """Called once on plugin initialization."""
     ...
 
@@ -143,7 +144,7 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
     return await context.async_unload_platforms(entry, ["parser"])
 ```
 
-- The platform parser is implemented in `parser.py` inside the plugin package, defining a Parser class that inherits from the base class.
+- The platform parser is implemented in `parser.py` inside the plugin package and must register callable services (for example, `can_parse` and `parse`) through the plugin context.
 
 ---
 
