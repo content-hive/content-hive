@@ -223,3 +223,8 @@ __marimo__/
 
 # Runtime data for Content Hive
 /runtime-data/
+
+# Node.js (VitePress docs)
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
