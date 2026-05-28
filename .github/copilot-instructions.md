@@ -1,5 +1,13 @@
 # Content Hive - Copilot Instructions
 
+## Agent Adapters
+
+This file is the source of truth for repository conventions and architecture rules.
+
+- `CLAUDE.md` is intentionally a lightweight adapter for Claude workflows (mainly command quick-reference and entry pointers).
+- Do not duplicate full coding conventions across both files.
+- If a rule changes, update this file first and keep `CLAUDE.md` minimal.
+
 ## Project Overview
 
 Content Hive is a content parsing service built on **FastAPI + Python 3.13**, using SQLite as the database and an extensible plugin system. The service runs on port `6123` by default and is deployed via Docker.
@@ -19,7 +27,7 @@ Content Hive is a content parsing service built on **FastAPI + Python 3.13**, us
 ## Architecture Layers
 
 ```
-Router → Service → DAO (Data Access Object) → ORM Model
+Router -> Service -> DAO (Data Access Object) -> ORM Model
 ```
 
 - `contenthive/routers/`: FastAPI routes — responsible only for request parsing and auth; delegates business logic to Services
@@ -41,7 +49,7 @@ Router → Service → DAO (Data Access Object) → ORM Model
 
 ### Imports
 
-- All imports must be placed at the top of the file, grouped in the standard order: standard library → third-party → internal
+- All imports must be placed at the top of the file, grouped in the standard order: standard library -> third-party -> internal
 - **Do not use inline imports** (imports inside functions or methods) unless resolving a circular import that cannot be fixed by restructuring, or loading optional/heavy dependencies that should not be imported until the code path is reached
 
 ### API Models
@@ -57,6 +65,7 @@ Router → Service → DAO (Data Access Object) → ORM Model
       error: Optional[ErrorDetail]
       timestamp: datetime
   ```
+- Exception: OAuth2 compatibility endpoint `/v1/user/token` returns `{"access_token": "...", "token_type": "bearer"}` directly.
 - Errors must be raised using `DetailedHTTPException` with an `ErrorDetail` object (containing `code`, `message`, `details`)
 
 ### Database Models
@@ -129,7 +138,7 @@ Plugins live under `PLUGINS_DIR` (default: `/config/plugins`). Each plugin is a 
 ### Plugin Lifecycle Functions (`__init__.py`)
 
 ```python
-async def async_setup(context: PluginContext, config: dict) -> bool:
+async def async_setup(context: PluginContext) -> bool:
     """Called once on plugin initialization."""
     ...
 
@@ -143,7 +152,7 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
     return await context.async_unload_platforms(entry, ["parser"])
 ```
 
-- The platform parser is implemented in `parser.py` inside the plugin package, defining a Parser class that inherits from the base class.
+- The platform parser is implemented in `parser.py` inside the plugin package and must register callable services (for example, `can_parse` and `parse`) through the plugin context.
 
 ---
 
