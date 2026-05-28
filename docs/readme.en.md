@@ -133,7 +133,7 @@ See [docs/plugins.en.md](plugins.en.md) for the plugin development guide.
 |-----------|---------|
 | Web framework | FastAPI 0.128 |
 | ORM | SQLAlchemy 2.0 |
-| Database | SQLite (via aiosqlite) |
+| Database | SQLite (synchronous SQLAlchemy engine) |
 | Migrations | Alembic |
 | Data validation | Pydantic / pydantic-settings |
 | Authentication | python-jose (JWT) + pwdlib (Argon2) |

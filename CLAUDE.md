@@ -42,7 +42,7 @@ Router → Service → DAO (context manager) → ORM Model → SQLite
 
 - `contenthive/routers/` — Request parsing and auth only; delegates to Services
 - `contenthive/services/` — Business logic; calls DAOs and plugins
-- `contenthive/database/` — DAOs and ORM models (`orm_models.py` has all 11 entities)
+- `contenthive/database/` — DAOs and ORM models (all ORM table classes are in `orm_models.py`)
 - `contenthive/models/` — Pydantic API models (request/response) and `@dataclass` DB entities
 - `contenthive/plugins/` — Plugin lifecycle, context, registry, config, and GitHub downloader
 - `contenthive/config.py` — Pydantic Settings singleton; all config accessed here

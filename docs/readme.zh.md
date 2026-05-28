@@ -141,7 +141,7 @@ docker compose up -d
 |------|----|
 | Web 框架 | FastAPI 0.128 |
 | ORM | SQLAlchemy 2.0 |
-| 数据库 | SQLite（通过 aiosqlite）|
+| 数据库 | SQLite（同步 SQLAlchemy 引擎）|
 | 数据库迁移 | Alembic |
 | 数据校验 | Pydantic / pydantic-settings |
 | 认证 | python-jose（JWT）+ pwdlib（Argon2）|
