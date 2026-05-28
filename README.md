@@ -32,8 +32,8 @@ On first start, an admin account is created automatically. If `ADMIN_PASSWORD` i
 
 ## Documentation
 
-- [English](docs/readme.en.md)
-- [中文](docs/readme.zh.md)
+- [English](https://content-hive.github.io/content-hive/en/intro)
+- [中文](https://content-hive.github.io/content-hive/zh/intro)
 
 ## License
 
