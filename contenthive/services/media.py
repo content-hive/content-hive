@@ -339,7 +339,7 @@ class MediaService:
         # 1. Magic-byte detection — most reliable
         try:
             mime = magic.from_buffer(data, mime=True)
-            if mime:
+            if mime and mime != "application/octet-stream":
                 ext = mimetypes.guess_extension(mime)
                 if ext:
                     return cls._EXT_NORMALISE.get(ext, ext)
