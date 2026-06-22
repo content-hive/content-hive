@@ -145,8 +145,10 @@ class Author(Base, TimestampMixin):
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     username: Mapped[str] = mapped_column(String, nullable=False)
     avatar: Mapped[str | None] = mapped_column(String, nullable=True)
+    avatar_path: Mapped[str | None] = mapped_column(String, nullable=True)
     url: Mapped[str | None] = mapped_column(String, nullable=True)
     banner: Mapped[str | None] = mapped_column(String, nullable=True)
+    banner_path: Mapped[str | None] = mapped_column(String, nullable=True)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Unique constraint

@@ -23,6 +23,7 @@ class OperationType(StrEnum):
 class TaskType(StrEnum):
     PARSE_CONTENT = "parse_content"
     MEDIA_DOWNLOAD = "media_download"
+    AUTHOR_PROFILE_DOWNLOAD = "author_profile_download"
     CONTENT_ANALYSIS = "content_analysis"
     # Add more task types as needed
 

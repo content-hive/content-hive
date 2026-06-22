@@ -52,8 +52,10 @@ class AuthorEntity:
     name: str | None = None
     username: str = ""
     avatar: str | None = None
+    avatar_path: str | None = None
     url: str | None = None
     banner: str | None = None
+    banner_path: str | None = None
     description: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -76,8 +78,10 @@ class AuthorEntity:
             name=orm.name,
             username=orm.username,
             avatar=orm.avatar,
+            avatar_path=orm.avatar_path,
             url=orm.url,
             banner=orm.banner,
+            banner_path=orm.banner_path,
             description=orm.description,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
@@ -311,8 +315,10 @@ class AuthorInfo(APIBaseModel):
     name: str | None = Field(None, description="Author name")
     username: str = Field(..., description="Username")
     avatar: HttpUrl | None = Field(None, description="Avatar URL")
+    avatar_path: str | None = Field(None, description="Local avatar path served under /media")
     url: HttpUrl | None = Field(None, description="Author profile URL")
     banner: HttpUrl | None = Field(None, description="Author banner URL")
+    banner_path: str | None = Field(None, description="Local banner path served under /media")
     description: str | None = Field(None, description="Author description")
     platform: PlatformInfo = Field(..., description="Platform information")
     created_at: datetime = Field(..., description="Database creation timestamp")
@@ -328,8 +334,10 @@ class AuthorInfo(APIBaseModel):
             name=entity.name,
             username=entity.username,
             avatar=entity.avatar,  # type: ignore
+            avatar_path=entity.avatar_path,
             url=entity.url,  # type: ignore
             banner=entity.banner,  # type: ignore
+            banner_path=entity.banner_path,
             description=entity.description,
             platform=PlatformInfo.from_entity(entity.platform),
             created_at=entity.created_at,
