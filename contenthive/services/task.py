@@ -876,15 +876,34 @@ class TaskService:
                             banner_path=banner_path,
                         )
 
-            self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+            avatar_failed = need_avatar and avatar_path is None
+            banner_failed = need_banner and banner_path is None
+            requested_count = int(need_avatar) + int(need_banner)
+            failed_count = int(avatar_failed) + int(banner_failed)
+
+            if failed_count == requested_count:
+                outcome_status = "failed"
+                sub_task_status = TaskStatus.FAILED
+            elif failed_count > 0:
+                outcome_status = "partial_success"
+                sub_task_status = TaskStatus.COMPLETED
+            else:
+                outcome_status = "success"
+                sub_task_status = TaskStatus.COMPLETED
+
+            self.update_sub_task_status(sub_task.id, sub_task_status)
             result_data = {
-                "status": "success",
+                "status": outcome_status,
                 "avatar_path": avatar_path,
                 "banner_path": banner_path,
             }
+            if avatar_failed:
+                result_data["avatar_error"] = "Download failed"
+            if banner_failed:
+                result_data["banner_error"] = "Download failed"
             self.update_sub_task_result(sub_task.id, result_data)
             logger.info(
-                f"[{sub_task.sub_task_id}] Saved author profile assets: "
+                f"[{sub_task.sub_task_id}] Author profile download {outcome_status}: "
                 f"avatar={'yes' if avatar_path else 'no'}, banner={'yes' if banner_path else 'no'}"
             )
             return result_data

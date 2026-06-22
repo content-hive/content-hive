@@ -503,8 +503,12 @@ class MediaService:
         if not relative_path or not relative_path.startswith("/media/"):
             return False
         try:
+            media_root = self.media_dir.resolve()
             abs_path = self.media_dir / relative_path[len("/media/") :]
-            return abs_path.is_file()
+            resolved_path = abs_path.resolve()
+            if resolved_path == media_root or media_root not in resolved_path.parents:
+                return False
+            return resolved_path.is_file()
         except OSError:
             return False
 

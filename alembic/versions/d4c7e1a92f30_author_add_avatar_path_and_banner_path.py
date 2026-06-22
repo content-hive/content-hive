@@ -1,4 +1,4 @@
-"""The author added avatar_path and banner_path field.
+"""Add avatar_path and banner_path columns to authors table.
 
 Revision ID: d4c7e1a92f30
 Revises: c1f8a3b2e947
