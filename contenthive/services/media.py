@@ -151,6 +151,82 @@ class MediaService:
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
 
+    def _prepare_author_directory(self, platform: str, author_uid: str) -> Path:
+        """
+        Build and create the author directory used for profile assets, return the Path.
+
+        Profile assets (avatar / banner) live directly under the author directory,
+        one level above content media's per-content_id subdirectories.
+
+        Args:
+            platform: Platform code
+            author_uid: Author uid
+
+        Returns:
+            Path to the created directory
+        """
+        platform = self._sanitize_filename(platform)
+        author_uid = self._sanitize_filename(author_uid)
+        save_dir = self.media_dir / platform / author_uid
+        save_dir.mkdir(parents=True, exist_ok=True)
+        return save_dir
+
+    async def download_author_profile(
+        self,
+        platform: str,
+        author_uid: str,
+        avatar_url: str | None,
+        banner_url: str | None,
+    ) -> tuple[str | None, str | None]:
+        """
+        Download an author's avatar and/or banner into the author directory.
+
+        Files are stored directly under {media_dir}/{platform}/{author_uid}/ and named
+        avatar_{url_hash}{ext} / banner_{url_hash}{ext}. Always uses the built-in
+        downloader (plugin download services are scoped to content media).
+
+        Args:
+            platform: Platform code
+            author_uid: Author uid (used as the directory name)
+            avatar_url: Remote avatar URL, or None to skip
+            banner_url: Remote banner URL, or None to skip
+
+        Returns:
+            Tuple of (avatar_path, banner_path) as /media-relative web paths. Each
+            element is None when its URL is absent or its download failed.
+        """
+        if not avatar_url and not banner_url:
+            return None, None
+
+        save_dir = self._prepare_author_directory(platform, author_uid)
+
+        headers = {"User-Agent": settings.download_user_agent}
+        async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
+            pending: list[tuple[str, str]] = []
+            if avatar_url:
+                pending.append(("avatar", avatar_url))
+            if banner_url:
+                pending.append(("banner", banner_url))
+
+            results = await asyncio.gather(
+                *[self._download_file(session, [url], save_dir, None, file_type) for file_type, url in pending],
+                return_exceptions=True,
+            )
+
+        avatar_path: str | None = None
+        banner_path: str | None = None
+        for (file_type, _), result in zip(pending, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.warning(f"Failed to download author {file_type} for {platform}/{author_uid}: {result}")
+                continue
+            relative_path = self._get_relative_media_path(result)
+            if file_type == "avatar":
+                avatar_path = relative_path
+            else:
+                banner_path = relative_path
+
+        return avatar_path, banner_path
+
     def _move_plugin_download_result(
         self,
         save_dir: Path,
@@ -222,7 +298,7 @@ class MediaService:
         session: aiohttp.ClientSession,
         urls: list[str],
         save_dir: Path,
-        index: int,
+        index: int | None,
         file_type: str = "media",
     ) -> Path:
         """
@@ -236,7 +312,8 @@ class MediaService:
             session: aiohttp session
             urls: Ordered list of URLs to try (primary first, then fallbacks)
             save_dir: Directory to save the file to
-            index: File index used in the filename
+            index: File index used in the filename. Pass None to omit the numeric
+                prefix (used for author profile assets that are not part of a media list).
             file_type: File type used in the filename, e.g. "media" or "cover"
 
         Returns:
@@ -260,7 +337,8 @@ class MediaService:
                         ext = self._detect_extension(first_chunk, url, content_type)
 
                         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-                        filename = f"{index:03d}_{file_type}_{url_hash}{ext}"
+                        prefix = "" if index is None else f"{index:03d}_"
+                        filename = f"{prefix}{file_type}_{url_hash}{ext}"
                         filepath = save_dir / filename
 
                         # Write first chunk then stream the rest to disk
@@ -411,6 +489,24 @@ class MediaService:
         shutil.move(str(temp_path), final_path)
         logger.debug(f"Moved plugin file {temp_path} -> {final_path}")
         return final_path
+
+    def media_file_exists(self, relative_path: str | None) -> bool:
+        """
+        Check whether a /media-relative path maps to an existing file on disk.
+
+        Args:
+            relative_path: A web path beginning with /media/, or None
+
+        Returns:
+            True if the corresponding file exists, otherwise False.
+        """
+        if not relative_path or not relative_path.startswith("/media/"):
+            return False
+        try:
+            abs_path = self.media_dir / relative_path[len("/media/") :]
+            return abs_path.is_file()
+        except OSError:
+            return False
 
     def delete_media_files(self, file_paths: list[str]) -> tuple[int, int]:
         """

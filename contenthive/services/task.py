@@ -646,12 +646,46 @@ class TaskService:
             )
 
             # ========== Phase 3: Save Parse Result ==========
+            # Capture the author's existing profile assets before save_parse_result
+            # overwrites the avatar/banner URLs, so we can detect URL changes.
+            author_profile_state = None
+            if parse_result.author:
+                try:
+                    with ContentDAO() as content_dao:
+                        author_profile_state = content_dao.get_author_profile_state(platform_code, author_uid)
+                except Exception:
+                    logger.exception(f"[{task.task_id}] Failed to read author profile state")
+
             try:
                 with ContentDAO() as content_dao:
                     parse_result_id = content_dao.save_parse_result(parse_result, user_id=task.user_id)
             except Exception as e:
                 logger.exception(f"[{task.task_id}] Failed to save parse result")
                 raise ValueError(f"Failed to save parse result to database: {e}") from e
+
+            # ========== Phase 3.5: Download Author Avatar / Banner (separate subtask) ==========
+            if parse_result.author:
+                author_profile_subtask = self.create_sub_task(
+                    main_task_id=task.id,
+                    task_type=TaskType.AUTHOR_PROFILE_DOWNLOAD,
+                    parameters={
+                        "platform": platform_code,
+                        "author_uid": author_uid,
+                        "avatar_url": str(parse_result.author.avatar) if parse_result.author.avatar else None,
+                        "banner_url": str(parse_result.author.banner) if parse_result.author.banner else None,
+                        "prev_avatar_url": author_profile_state.avatar if author_profile_state else None,
+                        "prev_banner_url": author_profile_state.banner if author_profile_state else None,
+                        "prev_avatar_path": author_profile_state.avatar_path if author_profile_state else None,
+                        "prev_banner_path": author_profile_state.banner_path if author_profile_state else None,
+                    },
+                    depends_on_id=parse_subtask.id,
+                )
+                if author_profile_subtask:
+                    # Best-effort: a profile download failure must not fail the parse task.
+                    try:
+                        await self._execute_author_profile_download_sub_task(author_profile_subtask)
+                    except Exception:
+                        logger.exception(f"[{task.task_id}] Author profile download subtask failed")
 
             # ========== Phase 4: Handle Media Downloads ==========
             if not parse_result.media or media_count == 0:
@@ -775,6 +809,91 @@ class TaskService:
                 f"parse_subtask={'created' if parse_subtask else 'not created'}, "
                 f"download_subtasks={len(download_subtasks)}"
             )
+            raise
+
+    async def _execute_author_profile_download_sub_task(self, sub_task: SubTaskEntity) -> dict[str, Any]:
+        """
+        Execute an author profile (avatar/banner) download sub task.
+
+        Re-downloads only when the remote URL changed or the local file is missing,
+        then persists the resulting /media paths and updates the sub task status.
+
+        Args:
+            sub_task: SubTaskEntity object
+
+        Returns:
+            Dict describing the outcome (status, avatar_path, banner_path).
+        """
+        params = sub_task.parameters
+        platform_code = params.get("platform")
+        author_uid = params.get("author_uid")
+        avatar_url = params.get("avatar_url")
+        banner_url = params.get("banner_url")
+        prev_avatar_url = params.get("prev_avatar_url")
+        prev_banner_url = params.get("prev_banner_url")
+        prev_avatar_path = params.get("prev_avatar_path")
+        prev_banner_path = params.get("prev_banner_path")
+
+        try:
+            if not platform_code or not author_uid:
+                raise ValueError("platform and author_uid parameters are required")
+
+            self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
+
+            avatar_changed = prev_avatar_url != avatar_url
+            avatar_missing = not media_service.media_file_exists(prev_avatar_path)
+            need_avatar = bool(avatar_url) and (avatar_changed or avatar_missing)
+
+            banner_changed = prev_banner_url != banner_url
+            banner_missing = not media_service.media_file_exists(prev_banner_path)
+            need_banner = bool(banner_url) and (banner_changed or banner_missing)
+
+            if not need_avatar and not need_banner:
+                logger.debug(f"[{sub_task.sub_task_id}] Author profile assets unchanged, skipping download")
+                self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+                self.update_sub_task_result(sub_task.id, {"status": "skipped"})
+                return {"status": "skipped"}
+
+            avatar_path, banner_path = await media_service.download_author_profile(
+                platform=platform_code,
+                author_uid=author_uid,
+                avatar_url=avatar_url if need_avatar else None,
+                banner_url=banner_url if need_banner else None,
+            )
+
+            if avatar_path is not None or banner_path is not None:
+                with ContentDAO() as content_dao:
+                    current_state = content_dao.get_author_profile_state(platform_code, author_uid)
+                    author_id = current_state.id if current_state else None
+                    if author_id is None:
+                        logger.warning(
+                            f"[{sub_task.sub_task_id}] Author not found after save, cannot persist profile paths"
+                        )
+                    else:
+                        content_dao.update_author_profile_paths(
+                            author_id=author_id,
+                            avatar_path=avatar_path,
+                            banner_path=banner_path,
+                        )
+
+            self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+            result_data = {
+                "status": "success",
+                "avatar_path": avatar_path,
+                "banner_path": banner_path,
+            }
+            self.update_sub_task_result(sub_task.id, result_data)
+            logger.info(
+                f"[{sub_task.sub_task_id}] Saved author profile assets: "
+                f"avatar={'yes' if avatar_path else 'no'}, banner={'yes' if banner_path else 'no'}"
+            )
+            return result_data
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.exception(f"Author profile download sub task {sub_task.sub_task_id} failed")
+            self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
+            self.update_sub_task_result(sub_task.id, {"status": "failed", "error": error_msg})
             raise
 
     def _categorize_download_results(

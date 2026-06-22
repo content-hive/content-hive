@@ -203,6 +203,71 @@ class ContentDAO:
                 session.rollback()
             raise Exception(f"Failed to save author: {e}") from e
 
+    def get_author_profile_state(self, platform_code: str, uid: str) -> AuthorEntity | None:
+        """
+        Fetch an author by platform code and uid, returning the full entity.
+
+        Intended to be called BEFORE save_parse_result overwrites the avatar/banner
+        URLs, so the caller can detect whether the remote URL changed.
+
+        Args:
+            platform_code: Platform code (e.g. "twitter")
+            uid: Author uid on the platform
+
+        Returns:
+            AuthorEntity if the author exists, otherwise None.
+        """
+        session = self._get_session()
+        stmt = (
+            select(Author)
+            .join(Platform, Author.platform_id == Platform.id)
+            .where((Platform.code == platform_code) & (Author.uid == uid))
+        )
+        author = session.execute(stmt).scalar_one_or_none()
+        if author is None:
+            return None
+        return AuthorEntity.from_orm(author)
+
+    def update_author_profile_paths(
+        self,
+        author_id: int,
+        avatar_path: str | None = None,
+        banner_path: str | None = None,
+        commit: bool = True,
+    ) -> None:
+        """
+        Update an author's local avatar/banner paths.
+
+        Only the provided (non-None) paths are written; passing None leaves the
+        corresponding column unchanged so previously downloaded assets are kept.
+
+        Args:
+            author_id: Author ID
+            avatar_path: New local avatar path (/media/...), or None to leave unchanged
+            banner_path: New local banner path (/media/...), or None to leave unchanged
+            commit: Whether to commit immediately (default: True)
+        """
+        if avatar_path is None and banner_path is None:
+            return
+
+        session = self._get_session()
+        try:
+            author = session.get(Author, author_id)
+            if author is None:
+                logger.warning(f"Cannot update profile paths: author {author_id} not found")
+                return
+            if avatar_path is not None:
+                author.avatar_path = avatar_path
+            if banner_path is not None:
+                author.banner_path = banner_path
+            session.flush()
+            if commit:
+                session.commit()
+        except Exception as e:
+            if commit:
+                session.rollback()
+            raise Exception(f"Failed to update author profile paths: {e}") from e
+
     def _save_media(self, media: MediaEntity, commit: bool = False) -> int:
         """
         Save media information.
