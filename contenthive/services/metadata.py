@@ -54,8 +54,8 @@ class MetadataService:
             logger.debug(
                 f"Synced content sidecar for parse_result_id={parse_result_id} -> {content_dir / METADATA_FILENAME}"
             )
-        except Exception as e:
-            logger.warning(f"Failed to sync content sidecar for parse_result_id={parse_result_id}: {e}")
+        except Exception:
+            logger.exception(f"Failed to sync content sidecar for parse_result_id={parse_result_id}")
 
     def sync_author_sidecar(self, platform_code: str, author_uid: str) -> None:
         """
@@ -81,10 +81,8 @@ class MetadataService:
             logger.debug(
                 f"Synced author sidecar for {platform_code}/{author_uid} -> {author_dir / METADATA_FILENAME}"
             )
-        except Exception as e:
-            logger.warning(
-                f"Failed to sync author sidecar for platform={platform_code}, author_uid={author_uid}: {e}"
-            )
+        except Exception:
+            logger.exception(f"Failed to sync author sidecar for platform={platform_code}, author_uid={author_uid}")
 
     def _write_json(self, path: Path, model: BaseModel) -> None:
         """
