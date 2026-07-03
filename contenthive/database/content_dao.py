@@ -29,6 +29,7 @@ from contenthive.plugins.contracts import (
     ParserPlatformInfo,
     ParserResult,
 )
+from contenthive.utils.content import ContentDirectory, resolve_content_id
 
 
 class ContentDAO:
@@ -853,7 +854,9 @@ class ContentDAO:
         authors = [AuthorEntity.from_orm(a) for a in authors_orm]
         return authors, total
 
-    def delete_platform(self, user_id: int, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_platform(
+        self, user_id: int, platform_id: int, commit: bool = False
+    ) -> tuple[bool, list[ContentDirectory]]:
         """
         Soft delete user's association with platform and cascade to related authors and parse results.
         Does NOT delete the platform itself as it's shared among users.
@@ -864,10 +867,10 @@ class ContentDAO:
             commit: Whether to commit immediately (default: False)
 
         Returns:
-            Tuple of (success, list of media file paths to delete)
+            Tuple of (success, list of content directories to delete)
         """
         session = self._get_session()
-        all_file_paths = []
+        all_content_dirs: list[ContentDirectory] = []
 
         try:
             # Verify user-platform association exists
@@ -880,7 +883,7 @@ class ContentDAO:
 
             if not user_platform:
                 logger.warning(f"Platform {platform_id} not found or already deleted for user {user_id}")
-                return False, all_file_paths
+                return False, all_content_dirs
 
             # Get all authors belonging to this platform for this user
             stmt = (
@@ -899,8 +902,8 @@ class ContentDAO:
 
             # Soft delete each author association
             for author_id in author_ids:
-                _success, file_paths = self.delete_author(user_id, author_id, commit=False)
-                all_file_paths.extend(file_paths)
+                _success, content_dirs = self.delete_author(user_id, author_id, commit=False)
+                all_content_dirs.extend(content_dirs)
 
             # Soft delete user-platform association
             user_platform.deleted_at = datetime.now(UTC)
@@ -909,7 +912,7 @@ class ContentDAO:
             if commit:
                 session.commit()
 
-            return True, all_file_paths
+            return True, all_content_dirs
 
         except Exception as e:
             if commit:
@@ -917,7 +920,7 @@ class ContentDAO:
             logger.exception(f"Database error when soft deleting platform {platform_id} for user {user_id}")
             raise Exception(f"Failed to soft delete platform association: {e}") from e
 
-    def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[ContentDirectory]]:
         """
         Soft delete user's association with author and cascade to related parse results.
         Does NOT delete the author itself as it's shared among users.
@@ -928,10 +931,10 @@ class ContentDAO:
             commit: Whether to commit immediately (default: False)
 
         Returns:
-            Tuple of (success, list of media file paths to delete)
+            Tuple of (success, list of content directories to delete)
         """
         session = self._get_session()
-        all_file_paths = []
+        all_content_dirs: list[ContentDirectory] = []
 
         try:
             # Verify user-author association exists
@@ -944,7 +947,7 @@ class ContentDAO:
 
             if not user_author:
                 logger.warning(f"Author {author_id} not found or already deleted for user {user_id}")
-                return False, all_file_paths
+                return False, all_content_dirs
 
             # Get all parse result IDs for this author for this user
             stmt = (
@@ -965,8 +968,8 @@ class ContentDAO:
 
             # Soft delete each parse result association
             for pr_id in parse_result_ids:
-                _success, file_paths = self.delete_parse_result(user_id, pr_id, commit=False)
-                all_file_paths.extend(file_paths)
+                _success, content_dirs = self.delete_parse_result(user_id, pr_id, commit=False)
+                all_content_dirs.extend(content_dirs)
 
             # Soft delete user-author association
             user_author.deleted_at = datetime.now(UTC)
@@ -975,7 +978,7 @@ class ContentDAO:
             if commit:
                 session.commit()
 
-            return True, all_file_paths
+            return True, all_content_dirs
 
         except Exception as e:
             if commit:
@@ -983,11 +986,13 @@ class ContentDAO:
             logger.exception(f"Database error when soft deleting author {author_id} for user {user_id}")
             raise Exception(f"Failed to soft delete author association: {e}") from e
 
-    def delete_parse_result(self, user_id: int, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_parse_result(
+        self, user_id: int, parse_result_id: int, commit: bool = False
+    ) -> tuple[bool, list[ContentDirectory]]:
         """
         Soft delete user's association with parse result.
         Does NOT delete the parse result or media themselves as they're shared among users.
-        Only deletes media files if they become completely orphaned (no active associations).
+        Only deletes on-disk content directories if they become completely orphaned.
 
         Args:
             user_id: User ID performing the deletion
@@ -995,10 +1000,10 @@ class ContentDAO:
             commit: Whether to commit immediately (default: False)
 
         Returns:
-            Tuple of (success, list of media file paths to delete)
+            Tuple of (success, list of content directories to delete)
         """
         session = self._get_session()
-        file_paths = []
+        content_dirs: list[ContentDirectory] = []
 
         try:
             # Verify user-parse_result association exists
@@ -1014,7 +1019,16 @@ class ContentDAO:
                 raise ValueError(f"Parse result {parse_result_id} not found or already deleted")
 
             # Get parse result to check media
-            result_orm = session.query(ParseResult).filter(ParseResult.id == parse_result_id).first()
+            result_orm = (
+                session.query(ParseResult)
+                .options(
+                    selectinload(ParseResult.platform),
+                    selectinload(ParseResult.author),
+                    selectinload(ParseResult.media_list),
+                )
+                .filter(ParseResult.id == parse_result_id)
+                .first()
+            )
 
             if not result_orm:
                 raise ValueError(f"Parse result {parse_result_id} not found")
@@ -1027,9 +1041,20 @@ class ContentDAO:
             )
             other_users_count = session.execute(stmt).scalar()
 
-            # If parse result becomes orphaned, collect media paths and clean up
+            # If parse result becomes orphaned, collect content directory and clean up
             if other_users_count == 0:
-                logger.debug(f"Parse result {parse_result_id} will be orphaned, collecting media")
+                logger.debug(f"Parse result {parse_result_id} will be orphaned, scheduling content directory deletion")
+
+                if result_orm.platform is None or result_orm.author is None:
+                    raise ValueError(f"Parse result {parse_result_id} is missing platform or author")
+
+                content_dirs.append(
+                    ContentDirectory(
+                        platform_code=result_orm.platform.code,
+                        author_uid=result_orm.author.uid,
+                        content_id=resolve_content_id(result_orm.pid, result_orm.url),
+                    )
+                )
 
                 # Get orphaned media IDs (only used by this parse result and not by other active results)
                 orphaned_media_ids = []
@@ -1054,15 +1079,6 @@ class ContentDAO:
                     if count == 0:  # Only used by this parse result
                         orphaned_media_ids.append(media_id)
 
-                # Collect media paths ONLY for orphaned media
-                if orphaned_media_ids:
-                    orphaned_media = session.query(Media).filter(Media.id.in_(orphaned_media_ids)).all()
-                    for media in orphaned_media:
-                        if media.media_path:
-                            file_paths.append(media.media_path)
-                        if media.cover_path:
-                            file_paths.append(media.cover_path)
-
                 # Hard delete orphaned media and associations
                 session.query(ParseResultMedia).filter(ParseResultMedia.parse_result_id == parse_result_id).delete()
 
@@ -1080,7 +1096,7 @@ class ContentDAO:
             if commit:
                 session.commit()
 
-            return True, file_paths
+            return True, content_dirs
 
         except Exception:
             if commit:
