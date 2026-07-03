@@ -235,30 +235,6 @@ class SidecarAuthorInfo(APIBaseModel):
         )
 
 
-class SidecarAuthorDetailInfo(SidecarAuthorInfo):
-    """Author block for author-level metadata sidecar files."""
-
-    id: int = Field(..., description="Author database ID")
-    avatar_path: str | None = Field(None, description="Local avatar path served under /media")
-    banner_path: str | None = Field(None, description="Local banner path served under /media")
-
-    @classmethod
-    def from_entity(cls, entity: AuthorEntity) -> "SidecarAuthorDetailInfo":
-        """Create SidecarAuthorDetailInfo from AuthorEntity."""
-        return cls(
-            id=entity.id if entity.id else 0,
-            uid=entity.uid,
-            name=entity.name,
-            username=entity.username,
-            avatar=entity.avatar,
-            avatar_path=entity.avatar_path,
-            url=entity.url,
-            banner=entity.banner,
-            banner_path=entity.banner_path,
-            description=entity.description,
-        )
-
-
 class SidecarMediaInfo(APIBaseModel):
     """Media item block embedded in content metadata sidecar files."""
 
@@ -334,21 +310,26 @@ class ContentSidecar(APIBaseModel):
         )
 
 
-class AuthorSidecar(APIBaseModel):
+class AuthorSidecar(SidecarAuthorInfo):
     """On-disk metadata for an author directory."""
 
     schema_version: int = Field(default=SIDECAR_SCHEMA_VERSION, description="Sidecar schema version")
     updated_at: datetime = Field(..., description="Last sync timestamp")
+    id: int = Field(..., description="Author database ID")
+    avatar_path: str | None = Field(None, description="Local avatar path served under /media")
+    banner_path: str | None = Field(None, description="Local banner path served under /media")
     platform: SidecarPlatformInfo = Field(..., description="Platform information")
-    author: SidecarAuthorDetailInfo = Field(..., description="Author information")
 
     @classmethod
     def from_entity(cls, entity: AuthorEntity) -> "AuthorSidecar":
         """Create AuthorSidecar from AuthorEntity."""
         return cls(
+            **SidecarAuthorInfo.from_entity(entity).model_dump(),
             updated_at=datetime.now(UTC),
+            id=entity.id if entity.id else 0,
+            avatar_path=entity.avatar_path,
+            banner_path=entity.banner_path,
             platform=SidecarPlatformInfo.from_entity(entity.platform),
-            author=SidecarAuthorDetailInfo.from_entity(entity),
         )
 
 
