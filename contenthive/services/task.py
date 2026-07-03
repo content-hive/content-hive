@@ -5,7 +5,6 @@ Task service for managing and executing tasks.
 import asyncio
 import base64
 import binascii
-import hashlib
 import json
 import uuid
 from datetime import datetime
@@ -25,7 +24,9 @@ from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
 from contenthive.plugins.contracts import ParserMediaInfo, ParserResult
 from contenthive.services.content import content_service
 from contenthive.services.media import media_service
+from contenthive.services.metadata import metadata_service
 from contenthive.services.task_queue import task_queue
+from contenthive.utils.content import resolve_content_id
 
 
 def _encode_cursor(id: int, value: datetime | int) -> str:
@@ -663,6 +664,10 @@ class TaskService:
                 logger.exception(f"[{task.task_id}] Failed to save parse result")
                 raise ValueError(f"Failed to save parse result to database: {e}") from e
 
+            metadata_service.sync_content_sidecar(parse_result_id, task.user_id)
+            if parse_result.author:
+                metadata_service.sync_author_sidecar(platform_code, author_uid)
+
             # ========== Phase 3.5: Download Author Avatar / Banner (separate subtask) ==========
             if parse_result.author:
                 author_profile_subtask = self.create_sub_task(
@@ -686,6 +691,7 @@ class TaskService:
                         await self._execute_author_profile_download_sub_task(author_profile_subtask)
                     except Exception:
                         logger.exception(f"[{task.task_id}] Author profile download subtask failed")
+                    metadata_service.sync_author_sidecar(platform_code, author_uid)
 
             # ========== Phase 4: Handle Media Downloads ==========
             if not parse_result.media or media_count == 0:
@@ -703,9 +709,7 @@ class TaskService:
                 )
 
             # Create download sub tasks
-            content_id = (
-                parse_result.pid if parse_result.pid else hashlib.md5(str(parse_result.url).encode()).hexdigest()[:16]
-            )
+            content_id = resolve_content_id(parse_result.pid, str(parse_result.url))
 
             for idx, media in enumerate(parse_result.media):
                 download_subtask = self.create_sub_task(
@@ -780,6 +784,8 @@ class TaskService:
             except Exception:
                 logger.exception(f"[{task.task_id}] Failed to save media records")
                 # Don't raise here - parse result is already saved, partial success
+
+            metadata_service.sync_content_sidecar(parse_result_id, task.user_id)
 
             # ========== Phase 7: Build and Return Result ==========
             result = self._build_task_result(
@@ -1056,7 +1062,10 @@ class TaskService:
                 "status": "success",
                 "platform": parse_result.platform.code if parse_result.platform else None,
                 "author": parse_result.author.username if parse_result.author else None,
-                "content_id": parse_result.pid,
+                "content_id": resolve_content_id(
+                    parse_result.pid,
+                    str(parse_result.url),
+                ),
                 "media_count": len(parse_result.media) if parse_result.media else 0,
                 "url": str(parse_result.url) if parse_result.url else None,
             }

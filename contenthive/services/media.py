@@ -21,6 +21,7 @@ from contenthive.models.content import DownloadedMediaInfo
 from contenthive.models.enumerates import MediaStatus
 from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
+from contenthive.utils.path_safety import is_path_within_base, sanitize_path_component
 
 
 class MediaService:
@@ -36,6 +37,38 @@ class MediaService:
             media_dir: Base directory for storing media files.
         """
         self.media_dir = media_dir
+
+    def get_content_directory(self, platform: str, author_uid: str, content_id: str) -> Path:
+        """
+        Build the content save directory path without creating it.
+
+        Args:
+            platform: Platform code
+            author_uid: Author uid
+            content_id: Content directory name (already resolved or raw; will be sanitized)
+
+        Returns:
+            Path to the content directory
+        """
+        platform = sanitize_path_component(platform)
+        author_uid = sanitize_path_component(author_uid)
+        content_id = sanitize_path_component(content_id)
+        return self.media_dir / platform / author_uid / content_id
+
+    def get_author_directory(self, platform: str, author_uid: str) -> Path:
+        """
+        Build the author directory path without creating it.
+
+        Args:
+            platform: Platform code
+            author_uid: Author uid
+
+        Returns:
+            Path to the author directory
+        """
+        platform = sanitize_path_component(platform)
+        author_uid = sanitize_path_component(author_uid)
+        return self.media_dir / platform / author_uid
 
     def _get_relative_media_path(self, local_path: Path) -> str:
         """
@@ -144,10 +177,7 @@ class MediaService:
         Returns:
             Path to the created directory
         """
-        platform = self._sanitize_filename(platform)
-        author = self._sanitize_filename(author)
-        content_id = self._sanitize_filename(content_id)
-        save_dir = self.media_dir / platform / author / content_id
+        save_dir = self.get_content_directory(platform, author, content_id)
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
 
@@ -165,9 +195,7 @@ class MediaService:
         Returns:
             Path to the created directory
         """
-        platform = self._sanitize_filename(platform)
-        author_uid = self._sanitize_filename(author_uid)
-        save_dir = self.media_dir / platform / author_uid
+        save_dir = self.get_author_directory(platform, author_uid)
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
 
@@ -376,22 +404,6 @@ class MediaService:
 
         raise last_error
 
-    @staticmethod
-    def _sanitize_filename(name: str) -> str:
-        """
-        Sanitize filename by removing invalid characters.
-
-        Args:
-            name: Original filename
-
-        Returns:
-            Sanitized filename
-        """
-        invalid_chars = '<>:"/\\|?*'
-        for char in invalid_chars:
-            name = name.replace(char, "_")
-        return name.strip()[:100]  # Limit length
-
     # Normalise extensions that mimetypes.guess_extension returns inconsistently
     # across platforms (e.g. .jpe / .jpeg → .jpg on some systems).
     _EXT_NORMALISE: ClassVar[dict[str, str]] = {
@@ -490,6 +502,39 @@ class MediaService:
         logger.debug(f"Moved plugin file {temp_path} -> {final_path}")
         return final_path
 
+    def _is_within_media_root(self, path: Path) -> bool:
+        """
+        Check whether a resolved path is safely within the media root directory.
+
+        Args:
+            path: Path to validate (need not be pre-resolved)
+
+        Returns:
+            True if path is inside media_dir and is not media_dir itself
+        """
+        return is_path_within_base(path, self.media_dir, allow_base_itself=False)
+
+    def _resolve_media_path(self, relative_path: str) -> Path | None:
+        """
+        Resolve a /media-relative web path to an absolute path under media_dir.
+
+        Args:
+            relative_path: Web path beginning with /media/
+
+        Returns:
+            Resolved absolute path, or None if invalid or outside media_dir
+        """
+        if not relative_path.startswith("/media/"):
+            return None
+        try:
+            abs_path = self.media_dir / relative_path[len("/media/") :]
+            resolved_path = abs_path.resolve()
+            if not self._is_within_media_root(resolved_path):
+                return None
+            return resolved_path
+        except OSError:
+            return None
+
     def media_file_exists(self, relative_path: str | None) -> bool:
         """
         Check whether a /media-relative path maps to an existing file on disk.
@@ -500,63 +545,43 @@ class MediaService:
         Returns:
             True if the corresponding file exists, otherwise False.
         """
-        if not relative_path or not relative_path.startswith("/media/"):
+        if not relative_path:
             return False
-        try:
-            media_root = self.media_dir.resolve()
-            abs_path = self.media_dir / relative_path[len("/media/") :]
-            resolved_path = abs_path.resolve()
-            if resolved_path == media_root or media_root not in resolved_path.parents:
-                return False
-            return resolved_path.is_file()
-        except OSError:
-            return False
+        resolved_path = self._resolve_media_path(relative_path)
+        return resolved_path is not None and resolved_path.is_file()
 
-    def delete_media_files(self, file_paths: list[str]) -> tuple[int, int]:
+    def delete_content_directory(self, platform: str, author_uid: str, content_id: str) -> bool:
         """
-        Delete media files from disk given their relative paths.
+        Delete an entire content directory and all files within it.
 
         Args:
-            file_paths: List of media file paths (relative paths starting with /media/)
+            platform: Platform code
+            author_uid: Author uid
+            content_id: Content directory name
 
         Returns:
-            Tuple of (deleted_count, failed_count)
+            True if the directory was deleted, False if it did not exist or deletion failed
         """
-        if not file_paths:
-            return 0, 0
+        try:
+            content_dir = self.get_content_directory(platform, author_uid, content_id)
+            resolved_dir = content_dir.resolve()
 
-        deleted_count = 0
-        failed_count = 0
+            if not self._is_within_media_root(resolved_dir):
+                logger.warning(f"Attempted to delete directory outside media root: {resolved_dir}")
+                return False
 
-        media_root = self.media_dir.resolve()
+            if not resolved_dir.is_dir():
+                logger.debug(f"Content directory does not exist: {resolved_dir}")
+                return False
 
-        for media_path in file_paths:
-            try:
-                # Convert relative path to absolute path
-                if media_path.startswith("/media/"):
-                    abs_path = self.media_dir / media_path[7:]  # Remove '/media/'
-                    resolved_path = abs_path.resolve()
-
-                    # Check if path is within media directory
-                    if resolved_path == media_root or media_root not in resolved_path.parents:
-                        failed_count += 1
-                        logger.warning(f"Attempted to delete file outside media directory: {resolved_path}")
-                        continue
-
-                    if resolved_path.exists():
-                        resolved_path.unlink()
-                        deleted_count += 1
-                        logger.debug(f"Deleted media file: {resolved_path}")
-                    else:
-                        logger.debug(f"File does not exist: {resolved_path}")
-            except Exception as e:
-                failed_count += 1
-                logger.warning(f"Failed to delete media file {media_path}: {e}")
-
-        if deleted_count > 0 or failed_count > 0:
-            logger.info(f"Media file cleanup: {deleted_count} deleted, {failed_count} failed")
-
-        return deleted_count, failed_count
+            shutil.rmtree(resolved_dir)
+            logger.debug(f"Deleted content directory: {resolved_dir}")
+            return True
+        except Exception as e:
+            logger.warning(
+                f"Failed to delete content directory for {platform}/{author_uid}/{content_id}: {e}"
+            )
+            return False
 
 
 media_service = MediaService()

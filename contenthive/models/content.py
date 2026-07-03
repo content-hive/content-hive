@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, HttpUrl
 from contenthive.database.orm_models import Author, Media, ParseResult, Platform
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import MediaStatus, MediaType, ParserResultStatus
+from contenthive.utils.sidecar import SIDECAR_SCHEMA_VERSION
 
 # Database Models
 
@@ -188,6 +189,167 @@ class ParseResultEntity:
 
 
 # Service Models
+
+
+class SidecarPlatformInfo(APIBaseModel):
+    """Platform block embedded in metadata sidecar files."""
+
+    code: str = Field(..., description="Platform code")
+    name: str = Field(..., description="Platform name")
+    url: str = Field(..., description="Platform URL")
+    icon_url: str | None = Field(None, description="Platform icon URL")
+
+    @classmethod
+    def from_entity(cls, entity: PlatformEntity) -> "SidecarPlatformInfo":
+        """Create SidecarPlatformInfo from PlatformEntity."""
+        return cls(
+            code=entity.code,
+            name=entity.name,
+            url=entity.url,
+            icon_url=entity.icon_url,
+        )
+
+
+class SidecarAuthorInfo(APIBaseModel):
+    """Author block embedded in content metadata sidecar files."""
+
+    uid: str = Field(..., description="Author uid on the platform")
+    name: str | None = Field(None, description="Author display name")
+    username: str = Field(..., description="Author username")
+    avatar: str | None = Field(None, description="Remote avatar URL")
+    url: str | None = Field(None, description="Author profile URL")
+    banner: str | None = Field(None, description="Remote banner URL")
+    description: str | None = Field(None, description="Author description")
+
+    @classmethod
+    def from_entity(cls, entity: AuthorEntity) -> "SidecarAuthorInfo":
+        """Create SidecarAuthorInfo from AuthorEntity."""
+        return cls(
+            uid=entity.uid,
+            name=entity.name,
+            username=entity.username,
+            avatar=entity.avatar,
+            url=entity.url,
+            banner=entity.banner,
+            description=entity.description,
+        )
+
+
+class SidecarAuthorDetailInfo(SidecarAuthorInfo):
+    """Author block for author-level metadata sidecar files."""
+
+    id: int = Field(..., description="Author database ID")
+    avatar_path: str | None = Field(None, description="Local avatar path served under /media")
+    banner_path: str | None = Field(None, description="Local banner path served under /media")
+
+    @classmethod
+    def from_entity(cls, entity: AuthorEntity) -> "SidecarAuthorDetailInfo":
+        """Create SidecarAuthorDetailInfo from AuthorEntity."""
+        return cls(
+            id=entity.id if entity.id else 0,
+            uid=entity.uid,
+            name=entity.name,
+            username=entity.username,
+            avatar=entity.avatar,
+            avatar_path=entity.avatar_path,
+            url=entity.url,
+            banner=entity.banner,
+            banner_path=entity.banner_path,
+            description=entity.description,
+        )
+
+
+class SidecarMediaInfo(APIBaseModel):
+    """Media item block embedded in content metadata sidecar files."""
+
+    order: int = Field(..., description="Display order within the content")
+    id: int = Field(..., description="Media database ID")
+    status: MediaStatus = Field(..., description="Download status")
+    url: str = Field(..., description="Original media URL")
+    type: MediaType | None = Field(None, description="Media type")
+    title: str | None = Field(None, description="Media title")
+    cover: str | None = Field(None, description="Original cover URL")
+    url_fallbacks: list[str] = Field(default_factory=list, description="Fallback media URLs")
+    cover_fallbacks: list[str] = Field(default_factory=list, description="Fallback cover URLs")
+    duration: int | None = Field(None, description="Video duration in seconds")
+    width: int | None = Field(None, description="Media width in pixels")
+    height: int | None = Field(None, description="Media height in pixels")
+    media_path: str | None = Field(None, description="Local media file path")
+    cover_path: str | None = Field(None, description="Local cover file path")
+
+    @classmethod
+    def from_entity(cls, entity: MediaEntity, order: int) -> "SidecarMediaInfo":
+        """Create SidecarMediaInfo from MediaEntity."""
+        return cls(
+            order=order,
+            id=entity.id if entity.id else 0,
+            status=entity.status,
+            url=entity.url,
+            type=entity.type,
+            title=entity.title,
+            cover=entity.cover,
+            url_fallbacks=entity.url_fallbacks,
+            cover_fallbacks=entity.cover_fallbacks,
+            duration=entity.duration,
+            width=entity.width,
+            height=entity.height,
+            media_path=entity.media_path,
+            cover_path=entity.cover_path,
+        )
+
+
+class ContentSidecar(APIBaseModel):
+    """On-disk metadata for a single parsed content item."""
+
+    schema_version: int = Field(default=SIDECAR_SCHEMA_VERSION, description="Sidecar schema version")
+    updated_at: datetime = Field(..., description="Last sync timestamp")
+    id: int = Field(..., description="Parse result database ID")
+    pid: str = Field(..., description="Platform content ID")
+    url: str = Field(..., description="Source content URL")
+    title: str | None = Field(None, description="Content title")
+    content: str | None = Field(None, description="Content text")
+    post_time: int | None = Field(None, description="Post timestamp in seconds since epoch")
+    parser: str = Field(..., description="Parser plugin domain")
+    state: ParserResultStatus = Field(..., description="Parsing state")
+    platform: SidecarPlatformInfo = Field(..., description="Platform information")
+    author: SidecarAuthorInfo = Field(..., description="Author information")
+    media: list[SidecarMediaInfo] = Field(default_factory=list, description="Media items")
+
+    @classmethod
+    def from_entity(cls, entity: ParseResultEntity) -> "ContentSidecar":
+        """Create ContentSidecar from ParseResultEntity."""
+        return cls(
+            updated_at=datetime.now(UTC),
+            id=entity.id if entity.id else 0,
+            pid=entity.pid,
+            url=entity.url,
+            title=entity.title,
+            content=entity.content,
+            post_time=entity.post_time,
+            parser=entity.parser,
+            state=entity.state,
+            platform=SidecarPlatformInfo.from_entity(entity.platform),
+            author=SidecarAuthorInfo.from_entity(entity.author),
+            media=[SidecarMediaInfo.from_entity(media, order) for order, media in enumerate(entity.media)],
+        )
+
+
+class AuthorSidecar(APIBaseModel):
+    """On-disk metadata for an author directory."""
+
+    schema_version: int = Field(default=SIDECAR_SCHEMA_VERSION, description="Sidecar schema version")
+    updated_at: datetime = Field(..., description="Last sync timestamp")
+    platform: SidecarPlatformInfo = Field(..., description="Platform information")
+    author: SidecarAuthorDetailInfo = Field(..., description="Author information")
+
+    @classmethod
+    def from_entity(cls, entity: AuthorEntity) -> "AuthorSidecar":
+        """Create AuthorSidecar from AuthorEntity."""
+        return cls(
+            updated_at=datetime.now(UTC),
+            platform=SidecarPlatformInfo.from_entity(entity.platform),
+            author=SidecarAuthorDetailInfo.from_entity(entity),
+        )
 
 
 class DownloadedMediaInfo(BaseModel):

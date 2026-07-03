@@ -40,6 +40,7 @@ from urllib.parse import quote, urlparse
 import aiohttp
 
 from contenthive.logger import logger
+from contenthive.utils.path_safety import is_path_within_base, sanitize_path_separators
 
 
 class GitHubPluginDownloader:
@@ -120,18 +121,6 @@ class GitHubPluginDownloader:
                 f"Invalid ref '{ref}': must not start with '/', contain '//', or include path traversal segments"
             )
 
-    def _sanitize_ref(self, ref: str) -> str:
-        """
-        Sanitize git reference for safe use in file paths.
-
-        Args:
-            ref: Git reference (branch name, tag, or commit SHA)
-
-        Returns:
-            Sanitized reference string safe for file paths
-        """
-        return ref.replace("/", "_").replace("\\", "_")
-
     def _validate_path_safety(self, target_path: Path, base_path: Path, entity_name: str = "Path") -> bool:
         """
         Validate that a target path is safely within a base path.
@@ -144,12 +133,10 @@ class GitHubPluginDownloader:
         Returns:
             True if path is safe, False otherwise
         """
-        try:
-            target_path.resolve().relative_to(base_path.resolve())
+        if is_path_within_base(target_path, base_path):
             return True
-        except ValueError:
-            logger.error(f"{entity_name} escapes base directory: {target_path} (base: {base_path})")
-            return False
+        logger.error(f"{entity_name} escapes base directory: {target_path} (base: {base_path})")
+        return False
 
     def _safe_extract(self, zip_file: zipfile.ZipFile, extract_dir: Path) -> None:
         """
@@ -176,12 +163,10 @@ class GitHubPluginDownloader:
             target_path = (extract_dir / member_path).resolve()
 
             # Verify the resolved path is within extract_dir
-            try:
-                target_path.relative_to(extract_dir)
-            except ValueError as e:
+            if not is_path_within_base(target_path, extract_dir):
                 raise ValueError(
                     f"Unsafe zip entry: '{member}' would extract to '{target_path}' (outside of '{extract_dir}')"
-                ) from e
+                )
 
             # Extract the member
             zip_file.extract(member, extract_dir)
@@ -237,7 +222,7 @@ class GitHubPluginDownloader:
                 archive_path = await self._download_archive(owner, repo, ref, ref_type, tmp_path)
 
                 # Extract archive
-                safe_ref = self._sanitize_ref(ref)
+                safe_ref = sanitize_path_separators(ref)
                 extract_dir = tmp_path / f"extract_{repo}_{ref_type}_{safe_ref}"
                 extract_dir.mkdir(parents=True)
 
@@ -392,7 +377,7 @@ class GitHubPluginDownloader:
             raise ValueError(f"Invalid ref_type: {ref_type}. Must be 'branch', 'tag', or 'commit'")
 
         # Create a safe filename for the archive
-        safe_ref = self._sanitize_ref(ref)
+        safe_ref = sanitize_path_separators(ref)
         base = tmp_dir or Path(tempfile.gettempdir())
         archive_path = base / f"{repo}-{ref_type}-{safe_ref}.zip"
 
