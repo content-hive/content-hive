@@ -324,15 +324,9 @@ class AuthorSidecar(SidecarAuthorInfo):
     def from_entity(cls, entity: AuthorEntity) -> "AuthorSidecar":
         """Create AuthorSidecar from AuthorEntity."""
         return cls(
+            **SidecarAuthorInfo.from_entity(entity).model_dump(),
             updated_at=datetime.now(UTC),
             id=entity.id if entity.id else 0,
-            uid=entity.uid,
-            name=entity.name,
-            username=entity.username,
-            avatar=entity.avatar,
-            url=entity.url,
-            banner=entity.banner,
-            description=entity.description,
             avatar_path=entity.avatar_path,
             banner_path=entity.banner_path,
             platform=SidecarPlatformInfo.from_entity(entity.platform),
