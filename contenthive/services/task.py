@@ -779,7 +779,9 @@ class TaskService:
             try:
                 if download_results:
                     with ContentDAO() as content_dao:
-                        saved_media_ids = content_dao.save_downloaded_medias(download_results, commit=True)
+                        saved_media_ids = content_dao.save_downloaded_medias(
+                            download_results, parse_result_id, commit=True
+                        )
                         saved_media_count = len(saved_media_ids)
             except Exception:
                 logger.exception(f"[{task.task_id}] Failed to save media records")
