@@ -280,7 +280,7 @@ class ContentDAO:
             media: Media entity
             parse_result_id: Owning parse result ID
             order: Display order within the parse result (default: 0)
-            commit: Whether to commit immediately (default: False)
+            commit: Commit immediately after inserting a new media row (default: False)
 
         Returns media_id.
         """
