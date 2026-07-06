@@ -166,7 +166,9 @@ class Media(Base, TimestampMixin):
     __tablename__ = "media"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    url: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    parse_result_id: Mapped[int] = mapped_column(Integer, ForeignKey("parse_results.id"), nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    url: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[MediaType | None] = mapped_column(SQLEnum(MediaType), nullable=True)
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -181,10 +183,11 @@ class Media(Base, TimestampMixin):
         SQLEnum(MediaStatus), default=MediaStatus.PENDING, nullable=False, index=True
     )
 
+    # Unique constraint: media URLs are unique within a single parse result
+    __table_args__ = (UniqueConstraint("parse_result_id", "url", name="uq_parse_result_url"),)
+
     # Relationships
-    parse_results: Mapped[list["ParseResultMedia"]] = relationship(
-        "ParseResultMedia", back_populates="media", cascade="all, delete-orphan"
-    )
+    parse_result: Mapped["ParseResult"] = relationship("ParseResult", back_populates="media")
 
 
 class ParseResult(Base, TimestampMixin):
@@ -205,38 +208,16 @@ class ParseResult(Base, TimestampMixin):
     __table_args__ = (UniqueConstraint("platform_id", "pid", name="uq_platform_pid"),)
 
     # Relationships
-    media_list: Mapped[list["ParseResultMedia"]] = relationship(
-        "ParseResultMedia",
+    media: Mapped[list["Media"]] = relationship(
+        "Media",
         back_populates="parse_result",
         cascade="all, delete-orphan",
-        order_by="ParseResultMedia.order",
+        order_by="Media.order",
     )
     platform: Mapped["Platform"] = relationship("Platform", back_populates="parse_results")
     author: Mapped["Author"] = relationship("Author", back_populates="parse_results")
     users: Mapped[list["User"]] = relationship("User", secondary="user_parse_results", back_populates="parse_results")
     tasks: Mapped[list["MainTask"]] = relationship("MainTask", back_populates="parse_result")
-
-
-class ParseResultMedia(Base):
-    __tablename__ = "parse_result_media"
-
-    parse_result_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("parse_results.id", ondelete="CASCADE"),
-        primary_key=True,
-        nullable=False,
-    )
-    media_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("media.id", ondelete="CASCADE"),
-        primary_key=True,
-        nullable=False,
-    )
-    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-    # Relationships
-    parse_result: Mapped["ParseResult"] = relationship("ParseResult", back_populates="media_list")
-    media: Mapped["Media"] = relationship("Media", back_populates="parse_results")
 
 
 class UserPlatform(Base, TimestampMixin):
