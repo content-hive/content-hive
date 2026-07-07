@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import threading
 from collections.abc import Callable
@@ -69,7 +70,7 @@ def save_plugins_config(config: dict[str, dict]) -> None:
     path = _config_path()
     tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".plugins_yaml_")
     try:
-        with open(tmp_fd, "w", encoding="utf-8") as f:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
             _yaml.dump(config, f)
         Path(tmp_path).replace(path)
     except Exception:

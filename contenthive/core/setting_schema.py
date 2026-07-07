@@ -15,7 +15,7 @@ _PYTHON_TYPE_TO_FIELD_TYPE: dict[type, SettingFieldType] = {
 
 def _literal_options(annotation: Any) -> list[str] | None:
     if get_origin(annotation) is Literal:
-        return list(get_args(annotation))
+        return [str(v) for v in get_args(annotation)]
     return None
 
 

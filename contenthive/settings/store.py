@@ -1,3 +1,4 @@
+import os
 import tempfile
 import threading
 from pathlib import Path
@@ -27,7 +28,7 @@ def _write_yaml(data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".settings_yaml_")
     try:
-        with open(tmp_fd, "w", encoding="utf-8") as f:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
             _yaml.dump(data, f)
         Path(tmp_path).replace(path)
     except Exception:

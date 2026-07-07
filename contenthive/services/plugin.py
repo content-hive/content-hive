@@ -131,9 +131,10 @@ class PluginService:
         """
         plugin_manager = _get_plugin_manager()
 
+        app_settings = get_settings()
         update_results = await plugin_manager.async_check_updates(
-            repo_url=get_settings().plugins.repo_url,
-            ref=get_settings().plugins.repo_ref,
+            repo_url=app_settings.plugins.repo_url,
+            ref=app_settings.plugins.repo_ref,
         )
 
         plugins_info: dict[str, PluginUpdateInfo] = {}

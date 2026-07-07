@@ -17,7 +17,11 @@ Deployment settings are configured via environment variables. Application settin
 
 ## Runtime Settings (settings.yaml)
 
-On first start, default values are written to `/config/settings.yaml`. Changes take effect without restarting the container (e.g. on the next download or token issuance).
+On first start, default values are written to `/config/settings.yaml`.
+
+**Via API** (`PUT /v1/system/settings`): No container restart required. Changes are written to disk and the in-memory cache is updated immediately. Some settings take effect on next use (e.g. the next download or token issuance).
+
+**Editing the file directly**: `GET /v1/system/settings` reads from disk on every request, so you can see file changes immediately. Internal paths (downloads, tokens, plugin repo, etc.) use an in-memory cache loaded at startup; after editing the file directly, **restart the container** for those paths to pick up changes. Prefer the API when possible.
 
 ```yaml
 plugins:
