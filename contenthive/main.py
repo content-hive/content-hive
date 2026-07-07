@@ -13,6 +13,7 @@ from contenthive.models.api import DetailedHTTPException, http_exception_handler
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
 from contenthive.routers import admin, content, plugin, system, task, user
 from contenthive.services.task_queue import task_queue
+from contenthive.settings.store import init_settings
 
 
 def register_extra_mimetypes():
@@ -27,6 +28,7 @@ def register_extra_mimetypes():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_directories()
+    init_settings()
     setup_file_logging()
 
     restart_manager = RestartManager(settings.data_dir)

@@ -21,6 +21,7 @@ from contenthive.models.content import DownloadedMediaInfo
 from contenthive.models.enumerates import MediaStatus
 from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
+from contenthive.settings.store import get_settings
 from contenthive.utils.path_safety import is_path_within_base, sanitize_path_component
 
 
@@ -228,7 +229,7 @@ class MediaService:
 
         save_dir = self._prepare_author_directory(platform, author_uid)
 
-        headers = {"User-Agent": settings.download_user_agent}
+        headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             pending: list[tuple[str, str]] = []
             if avatar_url:
@@ -303,7 +304,7 @@ class MediaService:
         Returns:
             Tuple of (media_path, cover_path)
         """
-        headers = {"User-Agent": settings.download_user_agent}
+        headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             tasks = [self._download_file(session, media_urls, save_dir, media_index, "media")]
             if cover_urls:
@@ -348,10 +349,11 @@ class MediaService:
             Path to the saved file
         """
         last_error: Exception = Exception("No URLs provided")
+        download_max_retries = get_settings().download.max_retries
 
         for url_attempt, url in enumerate(urls):
             url_last_error: Exception = Exception("Unknown error")
-            for retry in range(settings.download_max_retries + 1):
+            for retry in range(download_max_retries + 1):
                 try:
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
                         response.raise_for_status()
@@ -386,10 +388,10 @@ class MediaService:
                     url_last_error = e
                 # All other exceptions (OSError, CancelledError, etc.) propagate immediately
 
-                if retry < settings.download_max_retries:
+                if retry < download_max_retries:
                     wait = 2**retry
                     logger.warning(
-                        f"Download attempt {retry + 1}/{settings.download_max_retries + 1} "
+                        f"Download attempt {retry + 1}/{download_max_retries + 1} "
                         f"failed for {url}, retrying in {wait}s: {url_last_error}"
                     )
                     await asyncio.sleep(wait)

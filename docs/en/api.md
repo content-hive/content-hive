@@ -9,7 +9,7 @@ Interactive API documentation is available at `http://localhost:6123/docs` (Swag
 | `/v1/plugins` | Manage plugins (install, update, configure, enable/disable) |
 | `/v1/user` | User login, token refresh, profile, and password change |
 | `/v1/admin` | Admin-only: user management |
-| `/v1/system` | Health check, storage stats, log viewer, application restart |
+| `/v1/system` | Health check, storage stats, log viewer, application settings, application restart |
 
 Note: `/v1/user/token` is an OAuth2 compatibility endpoint and returns `{ "access_token": "...", "token_type": "bearer" }` directly instead of the unified `APIResponse` envelope.
 
@@ -70,5 +70,7 @@ curl -s "$BASE_URL/v1/system/health"
 | `STORAGE_STATUS_FAILED` | `500` | `/v1/system/storage` | Storage statistics collection failed; check filesystem and logs |
 | `INVALID_TIME_RANGE` | `400` | `/v1/system/logs` | `from` must be before `to` |
 | `LOG_READ_FAILED` | `500` | `/v1/system/logs` | Log file cannot be parsed or read |
+| `SETTINGS_VALIDATION_FAILED` | `400` | `/v1/system/settings` | Submitted application settings violate schema |
+| `PERSISTED_SETTINGS_INVALID` | `422` | `/v1/system/settings` | Stored application settings are invalid and cannot be read |
 | `USER_CREATION_FAILED` | `400` | `/v1/admin/users` | User create request invalid (duplicate username/password policy, etc.) |
 | `ADMIN_PRIVILEGES_REQUIRED` | `403` | Admin-protected endpoints | Current user is not admin |

@@ -23,8 +23,8 @@ else
 fi
 
 # Start the application
-echo "Starting uvicorn on port ${PORT:-6123}..."
+echo "Starting uvicorn on ${HOST:-0.0.0.0}:${PORT:-6123}..."
 exec uvicorn contenthive.main:app \
-    --host 0.0.0.0 \
+    --host "${HOST:-0.0.0.0}" \
     --port "${PORT:-6123}" \
     --log-level "${LOG_LEVEL:-info}"

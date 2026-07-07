@@ -1,13 +1,14 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, status
 
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
 from contenthive.logger import logger, query_logs
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.enumerates import ResponseStatus
+from contenthive.models.settings import UpdateAppSettingsRequest
 from contenthive.models.system import (
     CursorPaginatedResponse,
     HealthResponse,
@@ -18,7 +19,9 @@ from contenthive.models.system import (
 from contenthive.models.user import UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
+from contenthive.services.settings import SettingsValidationError, settings_service
 from contenthive.services.storage import storage_service
+from contenthive.settings.schema import AppSettings
 
 router_v1 = APIRouter(prefix="/v1/system", tags=["system"])
 
@@ -147,3 +150,42 @@ async def get_logs(
             next_cursor=next_cursor,
         ),
     )
+
+
+@router_v1.get("/settings", response_model=APIResponse[AppSettings])
+async def get_app_settings(
+    _: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[AppSettings]:
+    """Get application settings (Admin only)."""
+    try:
+        data = settings_service.get_app_settings()
+    except SettingsValidationError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorDetail(
+                code="PERSISTED_SETTINGS_INVALID",
+                message="Stored application settings are invalid and cannot be read",
+                details={"errors": e.errors},
+            ),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
+@router_v1.put("/settings", response_model=APIResponse[AppSettings])
+async def update_app_settings(
+    _: Annotated[UserModel, Depends(get_current_admin_user)],
+    body: UpdateAppSettingsRequest = Body(...),
+) -> APIResponse[AppSettings]:
+    """Update application settings (Admin only)."""
+    try:
+        data = settings_service.update_app_settings(body)
+    except SettingsValidationError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(
+                code="SETTINGS_VALIDATION_FAILED",
+                message="Application settings validation failed",
+                details={"errors": e.errors},
+            ),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)

@@ -13,6 +13,7 @@ from contenthive.plugins.manager import (
     set_plugin_manager,
 )
 from contenthive.plugins.registry import PluginState
+from contenthive.settings.store import get_settings
 
 
 async def load_plugins_on_startup():
@@ -39,8 +40,8 @@ async def load_plugins_on_startup():
     # Fetch remote manifest and compare — no archive download, lightweight check only
     try:
         check_results = await plugin_manager.async_check_updates(
-            repo_url=settings.plugins_repo_url,
-            ref=settings.plugins_repo_ref,
+            repo_url=get_settings().plugins.repo_url,
+            ref=get_settings().plugins.repo_ref,
         )
         installed_domains = set(plugin_manager.plugins)
         new_plugins = {d: v for d, v in check_results.items() if d not in installed_domains and v}

@@ -11,8 +11,5 @@ services:
       - ./runtime-data:/config
     environment:
       - TZ=Asia/Shanghai
-      - ENVIRONMENT=${ENVIRONMENT}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - PLUGINS_REPO_REF_TYPE=${PLUGINS_REPO_REF_TYPE}
-      - PLUGINS_REPO_REF=${PLUGINS_REPO_REF}
     restart: unless-stopped

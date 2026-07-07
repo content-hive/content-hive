@@ -87,7 +87,10 @@ class PluginItemStorageInfo(APIBaseModel):
 class PluginStorageInfo(APIBaseModel):
     """Storage usage for plugins and their dependencies"""
 
-    plugins_size_bytes: int = Field(..., description="Total plugin directory size in bytes (including non-plugin files)")
+    plugins_size_bytes: int = Field(
+        ...,
+        description="Total plugin directory size in bytes (including non-plugin files)",
+    )
     plugins_size_human: str = Field(..., description="Human-readable total plugin directory size")
     by_plugin: dict[str, PluginItemStorageInfo] = Field(..., description="Per-plugin code size breakdown")
     dependencies_size_bytes: int = Field(..., description="Installed dependencies size in bytes")
