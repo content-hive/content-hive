@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from contenthive.models.api import APIBaseModel
 
 DEFAULT_DOWNLOAD_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 "
@@ -8,7 +10,7 @@ DEFAULT_DOWNLOAD_USER_AGENT = (
 )
 
 
-class PluginSettings(BaseModel):
+class PluginSettings(APIBaseModel):
     """Plugin repository settings."""
 
     repo_url: str = Field(
@@ -28,7 +30,7 @@ class PluginSettings(BaseModel):
     )
 
 
-class AuthSettings(BaseModel):
+class AuthSettings(APIBaseModel):
     """Authentication token settings."""
 
     access_token_expire_minutes: int = Field(
@@ -43,7 +45,7 @@ class AuthSettings(BaseModel):
     )
 
 
-class DownloadSettings(BaseModel):
+class DownloadSettings(APIBaseModel):
     """Media download settings."""
 
     max_retries: int = Field(
@@ -59,7 +61,7 @@ class DownloadSettings(BaseModel):
     )
 
 
-class AppSettings(BaseModel):
+class AppSettings(APIBaseModel):
     """Application settings persisted to settings.yaml."""
 
     plugins: PluginSettings = Field(default_factory=PluginSettings)
