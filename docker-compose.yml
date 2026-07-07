@@ -11,6 +11,5 @@ services:
       - ./runtime-data:/config
     environment:
       - TZ=Asia/Shanghai
-      - ENVIRONMENT=${ENVIRONMENT}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     restart: unless-stopped

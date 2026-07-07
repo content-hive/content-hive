@@ -9,8 +9,6 @@
 | `HOST` | `0.0.0.0` | 服务器绑定地址 |
 | `PORT` | `6123` | 服务器端口 |
 | `TZ` | `Asia/Shanghai` | 容器时区 |
-| `ENVIRONMENT` | `production` | 运行环境（`production` / `development`）|
-| `DEBUG` | `false` | 开启调试日志 |
 | `ADMIN_PASSWORD` | *(自动生成)* | 首次启动时创建管理员账号的密码。要求：≥8 位，包含大小写字母、数字和特殊字符 |
 | `DATA_DIR` | `/config/data` | 数据库和媒体文件目录 |
 | `LOGS_DIR` | `/config/logs` | 日志文件目录 |

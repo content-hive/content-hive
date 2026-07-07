@@ -10,14 +10,6 @@ class Settings(BaseSettings):
     Application configuration settings.
     """
 
-    # Application settings
-    environment: str = os.getenv("ENVIRONMENT", "production")
-    debug: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
-
-    # Server settings
-    host: str = os.getenv("HOST", "0.0.0.0")
-    port: int = int(os.getenv("PORT", "6123"))
-
     # Directory paths
     app_base: Path = Path(os.getenv("APP_BASE", "/app"))
     data_dir: Path = Path(os.getenv("DATA_DIR", "/config/data"))
