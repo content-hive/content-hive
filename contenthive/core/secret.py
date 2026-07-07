@@ -6,6 +6,7 @@ from jose import JWTError, jwt
 from pwdlib import PasswordHash
 
 from contenthive.config import settings
+from contenthive.settings.store import get_settings
 
 
 class SecretManager:
@@ -13,8 +14,6 @@ class SecretManager:
         """Initialize the SecretManager with configuration from settings"""
         self.secret_key = self._get_or_create_secret_key()
         self.algorithm: str = "HS256"
-        self.access_token_expire_minutes: int = settings.access_token_expire_minutes
-        self.refresh_token_expire_days: int = settings.refresh_token_expire_days
         self.password_hash = PasswordHash.recommended()
 
     def _get_or_create_secret_key(self) -> str:
@@ -86,7 +85,7 @@ class SecretManager:
     ) -> str:
         """Create a JWT access token for a user"""
         if expires_delta is None:
-            expires_delta = timedelta(minutes=self.access_token_expire_minutes)
+            expires_delta = timedelta(minutes=get_settings().auth.access_token_expire_minutes)
 
         if expires_delta.total_seconds() <= 0:
             raise ValueError("Expiration time must be in the future")
@@ -112,7 +111,7 @@ class SecretManager:
     ) -> str:
         """Create a JWT refresh token for a user"""
         if expires_delta is None:
-            expires_delta = timedelta(days=self.refresh_token_expire_days)
+            expires_delta = timedelta(days=get_settings().auth.refresh_token_expire_days)
 
         if expires_delta.total_seconds() <= 0:
             raise ValueError("Expiration time must be in the future")

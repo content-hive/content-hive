@@ -14,6 +14,7 @@ from contenthive.models.user import (
     RefreshTokenResponse,
     UserModel,
 )
+from contenthive.settings.store import get_settings
 
 
 class TokenService:
@@ -53,7 +54,9 @@ class TokenService:
                     "token_version": user.token_version,
                 }
             )
-            refresh_token_expires_at = datetime.now(UTC) + timedelta(days=secret_manager.refresh_token_expire_days)
+            refresh_token_expires_at = datetime.now(UTC) + timedelta(
+                days=get_settings().auth.refresh_token_expire_days
+            )
 
             device_info = self._extract_device_info(request)
 
@@ -73,7 +76,7 @@ class TokenService:
                     access_token=access_token,
                     refresh_token=refresh_token,
                     token_type="bearer",
-                    expires_in=secret_manager.access_token_expire_minutes * 60,
+                    expires_in=get_settings().auth.access_token_expire_minutes * 60,
                 ),
             )
 
@@ -138,7 +141,9 @@ class TokenService:
                         "token_version": user.token_version,
                     }
                 )
-                refresh_token_expires_at = datetime.now(UTC) + timedelta(days=secret_manager.refresh_token_expire_days)
+                refresh_token_expires_at = datetime.now(UTC) + timedelta(
+                    days=get_settings().auth.refresh_token_expire_days
+                )
 
                 device_info = self._extract_device_info(request)
 
@@ -157,7 +162,7 @@ class TokenService:
                         access_token=access_token,
                         refresh_token=refresh_token,
                         token_type="bearer",
-                        expires_in=secret_manager.access_token_expire_minutes * 60,
+                        expires_in=get_settings().auth.access_token_expire_minutes * 60,
                     )
                 )
         except Exception as e:

@@ -1,6 +1,8 @@
 # Configuration
 
-All settings are configured via environment variables.
+Deployment settings are configured via environment variables. Application settings that can be changed at runtime are stored in `/config/settings.yaml` and can also be managed via `GET/PUT /v1/system/settings` (admin only).
+
+## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -14,12 +16,59 @@ All settings are configured via environment variables.
 | `LOGS_DIR` | `/config/logs` | Directory for log files |
 | `PLUGINS_DIR` | `/config/plugins` | Directory for installed plugins |
 | `PLUGINS_DEPS_DIR` | `/app/deps` | Directory for plugin dependency installation |
-| `PLUGINS_REPO_URL` | `https://github.com/content-hive/plugins.git` | Plugin distribution repository |
-| `PLUGINS_REPO_REF_TYPE` | `branch` | Repository ref type: `branch`, `tag`, or `commit` |
-| `PLUGINS_REPO_REF` | `main` | Repository ref value |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token validity in minutes |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token validity in days |
-| `DOWNLOAD_MAX_RETRIES` | `3` | Maximum retries for media download failures |
+
+## Runtime Settings (settings.yaml)
+
+On first start, default values are written to `/config/settings.yaml`. Changes take effect without restarting the container (e.g. on the next download or token issuance).
+
+```yaml
+plugins:
+  repo_url: https://github.com/content-hive/plugins.git
+  repo_ref_type: branch   # branch | tag | commit
+  repo_ref: main
+
+auth:
+  access_token_expire_minutes: 60
+  refresh_token_expire_days: 30
+
+download:
+  max_retries: 3
+  user_agent: >-
+    Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+    (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `plugins.repo_url` | `https://github.com/content-hive/plugins.git` | Plugin distribution repository. Verify repository trust before changing |
+| `plugins.repo_ref_type` | `branch` | Repository ref type: `branch`, `tag`, or `commit` |
+| `plugins.repo_ref` | `main` | Repository ref value |
+| `auth.access_token_expire_minutes` | `60` | Access token validity in minutes |
+| `auth.refresh_token_expire_days` | `30` | Refresh token validity in days |
+| `download.max_retries` | `3` | Maximum retries for media download failures |
+| `download.user_agent` | *(see above)* | HTTP User-Agent used for media downloads |
+
+### API Example
+
+```bash
+# Read current settings
+curl -s "$BASE_URL/v1/system/settings" -H "Authorization: Bearer ACCESS_TOKEN"
+
+# Partial update (nested structure)
+curl -s -X PUT "$BASE_URL/v1/system/settings" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "download": { "max_retries": 5 },
+    "auth": { "access_token_expire_minutes": 120 }
+  }'
+```
+
+The response `data` field is the full nested settings object (`plugins` / `auth` / `download`).
+
+### Migrating from Previous Versions
+
+If you previously customized these values via environment variables such as `PLUGINS_REPO_REF`, `PLUGINS_REPO_REF_TYPE`, or `ACCESS_TOKEN_EXPIRE_MINUTES`, write them into `/config/settings.yaml` after upgrading. Those environment variables are no longer read.
 
 ## Persistent Data
 
@@ -27,6 +76,7 @@ The `/config` volume contains all persistent data:
 
 ```
 /config/
+  settings.yaml         # Application runtime settings
   data/
     contenthive.db      # SQLite database
     media/              # Downloaded media files
