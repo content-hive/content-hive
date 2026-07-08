@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Body, Request, status
 
+from contenthive.logger import logger
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.enumerates import ResponseStatus
 from contenthive.models.setup import SetupAdminRequest
@@ -17,9 +18,15 @@ async def complete_setup(
     """Create the first admin user and return login tokens."""
     try:
         data = await setup_service.complete_setup(body, request)
-    except Exception as e:
+    except ValueError as e:
         raise DetailedHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ErrorDetail(code="SETUP_FAILED", message=str(e)),
+        ) from e
+    except Exception as e:
+        logger.exception("Initial setup failed")
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="SETUP_FAILED", message="Initial setup failed"),
         ) from e
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)

@@ -61,7 +61,7 @@ class UserService:
             dao.revoke_all_user_sessions(user.id)
             if not result:
                 raise ValueError("Failed to update user password")
-            return result
+            return new_password
 
     def reset_admin_password(self, username: str, new_password: str) -> None:
         """Reset password for an admin user by username (CLI recovery path).
