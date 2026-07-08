@@ -9,7 +9,6 @@ Deployment settings are configured via environment variables. Application settin
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `6123` | Server port |
 | `TZ` | `Asia/Shanghai` | Container timezone |
-| `ADMIN_PASSWORD` | *(auto-generated)* | Admin account password on first start. Must be ≥8 chars with uppercase, lowercase, digit, and special character. |
 | `DATA_DIR` | `/config/data` | Directory for database and media files |
 | `LOGS_DIR` | `/config/logs` | Directory for log files |
 | `PLUGINS_DIR` | `/config/plugins` | Directory for installed plugins |

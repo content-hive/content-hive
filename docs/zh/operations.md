@@ -32,3 +32,28 @@ docker compose up -d
 ```
 
 如需镜像版本回滚，可在 `docker-compose.yml` 中将镜像固定到已发布的历史版本标签（例如 `ghcr.io/content-hive/content-hive:1.2.3`），然后再次执行 `docker compose up -d`。CI/CD 由匹配 `v*` 的 Git tag 触发发布，镜像标签使用去掉 `v` 前缀后的版本号。
+
+## 忘记 admin 密码
+
+若唯一 admin 忘记密码且无法登录，可通过 CLI 在容器内重置（不经过 HTTP 接口）。
+
+建议先停机，避免 SQLite 写锁冲突：
+
+```bash
+docker compose stop
+docker compose run --rm content-hive contenthive admin reset-password --username admin
+docker compose up -d
+```
+
+非交互式（脚本/自动化）：
+
+```bash
+docker compose run --rm content-hive contenthive admin reset-password \
+  --username admin --password 'YourPassword123!'
+```
+
+说明：
+- 仅可重置 `is_admin=true` 的用户
+- 密码要求：≥8 位，包含大小写字母、数字和特殊字符（`!@#$%^&*`）
+- 重置后会吊销该用户所有会话，旧 token 立即失效
+- 省略 `--password` 时会交互式提示输入并确认

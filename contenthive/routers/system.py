@@ -20,6 +20,7 @@ from contenthive.models.user import UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
 from contenthive.services.settings import SettingsValidationError, settings_service
+from contenthive.services.setup import setup_service
 from contenthive.services.storage import storage_service
 from contenthive.settings.schema import AppSettings
 
@@ -62,6 +63,7 @@ async def health_check() -> APIResponse[HealthResponse]:
     """Health check"""
     plugin_manager = get_plugin_manager()
     plugin_updates_available = bool(plugin_manager and any(plugin_manager._available_updates.values()))
+    setup_complete = setup_service.is_setup_complete()
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,
@@ -69,6 +71,7 @@ async def health_check() -> APIResponse[HealthResponse]:
             app=APP_NAME,
             version=APP_VERSION,
             plugin_updates_available=plugin_updates_available,
+            setup_required=not setup_complete,
         ),
     )
 
@@ -117,6 +120,7 @@ async def get_logs(
     to fetch the next page; null means no more data.
     """
     now = datetime.now(UTC).replace(tzinfo=None)
+
     def _to_utc_naive(dt: datetime) -> datetime:
         return dt.replace(tzinfo=None) if dt.tzinfo is None else dt.astimezone(UTC).replace(tzinfo=None)
 

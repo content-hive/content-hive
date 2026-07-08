@@ -70,17 +70,13 @@ class MetadataService:
                 entity = dao.get_author_profile_state(platform_code, author_uid)
 
             if entity is None:
-                logger.warning(
-                    f"Author not found for sidecar sync: platform={platform_code}, author_uid={author_uid}"
-                )
+                logger.warning(f"Author not found for sidecar sync: platform={platform_code}, author_uid={author_uid}")
                 return
 
             author_dir = self._media.get_author_directory(platform_code, author_uid)
             sidecar = AuthorSidecar.from_entity(entity)
             self._write_json(author_dir / METADATA_FILENAME, sidecar)
-            logger.debug(
-                f"Synced author sidecar for {platform_code}/{author_uid} -> {author_dir / METADATA_FILENAME}"
-            )
+            logger.debug(f"Synced author sidecar for {platform_code}/{author_uid} -> {author_dir / METADATA_FILENAME}")
         except Exception:
             logger.exception(f"Failed to sync author sidecar for platform={platform_code}, author_uid={author_uid}")
 

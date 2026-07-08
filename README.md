@@ -24,11 +24,12 @@ services:
       - ./data:/config
     environment:
       - TZ=Asia/Shanghai
-      - ADMIN_PASSWORD=YourPassword123!
     restart: unless-stopped
 ```
 
-On first start, an admin account is created automatically. If `ADMIN_PASSWORD` is not set, a random password is generated and written to `/config/data/.admin_credentials` (permissions 600); the log will show the file path. Delete this file after recording the credentials.
+On first start, create an admin account via `POST /v1/setup`. See the [documentation](https://content-hive.github.io/content-hive/en/getting-started) for details.
+
+If the admin password is forgotten, use the CLI recovery path documented in [Operations](https://content-hive.github.io/content-hive/en/operations#forgotten-admin-password).
 
 ## Documentation
 

@@ -580,9 +580,7 @@ class MediaService:
             logger.debug(f"Deleted content directory: {resolved_dir}")
             return True
         except Exception as e:
-            logger.warning(
-                f"Failed to delete content directory for {platform}/{author_uid}/{content_id}: {e}"
-            )
+            logger.warning(f"Failed to delete content directory for {platform}/{author_uid}/{content_id}: {e}")
             return False
 
 
