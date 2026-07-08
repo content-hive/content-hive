@@ -317,8 +317,7 @@ class ContentService:
             if success and content_dirs:
                 deleted, failed = self._delete_content_directories(content_dirs)
                 logger.info(
-                    f"Deleted author {author_id}: {len(content_dirs)} directories"
-                    f" ({deleted} deleted, {failed} failed)"
+                    f"Deleted author {author_id}: {len(content_dirs)} directories ({deleted} deleted, {failed} failed)"
                 )
 
             return success

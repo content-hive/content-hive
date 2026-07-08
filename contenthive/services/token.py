@@ -54,9 +54,7 @@ class TokenService:
                     "token_version": user.token_version,
                 }
             )
-            refresh_token_expires_at = datetime.now(UTC) + timedelta(
-                days=get_settings().auth.refresh_token_expire_days
-            )
+            refresh_token_expires_at = datetime.now(UTC) + timedelta(days=get_settings().auth.refresh_token_expire_days)
 
             device_info = self._extract_device_info(request)
 
