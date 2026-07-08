@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request, status
 
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
@@ -14,12 +14,14 @@ from contenthive.models.system import (
     HealthResponse,
     LogEntry,
     RestartResponse,
+    SetupAdminRequest,
     StorageStatusResponse,
 )
-from contenthive.models.user import UserModel
+from contenthive.models.user import LoginResponse, UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
 from contenthive.services.settings import SettingsValidationError, settings_service
+from contenthive.services.setup import setup_service
 from contenthive.services.storage import storage_service
 from contenthive.settings.schema import AppSettings
 
@@ -62,6 +64,7 @@ async def health_check() -> APIResponse[HealthResponse]:
     """Health check"""
     plugin_manager = get_plugin_manager()
     plugin_updates_available = bool(plugin_manager and any(plugin_manager._available_updates.values()))
+    setup_complete = setup_service.is_setup_complete()
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,
@@ -69,8 +72,25 @@ async def health_check() -> APIResponse[HealthResponse]:
             app=APP_NAME,
             version=APP_VERSION,
             plugin_updates_available=plugin_updates_available,
+            setup_required=not setup_complete,
         ),
     )
+
+
+@router_v1.post("/setup", response_model=APIResponse[LoginResponse])
+async def complete_setup(
+    request: Request,
+    body: SetupAdminRequest = Body(...),
+) -> APIResponse[LoginResponse]:
+    """Create the first admin user and return login tokens."""
+    try:
+        data = await setup_service.complete_setup(body, request)
+    except Exception as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(code="SETUP_FAILED", message=str(e)),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
 @router_v1.get("/storage", response_model=APIResponse[StorageStatusResponse])
@@ -117,6 +137,7 @@ async def get_logs(
     to fetch the next page; null means no more data.
     """
     now = datetime.now(UTC).replace(tzinfo=None)
+
     def _to_utc_naive(dt: datetime) -> datetime:
         return dt.replace(tzinfo=None) if dt.tzinfo is None else dt.astimezone(UTC).replace(tzinfo=None)
 

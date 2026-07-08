@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from contenthive.database.database import get_engine, get_session_local
@@ -35,6 +35,55 @@ class UserDAO:
         if self.session:
             self.session.close()
             self.session = None
+
+    def has_admin_user(self) -> bool:
+        """Return True if at least one admin user exists."""
+        session = self._get_session()
+        stmt = select(User.id).where(User.is_admin.is_(True)).limit(1)
+        return session.execute(stmt).first() is not None
+
+    def create_initial_admin_user(
+        self,
+        username: str,
+        password_hash: str,
+        email: str | None = None,
+    ) -> int:
+        """Create the first admin user only when no admin exists yet.
+
+        Raises:
+            ValueError: If setup is already complete or username/email conflicts.
+        """
+        session = self._get_session()
+        try:
+            admin_count = session.scalar(select(func.count()).select_from(User).where(User.is_admin.is_(True)))
+            if admin_count and admin_count > 0:
+                raise ValueError("Setup already complete")
+
+            if self.user_exists(username=username, email=email):
+                raise ValueError("Username or email already exists")
+
+            user = User(
+                username=username,
+                email=email,
+                password_hash=password_hash,
+                status=UserStatus.ACTIVE,
+                is_admin=True,
+                created_by=0,
+            )
+            session.add(user)
+            session.flush()
+            user_id = user.id
+            self._create_profile(user_id, commit=False)
+            session.commit()
+            return user_id
+        except ValueError:
+            session.rollback()
+            raise
+        except Exception as e:
+            session.rollback()
+            if "UNIQUE constraint failed" in str(e):
+                raise ValueError("Username or email already exists") from e
+            raise
 
     def user_exists(self, username: str | None = None, email: str | None = None) -> bool:
         """Check if a user exists by username or email"""

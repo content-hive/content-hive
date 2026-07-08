@@ -1,5 +1,3 @@
-import os
-
 from contenthive.core.secret import secret_manager
 from contenthive.database.user_dao import UserDAO
 from contenthive.models.enumerates import UserStatus
@@ -33,49 +31,6 @@ class UserService:
                 raise ValueError("Failed to create user")
 
             return UserCreateResponse.from_entity(user)
-
-    def create_admin_user(self) -> tuple[str, str] | None:
-        """
-        Create initial admin user. Returns (username, password) only on creation,
-        None if admin already exists or password was set via environment variable.
-
-        Password can be set via ADMIN_PASSWORD environment variable for automated setups,
-        otherwise a secure random password is generated.
-        """
-        with UserDAO() as dao:
-            username = "admin"
-            if dao.user_exists(username=username):
-                raise ValueError("Admin user already exists")
-
-            # Check if ADMIN_PASSWORD is set (for automated deployments)
-            password = os.getenv("ADMIN_PASSWORD")
-            if password:
-                # Validate password strength if provided via env var
-                if not secret_manager.password_strength(password):
-                    raise ValueError(
-                        "ADMIN_PASSWORD does not meet strength requirements. "
-                        "Password must be at least 8 characters with uppercase, lowercase, "
-                        "digit, and special character (!@#$%^&*)"
-                    )
-            else:
-                # Generate secure random password
-                password = secret_manager.generate_random_password()
-
-            password_hash = secret_manager.hash_password(password)
-
-            dao.create_user(
-                username=username,
-                password_hash=password_hash,
-                is_admin=True,
-                created_by=0,
-            )
-
-            # Only return password if it was auto-generated
-            # If set via env var, don't return it (assume deployer knows it)
-            if os.getenv("ADMIN_PASSWORD"):
-                return None
-
-            return username, password
 
     def change_user_password(self, user_id: int, new_password: str) -> bool:
         """Change the password for a given user"""

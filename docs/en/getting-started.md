@@ -15,7 +15,6 @@ services:
       - ./data:/config
     environment:
       - TZ=Asia/Shanghai
-      - ADMIN_PASSWORD=YourPassword123!
     restart: unless-stopped
 ```
 
@@ -25,8 +24,21 @@ Save as `docker-compose.yml`, then run:
 docker compose up -d
 ```
 
-On first start, an admin account is created automatically:
-- Username: `admin`
-- Password: value of `ADMIN_PASSWORD`, or a randomly generated password written to `/config/data/.admin_credentials` (permissions 600) if not set — the log will show the file path. Delete the file after recording the credentials.
+On first start, create an admin account:
+
+```bash
+BASE_URL="http://localhost:6123"
+
+# 1. Check whether setup is required
+curl -s "$BASE_URL/v1/system/health"
+# data.setup_required: true
+
+# 2. Create admin (auto-login, returns tokens)
+curl -s -X POST "$BASE_URL/v1/system/setup" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "YourPassword123!"}'
+```
+
+Password requirements: ≥8 characters with uppercase, lowercase, digit, and special character (`!@#$%^&*`).
 
 Access the interactive API docs at: `http://localhost:6123/docs`
