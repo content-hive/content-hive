@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 ```
 
-On first start, create an admin account via `POST /v1/system/setup`. See the [documentation](https://content-hive.github.io/content-hive/en/getting-started) for details.
+On first start, create an admin account via `POST /v1/setup`. See the [documentation](https://content-hive.github.io/content-hive/en/getting-started) for details.
 
 ## Documentation
 

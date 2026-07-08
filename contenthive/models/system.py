@@ -2,9 +2,8 @@
 Models for system-related operations.
 """
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from contenthive.core.secret import secret_manager
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import MediaStorageType
 
@@ -23,26 +22,6 @@ class HealthResponse(APIBaseModel):
     version: str = Field(..., description="Application version")
     plugin_updates_available: bool = Field(..., description="Whether any installed plugin has an update available")
     setup_required: bool = Field(..., description="Whether initial admin setup is still required")
-
-
-class SetupAdminRequest(APIBaseModel):
-    """Request body for creating the first admin user during setup"""
-
-    username: str
-    password: str
-    email: str | None = None
-
-    @field_validator("password")
-    @classmethod
-    def validate_password_strength(cls, v: str) -> str:
-        """Validate password meets strength requirements"""
-        if not secret_manager.password_strength(v):
-            raise ValueError(
-                "Password must be at least 8 characters long and contain "
-                "at least one lowercase letter, one uppercase letter, "
-                "one digit, and one special character (!@#$%^&*)"
-            )
-        return v
 
 
 class StorageItemInfo(APIBaseModel):

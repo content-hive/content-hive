@@ -34,7 +34,7 @@ curl -s "$BASE_URL/v1/system/health"
 # data.setup_required: true
 
 # 2. Create admin (auto-login, returns tokens)
-curl -s -X POST "$BASE_URL/v1/system/setup" \
+curl -s -X POST "$BASE_URL/v1/setup" \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "YourPassword123!"}'
 ```

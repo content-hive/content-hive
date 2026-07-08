@@ -2,7 +2,7 @@ from fastapi import Request
 
 from contenthive.core.secret import secret_manager
 from contenthive.database.user_dao import UserDAO
-from contenthive.models.system import SetupAdminRequest
+from contenthive.models.setup import SetupAdminRequest
 from contenthive.models.user import LoginResponse, UserCreateResponse
 from contenthive.services.token import token_service
 

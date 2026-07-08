@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, status
 
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
@@ -14,10 +14,9 @@ from contenthive.models.system import (
     HealthResponse,
     LogEntry,
     RestartResponse,
-    SetupAdminRequest,
     StorageStatusResponse,
 )
-from contenthive.models.user import LoginResponse, UserModel
+from contenthive.models.user import UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
 from contenthive.services.settings import SettingsValidationError, settings_service
@@ -75,22 +74,6 @@ async def health_check() -> APIResponse[HealthResponse]:
             setup_required=not setup_complete,
         ),
     )
-
-
-@router_v1.post("/setup", response_model=APIResponse[LoginResponse])
-async def complete_setup(
-    request: Request,
-    body: SetupAdminRequest = Body(...),
-) -> APIResponse[LoginResponse]:
-    """Create the first admin user and return login tokens."""
-    try:
-        data = await setup_service.complete_setup(body, request)
-    except Exception as e:
-        raise DetailedHTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ErrorDetail(code="SETUP_FAILED", message=str(e)),
-        ) from e
-    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
 @router_v1.get("/storage", response_model=APIResponse[StorageStatusResponse])
