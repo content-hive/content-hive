@@ -68,6 +68,7 @@ class UserDAO:
                 password_hash=password_hash,
                 status=UserStatus.ACTIVE,
                 is_admin=True,
+                force_password_change=False,
                 created_by=0,
             )
             session.add(user)
