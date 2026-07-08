@@ -29,6 +29,8 @@ services:
 
 On first start, create an admin account via `POST /v1/setup`. See the [documentation](https://content-hive.github.io/content-hive/en/getting-started) for details.
 
+If the admin password is forgotten, use the CLI recovery path documented in [Operations](https://content-hive.github.io/content-hive/en/operations#forgotten-admin-password).
+
 ## Documentation
 
 - [English](https://content-hive.github.io/content-hive/en/intro)

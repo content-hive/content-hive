@@ -1,5 +1,6 @@
 from contenthive.core.secret import secret_manager
 from contenthive.database.user_dao import UserDAO
+from contenthive.logger import logger
 from contenthive.models.enumerates import UserStatus
 from contenthive.models.user import UserCreateResponse, UserProfileResponse
 
@@ -60,7 +61,23 @@ class UserService:
             dao.revoke_all_user_sessions(user.id)
             if not result:
                 raise ValueError("Failed to update user password")
-            return new_password
+            return result
+
+    def reset_admin_password(self, username: str, new_password: str) -> None:
+        """Reset password for an admin user by username (CLI recovery path).
+
+        Raises:
+            ValueError: If user not found, user is not admin, or password is weak.
+        """
+        with UserDAO() as dao:
+            user = dao.get_user_by_username(username)
+            if not user:
+                raise ValueError("User not found")
+            if not user.is_admin:
+                raise ValueError("User is not an admin")
+
+        self.change_user_password(user.id, new_password)
+        logger.info("Admin password reset via CLI for user %s", username)
 
     def get_user_profile(self, user_id: int) -> UserProfileResponse:
         """Retrieve user profile by user ID"""
