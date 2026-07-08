@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from contenthive.database.database import get_engine, get_session_local
@@ -55,6 +55,12 @@ class UserDAO:
         """
         session = self._get_session()
         try:
+            if session.in_transaction():
+                session.rollback()
+            # Acquire a write lock before checking admin count so concurrent setup
+            # requests cannot both observe zero admins and insert two admins.
+            session.execute(text("BEGIN IMMEDIATE"))
+
             admin_count = session.scalar(select(func.count()).select_from(User).where(User.is_admin.is_(True)))
             if admin_count and admin_count > 0:
                 raise ValueError("Setup already complete")
