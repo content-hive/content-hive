@@ -23,6 +23,8 @@ class SetupAdminRequest(APIBaseModel):
             raise ValueError(
                 "Password must be at least 8 characters long and contain "
                 "at least one lowercase letter, one uppercase letter, "
-                "one digit, and one special character (!@#$%^&*)"
+                "one digit, and one special character (any printable "
+                "non-alphanumeric, non-whitespace character; "
+                "e.g. !@#$%^&*-_.)"
             )
         return v
