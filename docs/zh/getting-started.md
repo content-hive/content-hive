@@ -39,6 +39,6 @@ curl -s -X POST "$BASE_URL/v1/setup" \
   -d '{"username": "admin", "password": "YourPassword123!"}'
 ```
 
-密码要求：≥8 位，包含大小写字母、数字和特殊字符（`!@#$%^&*`）。
+密码要求：≥8 位，包含大小写字母、数字和特殊字符（任意非字母数字字符，例如 `!@#$%^&*-_.`）。
 
 访问交互式 API 文档：`http://localhost:6123/docs`

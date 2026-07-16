@@ -39,6 +39,6 @@ curl -s -X POST "$BASE_URL/v1/setup" \
   -d '{"username": "admin", "password": "YourPassword123!"}'
 ```
 
-Password requirements: ≥8 characters with uppercase, lowercase, digit, and special character (`!@#$%^&*`).
+Password requirements: ≥8 characters with uppercase, lowercase, digit, and a special character (any non-alphanumeric, e.g. `!@#$%^&*-_.`).
 
 Access the interactive API docs at: `http://localhost:6123/docs`

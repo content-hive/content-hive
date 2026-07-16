@@ -34,15 +34,23 @@ class SecretManager:
         secret_file.chmod(0o600)
         return new_secret
 
+    # Punctuation accepted by generated passwords and documented as examples.
+    # Validation accepts any non-alphanumeric character (e.g. -, _, .).
+    _SPECIAL_CHARS = "!@#$%^&*-_."
+
     @staticmethod
     def password_strength(password: str) -> bool:
-        """Check if the password meets strength requirements"""
+        """Check if the password meets strength requirements.
+
+        Requires ≥8 chars with at least one lowercase, one uppercase, one digit,
+        and one non-alphanumeric character (hyphen, underscore, etc. all count).
+        """
         return not (
             len(password) < 8
             or not any(c.islower() for c in password)
             or not any(c.isupper() for c in password)
             or not any(c.isdigit() for c in password)
-            or not any(c in "!@#$%^&*" for c in password)
+            or not any(not c.isalnum() for c in password)
         )
 
     @staticmethod
@@ -51,16 +59,18 @@ class SecretManager:
         if length < 8:
             length = 8
 
+        special = SecretManager._SPECIAL_CHARS
+
         # Ensure password contains at least one of each required character type
         password_chars = [
             secrets.choice(string.ascii_lowercase),  # At least one lowercase
             secrets.choice(string.ascii_uppercase),  # At least one uppercase
             secrets.choice(string.digits),  # At least one digit
-            secrets.choice("!@#$%^&*"),  # At least one special char
+            secrets.choice(special),  # At least one special char
         ]
 
         # Fill the rest with random characters
-        all_characters = string.ascii_letters + string.digits + "!@#$%^&*"
+        all_characters = string.ascii_letters + string.digits + special
         password_chars += [secrets.choice(all_characters) for _ in range(length - 4)]
 
         # Shuffle to avoid predictable pattern using secrets

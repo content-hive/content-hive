@@ -54,6 +54,6 @@ docker compose run --rm content-hive contenthive admin reset-password \
 
 Notes:
 - Only users with `is_admin=true` can be reset
-- Password requirements: ≥8 characters with uppercase, lowercase, digit, and special character (`!@#$%^&*`)
+- Password requirements: ≥8 characters with uppercase, lowercase, digit, and a special character (any non-alphanumeric, e.g. `!@#$%^&*-_.`)
 - All sessions for that user are revoked; existing tokens stop working immediately
 - Omit `--password` to be prompted interactively with confirmation

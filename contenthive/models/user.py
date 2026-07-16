@@ -77,7 +77,7 @@ class CreateUserRequest(APIBaseModel):
             raise ValueError(
                 "Password must be at least 8 characters long and contain "
                 "at least one lowercase letter, one uppercase letter, "
-                "one digit, and one special character (!@#$%^&*)"
+                "one digit, and one special character (e.g. !@#$%^&*-_.)"
             )
         return v
 
@@ -166,7 +166,7 @@ class ChangePasswordRequest(APIBaseModel):
             raise ValueError(
                 "Password must be at least 8 characters long and contain "
                 "at least one lowercase letter, one uppercase letter, "
-                "one digit, and one special character (!@#$%^&*)"
+                "one digit, and one special character (e.g. !@#$%^&*-_.)"
             )
         return v
 

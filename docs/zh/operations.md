@@ -54,6 +54,6 @@ docker compose run --rm content-hive contenthive admin reset-password \
 
 说明：
 - 仅可重置 `is_admin=true` 的用户
-- 密码要求：≥8 位，包含大小写字母、数字和特殊字符（`!@#$%^&*`）
+- 密码要求：≥8 位，包含大小写字母、数字和特殊字符（任意非字母数字字符，例如 `!@#$%^&*-_.`）
 - 重置后会吊销该用户所有会话，旧 token 立即失效
 - 省略 `--password` 时会交互式提示输入并确认
