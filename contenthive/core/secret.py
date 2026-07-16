@@ -35,7 +35,7 @@ class SecretManager:
         return new_secret
 
     # Punctuation accepted by generated passwords and documented as examples.
-    # Validation accepts any non-alphanumeric character (e.g. -, _, .).
+    # Validation accepts any printable, non-whitespace, non-alphanumeric character.
     _SPECIAL_CHARS = "!@#$%^&*-_."
 
     @staticmethod
@@ -43,14 +43,17 @@ class SecretManager:
         """Check if the password meets strength requirements.
 
         Requires ≥8 chars with at least one lowercase, one uppercase, one digit,
-        and one non-alphanumeric character (hyphen, underscore, etc. all count).
+        and one printable non-alphanumeric, non-whitespace character
+        (hyphen, underscore, etc. all count; spaces/control chars do not).
         """
         return not (
             len(password) < 8
             or not any(c.islower() for c in password)
             or not any(c.isupper() for c in password)
             or not any(c.isdigit() for c in password)
-            or not any(not c.isalnum() for c in password)
+            or not any(
+                (not c.isalnum()) and c.isprintable() and not c.isspace() for c in password
+            )
         )
 
     @staticmethod
