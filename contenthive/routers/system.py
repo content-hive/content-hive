@@ -1,13 +1,14 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, status
 
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
 from contenthive.logger import logger, query_logs
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.enumerates import ResponseStatus
+from contenthive.models.settings import UpdateAppSettingsRequest
 from contenthive.models.system import (
     CursorPaginatedResponse,
     HealthResponse,
@@ -18,7 +19,10 @@ from contenthive.models.system import (
 from contenthive.models.user import UserModel
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.routers.user import get_current_admin_user
+from contenthive.services.settings import SettingsValidationError, settings_service
+from contenthive.services.setup import setup_service
 from contenthive.services.storage import storage_service
+from contenthive.settings.schema import AppSettings
 
 router_v1 = APIRouter(prefix="/v1/system", tags=["system"])
 
@@ -59,6 +63,7 @@ async def health_check() -> APIResponse[HealthResponse]:
     """Health check"""
     plugin_manager = get_plugin_manager()
     plugin_updates_available = bool(plugin_manager and any(plugin_manager._available_updates.values()))
+    setup_complete = setup_service.is_setup_complete()
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,
@@ -66,6 +71,7 @@ async def health_check() -> APIResponse[HealthResponse]:
             app=APP_NAME,
             version=APP_VERSION,
             plugin_updates_available=plugin_updates_available,
+            setup_required=not setup_complete,
         ),
     )
 
@@ -114,6 +120,7 @@ async def get_logs(
     to fetch the next page; null means no more data.
     """
     now = datetime.now(UTC).replace(tzinfo=None)
+
     def _to_utc_naive(dt: datetime) -> datetime:
         return dt.replace(tzinfo=None) if dt.tzinfo is None else dt.astimezone(UTC).replace(tzinfo=None)
 
@@ -147,3 +154,42 @@ async def get_logs(
             next_cursor=next_cursor,
         ),
     )
+
+
+@router_v1.get("/settings", response_model=APIResponse[AppSettings])
+async def get_app_settings(
+    _: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[AppSettings]:
+    """Get application settings (Admin only)."""
+    try:
+        data = settings_service.get_app_settings()
+    except SettingsValidationError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorDetail(
+                code="PERSISTED_SETTINGS_INVALID",
+                message="Stored application settings are invalid and cannot be read",
+                details={"errors": e.errors},
+            ),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
+@router_v1.put("/settings", response_model=APIResponse[AppSettings])
+async def update_app_settings(
+    _: Annotated[UserModel, Depends(get_current_admin_user)],
+    body: UpdateAppSettingsRequest = Body(...),
+) -> APIResponse[AppSettings]:
+    """Update application settings (Admin only)."""
+    try:
+        data = settings_service.update_app_settings(body)
+    except SettingsValidationError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(
+                code="SETTINGS_VALIDATION_FAILED",
+                message="Application settings validation failed",
+                details={"errors": e.errors},
+            ),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)

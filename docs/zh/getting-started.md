@@ -15,7 +15,6 @@ services:
       - ./data:/config
     environment:
       - TZ=Asia/Shanghai
-      - ADMIN_PASSWORD=YourPassword123!
     restart: unless-stopped
 ```
 
@@ -25,8 +24,21 @@ services:
 docker compose up -d
 ```
 
-首次启动时，系统自动创建管理员账号：
-- 用户名：`admin`
-- 密码：`ADMIN_PASSWORD` 的值；若未设置，则随机生成并写入 `/config/data/.admin_credentials`（权限 600），日志中会记录该文件路径。记录密码后请删除此文件。
+首次启动后，需要创建管理员账号：
+
+```bash
+BASE_URL="http://localhost:6123"
+
+# 1. 检查是否需要初始化
+curl -s "$BASE_URL/v1/system/health"
+# data.setup_required: true
+
+# 2. 创建管理员（自动登录，返回 token）
+curl -s -X POST "$BASE_URL/v1/setup" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "YourPassword123!"}'
+```
+
+密码要求：≥8 位，包含大小写字母、数字和特殊字符（任意可打印、非空白的非字母数字字符；例如 `!@#$%^&*-_.`）。
 
 访问交互式 API 文档：`http://localhost:6123/docs`

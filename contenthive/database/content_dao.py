@@ -8,7 +8,6 @@ from contenthive.database.orm_models import (
     Author,
     Media,
     ParseResult,
-    ParseResultMedia,
     Platform,
     UserAuthor,
     UserParseResult,
@@ -29,6 +28,7 @@ from contenthive.plugins.contracts import (
     ParserPlatformInfo,
     ParserResult,
 )
+from contenthive.utils.content import ContentDirectory, resolve_content_id
 
 
 class ContentDAO:
@@ -203,20 +203,91 @@ class ContentDAO:
                 session.rollback()
             raise Exception(f"Failed to save author: {e}") from e
 
-    def _save_media(self, media: MediaEntity, commit: bool = False) -> int:
+    def get_author_profile_state(self, platform_code: str, uid: str) -> AuthorEntity | None:
         """
-        Save media information.
+        Fetch an author by platform code and uid, returning the full entity.
+
+        Intended to be called BEFORE save_parse_result overwrites the avatar/banner
+        URLs, so the caller can detect whether the remote URL changed.
+
+        Args:
+            platform_code: Platform code (e.g. "twitter")
+            uid: Author uid on the platform
+
+        Returns:
+            AuthorEntity if the author exists, otherwise None.
+        """
+        session = self._get_session()
+        stmt = (
+            select(Author)
+            .join(Platform, Author.platform_id == Platform.id)
+            .where((Platform.code == platform_code) & (Author.uid == uid))
+        )
+        author = session.execute(stmt).scalar_one_or_none()
+        if author is None:
+            return None
+        return AuthorEntity.from_orm(author)
+
+    def update_author_profile_paths(
+        self,
+        author_id: int,
+        avatar_path: str | None = None,
+        banner_path: str | None = None,
+        commit: bool = True,
+    ) -> None:
+        """
+        Update an author's local avatar/banner paths.
+
+        Only the provided (non-None) paths are written; passing None leaves the
+        corresponding column unchanged so previously downloaded assets are kept.
+
+        Args:
+            author_id: Author ID
+            avatar_path: New local avatar path (/media/...), or None to leave unchanged
+            banner_path: New local banner path (/media/...), or None to leave unchanged
+            commit: Whether to commit immediately (default: True)
+        """
+        if avatar_path is None and banner_path is None:
+            return
+
+        session = self._get_session()
+        try:
+            author = session.get(Author, author_id)
+            if author is None:
+                logger.warning(f"Cannot update profile paths: author {author_id} not found")
+                return
+            if avatar_path is not None:
+                author.avatar_path = avatar_path
+            if banner_path is not None:
+                author.banner_path = banner_path
+            session.flush()
+            if commit:
+                session.commit()
+        except Exception as e:
+            if commit:
+                session.rollback()
+            raise Exception(f"Failed to update author profile paths: {e}") from e
+
+    def _save_media(self, media: MediaEntity, parse_result_id: int, order: int = 0, commit: bool = False) -> int:
+        """
+        Save media information for a specific parse result.
+
+        Media is owned by a single parse result (one-to-many). Deduplication is
+        scoped to (parse_result_id, url) so downloaded media can update the row
+        created during the parse phase.
 
         Args:
             media: Media entity
-            commit: Whether to commit immediately (default: False)
+            parse_result_id: Owning parse result ID
+            order: Display order within the parse result (default: 0)
+            commit: Commit immediately after inserting a new media row (default: False)
 
         Returns media_id.
         """
         session = self._get_session()
         try:
-            # Check if media exists
-            stmt = select(Media).where(Media.url == media.url)
+            # Check if media exists within this parse result
+            stmt = select(Media).where((Media.parse_result_id == parse_result_id) & (Media.url == media.url))
             existing_media = session.execute(stmt).scalar_one_or_none()
 
             if existing_media:
@@ -246,6 +317,8 @@ class ContentDAO:
 
             # Insert new media
             new_media = Media(
+                parse_result_id=parse_result_id,
+                order=order,
                 url=media.url,
                 type=media.type,
                 title=media.title,
@@ -272,18 +345,19 @@ class ContentDAO:
                 session.rollback()
             raise Exception(f"Failed to save media: {e}") from e
 
-    def save_medias(self, medias: list[ParserMediaInfo], commit: bool = False) -> list[int]:
+    def save_medias(self, medias: list[ParserMediaInfo], parse_result_id: int, commit: bool = False) -> list[int]:
         """
-        Save multiple media entities.
+        Save multiple media entities for a parse result.
 
         Args:
             medias: List of ParserMediaInfo objects
+            parse_result_id: Owning parse result ID
             commit: Whether to commit immediately (default: False)
 
         Returns list of media_ids.
         """
         media_ids = []
-        for media in medias:
+        for order, media in enumerate(medias):
             media_entity = MediaEntity(
                 status=MediaStatus.PENDING,  # Default to pending when saving from parser result
                 url=str(media.url),
@@ -293,7 +367,7 @@ class ContentDAO:
                 url_fallbacks=[str(u) for u in (media.url_fallbacks or [])],
                 cover_fallbacks=[str(u) for u in (media.cover_fallbacks or [])],
             )
-            media_id = self._save_media(media_entity, commit=False)
+            media_id = self._save_media(media_entity, parse_result_id, order=order, commit=False)
             media_ids.append(media_id)
 
         if commit:
@@ -301,18 +375,24 @@ class ContentDAO:
 
         return media_ids
 
-    def save_downloaded_medias(self, medias: list[DownloadedMediaInfo], commit: bool = False) -> list[int]:
+    def save_downloaded_medias(
+        self, medias: list[DownloadedMediaInfo], parse_result_id: int, commit: bool = False
+    ) -> list[int]:
         """
-        Save multiple downloaded media entities.
+        Save multiple downloaded media entities for a parse result.
+
+        Updates the rows created during the parse phase (matched by
+        (parse_result_id, url)) with download status and local paths.
 
         Args:
             medias: List of DownloadedMediaInfo objects
+            parse_result_id: Owning parse result ID
             commit: Whether to commit immediately (default: False)
 
         Returns list of media_ids.
         """
         media_ids = []
-        for media in medias:
+        for order, media in enumerate(medias):
             media_entity = MediaEntity(
                 status=media.status,
                 url=str(media.url),
@@ -327,7 +407,7 @@ class ContentDAO:
                 media_path=media.media_path,
                 cover_path=media.cover_path,
             )
-            media_id = self._save_media(media_entity, commit=False)
+            media_id = self._save_media(media_entity, parse_result_id, order=order, commit=False)
             media_ids.append(media_id)
 
         if commit:
@@ -374,8 +454,8 @@ class ContentDAO:
                     logger.info(f"Restored soft-deleted parse result {existing_result.id}")
                 session.flush()
 
-                # Clear old media associations
-                session.query(ParseResultMedia).filter(ParseResultMedia.parse_result_id == parse_result_id).delete()
+                # Clear old media rows (one-to-many: media belongs to this parse result)
+                session.query(Media).filter(Media.parse_result_id == parse_result_id).delete()
             else:
                 # Insert new parse result
                 new_result = ParseResult(
@@ -413,8 +493,8 @@ class ContentDAO:
                 user_parse_result.updated_at = datetime.now(UTC)
                 session.flush()
 
-            # Save media associations
-            self._save_media_associations(parse_result_id, result.media)
+            # Save media rows owned by this parse result
+            self.save_medias(result.media, parse_result_id, commit=False)
 
             # Commit all changes
             session.commit()
@@ -425,22 +505,6 @@ class ContentDAO:
             raise Exception(
                 f"Failed to save parse result (pid: {result.pid}, platform: {result.platform.code}): {e}"
             ) from e
-
-    def _save_media_associations(self, parse_result_id: int, media: list[ParserMediaInfo]) -> None:
-        """
-        Helper method to save media associations for a parse result.
-
-        Args:
-            parse_result_id: Parse result ID
-            media: List of media entities
-        """
-        session = self._get_session()
-        # Save media
-        media_ids = self.save_medias(media, commit=False)
-        for order, media_id in enumerate(media_ids):
-            assoc = ParseResultMedia(parse_result_id=parse_result_id, media_id=media_id, order=order)
-            session.add(assoc)
-        session.flush()
 
     def get_parse_result(self, parse_result_id: int, user_id: int) -> ParseResultEntity:
         """
@@ -588,24 +652,23 @@ class ContentDAO:
         session = self._get_session()
 
         # Build query with JOIN to UserParseResult (include soft-deleted associations)
-        # Eagerly load media_list -> media to avoid N+1 lazy-load queries per result
+        # Eagerly load media to avoid N+1 lazy-load queries per result
         query = (
             select(ParseResult)
             .join(
                 UserParseResult,
                 (UserParseResult.parse_result_id == ParseResult.id) & (UserParseResult.user_id == user_id),
             )
-            .options(selectinload(ParseResult.media_list).selectinload(ParseResultMedia.media))
+            .options(selectinload(ParseResult.media))
         )
 
         # Filter by last_sync_time if provided
         if last_sync_time is not None:
             media_update_subquery = exists(
                 select(1)
-                .select_from(ParseResultMedia)
-                .join(Media, ParseResultMedia.media_id == Media.id)
+                .select_from(Media)
                 .where(
-                    ParseResultMedia.parse_result_id == ParseResult.id,
+                    Media.parse_result_id == ParseResult.id,
                     Media.updated_at > last_sync_time,
                 )
             )
@@ -647,9 +710,9 @@ class ContentDAO:
             timestamps = [result_orm.updated_at]
             if user_parse_result and user_parse_result.updated_at:
                 timestamps.append(user_parse_result.updated_at)
-            for prm in result_orm.media_list:
-                if prm.media and prm.media.updated_at:
-                    timestamps.append(prm.media.updated_at)
+            for media in result_orm.media:
+                if media.updated_at:
+                    timestamps.append(media.updated_at)
             entity.updated_at = max(timestamps)
             results.append(entity)
 
@@ -788,7 +851,9 @@ class ContentDAO:
         authors = [AuthorEntity.from_orm(a) for a in authors_orm]
         return authors, total
 
-    def delete_platform(self, user_id: int, platform_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_platform(
+        self, user_id: int, platform_id: int, commit: bool = False
+    ) -> tuple[bool, list[ContentDirectory]]:
         """
         Soft delete user's association with platform and cascade to related authors and parse results.
         Does NOT delete the platform itself as it's shared among users.
@@ -799,10 +864,10 @@ class ContentDAO:
             commit: Whether to commit immediately (default: False)
 
         Returns:
-            Tuple of (success, list of media file paths to delete)
+            Tuple of (success, list of content directories to delete)
         """
         session = self._get_session()
-        all_file_paths = []
+        all_content_dirs: list[ContentDirectory] = []
 
         try:
             # Verify user-platform association exists
@@ -815,7 +880,7 @@ class ContentDAO:
 
             if not user_platform:
                 logger.warning(f"Platform {platform_id} not found or already deleted for user {user_id}")
-                return False, all_file_paths
+                return False, all_content_dirs
 
             # Get all authors belonging to this platform for this user
             stmt = (
@@ -834,8 +899,8 @@ class ContentDAO:
 
             # Soft delete each author association
             for author_id in author_ids:
-                _success, file_paths = self.delete_author(user_id, author_id, commit=False)
-                all_file_paths.extend(file_paths)
+                _success, content_dirs = self.delete_author(user_id, author_id, commit=False)
+                all_content_dirs.extend(content_dirs)
 
             # Soft delete user-platform association
             user_platform.deleted_at = datetime.now(UTC)
@@ -844,7 +909,7 @@ class ContentDAO:
             if commit:
                 session.commit()
 
-            return True, all_file_paths
+            return True, all_content_dirs
 
         except Exception as e:
             if commit:
@@ -852,7 +917,7 @@ class ContentDAO:
             logger.exception(f"Database error when soft deleting platform {platform_id} for user {user_id}")
             raise Exception(f"Failed to soft delete platform association: {e}") from e
 
-    def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_author(self, user_id: int, author_id: int, commit: bool = False) -> tuple[bool, list[ContentDirectory]]:
         """
         Soft delete user's association with author and cascade to related parse results.
         Does NOT delete the author itself as it's shared among users.
@@ -863,10 +928,10 @@ class ContentDAO:
             commit: Whether to commit immediately (default: False)
 
         Returns:
-            Tuple of (success, list of media file paths to delete)
+            Tuple of (success, list of content directories to delete)
         """
         session = self._get_session()
-        all_file_paths = []
+        all_content_dirs: list[ContentDirectory] = []
 
         try:
             # Verify user-author association exists
@@ -879,7 +944,7 @@ class ContentDAO:
 
             if not user_author:
                 logger.warning(f"Author {author_id} not found or already deleted for user {user_id}")
-                return False, all_file_paths
+                return False, all_content_dirs
 
             # Get all parse result IDs for this author for this user
             stmt = (
@@ -900,8 +965,8 @@ class ContentDAO:
 
             # Soft delete each parse result association
             for pr_id in parse_result_ids:
-                _success, file_paths = self.delete_parse_result(user_id, pr_id, commit=False)
-                all_file_paths.extend(file_paths)
+                _success, content_dirs = self.delete_parse_result(user_id, pr_id, commit=False)
+                all_content_dirs.extend(content_dirs)
 
             # Soft delete user-author association
             user_author.deleted_at = datetime.now(UTC)
@@ -910,7 +975,7 @@ class ContentDAO:
             if commit:
                 session.commit()
 
-            return True, all_file_paths
+            return True, all_content_dirs
 
         except Exception as e:
             if commit:
@@ -918,11 +983,14 @@ class ContentDAO:
             logger.exception(f"Database error when soft deleting author {author_id} for user {user_id}")
             raise Exception(f"Failed to soft delete author association: {e}") from e
 
-    def delete_parse_result(self, user_id: int, parse_result_id: int, commit: bool = False) -> tuple[bool, list[str]]:
+    def delete_parse_result(
+        self, user_id: int, parse_result_id: int, commit: bool = False
+    ) -> tuple[bool, list[ContentDirectory]]:
         """
         Soft delete user's association with parse result.
-        Does NOT delete the parse result or media themselves as they're shared among users.
-        Only deletes media files if they become completely orphaned (no active associations).
+        The parse result itself is shared among users, so it is only soft-deleted
+        (and its media hard-deleted) once no other active user association remains.
+        Only deletes on-disk content directories if they become completely orphaned.
 
         Args:
             user_id: User ID performing the deletion
@@ -930,10 +998,10 @@ class ContentDAO:
             commit: Whether to commit immediately (default: False)
 
         Returns:
-            Tuple of (success, list of media file paths to delete)
+            Tuple of (success, list of content directories to delete)
         """
         session = self._get_session()
-        file_paths = []
+        content_dirs: list[ContentDirectory] = []
 
         try:
             # Verify user-parse_result association exists
@@ -948,8 +1016,16 @@ class ContentDAO:
                 logger.warning(f"Parse result {parse_result_id} not found or already deleted for user {user_id}")
                 raise ValueError(f"Parse result {parse_result_id} not found or already deleted")
 
-            # Get parse result to check media
-            result_orm = session.query(ParseResult).filter(ParseResult.id == parse_result_id).first()
+            # Get parse result (platform/author needed to resolve the content directory)
+            result_orm = (
+                session.query(ParseResult)
+                .options(
+                    selectinload(ParseResult.platform),
+                    selectinload(ParseResult.author),
+                )
+                .filter(ParseResult.id == parse_result_id)
+                .first()
+            )
 
             if not result_orm:
                 raise ValueError(f"Parse result {parse_result_id} not found")
@@ -962,48 +1038,25 @@ class ContentDAO:
             )
             other_users_count = session.execute(stmt).scalar()
 
-            # If parse result becomes orphaned, collect media paths and clean up
+            # If parse result becomes orphaned, collect content directory and clean up
             if other_users_count == 0:
-                logger.debug(f"Parse result {parse_result_id} will be orphaned, collecting media")
+                logger.debug(f"Parse result {parse_result_id} will be orphaned, scheduling content directory deletion")
 
-                # Get orphaned media IDs (only used by this parse result and not by other active results)
-                orphaned_media_ids = []
-                for prm in result_orm.media_list:
-                    media_id = prm.media_id
-                    # Check if this media is used by other parse results with active user associations
-                    count = (
-                        session.query(func.count(ParseResultMedia.parse_result_id))
-                        .join(ParseResult)
-                        .join(
-                            UserParseResult,
-                            (UserParseResult.parse_result_id == ParseResult.id)
-                            & (UserParseResult.deleted_at.is_(None)),
-                        )
-                        .filter(
-                            ParseResultMedia.media_id == media_id,
-                            ParseResult.deleted_at.is_(None),
-                            ParseResult.id != parse_result_id,
-                        )
-                        .scalar()
+                if result_orm.platform is None or result_orm.author is None:
+                    raise ValueError(f"Parse result {parse_result_id} is missing platform or author")
+
+                content_dirs.append(
+                    ContentDirectory(
+                        platform_code=result_orm.platform.code,
+                        author_uid=result_orm.author.uid,
+                        content_id=resolve_content_id(result_orm.pid, result_orm.url),
                     )
-                    if count == 0:  # Only used by this parse result
-                        orphaned_media_ids.append(media_id)
+                )
 
-                # Collect media paths ONLY for orphaned media
-                if orphaned_media_ids:
-                    orphaned_media = session.query(Media).filter(Media.id.in_(orphaned_media_ids)).all()
-                    for media in orphaned_media:
-                        if media.media_path:
-                            file_paths.append(media.media_path)
-                        if media.cover_path:
-                            file_paths.append(media.cover_path)
-
-                # Hard delete orphaned media and associations
-                session.query(ParseResultMedia).filter(ParseResultMedia.parse_result_id == parse_result_id).delete()
-
-                if orphaned_media_ids:
-                    session.query(Media).filter(Media.id.in_(orphaned_media_ids)).delete()
-                    logger.debug(f"Hard deleted {len(orphaned_media_ids)} orphaned media records")
+                # Media is owned by this parse result (one-to-many); hard delete its rows.
+                deleted_media = session.query(Media).filter(Media.parse_result_id == parse_result_id).delete()
+                if deleted_media:
+                    logger.debug(f"Hard deleted {deleted_media} media records for parse result {parse_result_id}")
 
                 # Also soft delete the parse result itself if it's orphaned
                 result_orm.deleted_at = datetime.now(UTC)
@@ -1015,7 +1068,7 @@ class ContentDAO:
             if commit:
                 session.commit()
 
-            return True, file_paths
+            return True, content_dirs
 
         except Exception:
             if commit:

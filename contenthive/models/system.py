@@ -21,6 +21,7 @@ class HealthResponse(APIBaseModel):
     app: str = Field(..., description="Application name")
     version: str = Field(..., description="Application version")
     plugin_updates_available: bool = Field(..., description="Whether any installed plugin has an update available")
+    setup_required: bool = Field(..., description="Whether initial admin setup is still required")
 
 
 class StorageItemInfo(APIBaseModel):
@@ -87,7 +88,10 @@ class PluginItemStorageInfo(APIBaseModel):
 class PluginStorageInfo(APIBaseModel):
     """Storage usage for plugins and their dependencies"""
 
-    plugins_size_bytes: int = Field(..., description="Total plugin directory size in bytes (including non-plugin files)")
+    plugins_size_bytes: int = Field(
+        ...,
+        description="Total plugin directory size in bytes (including non-plugin files)",
+    )
     plugins_size_human: str = Field(..., description="Human-readable total plugin directory size")
     by_plugin: dict[str, PluginItemStorageInfo] = Field(..., description="Per-plugin code size breakdown")
     dependencies_size_bytes: int = Field(..., description="Installed dependencies size in bytes")

@@ -34,6 +34,8 @@ COPY contenthive ./contenthive
 COPY alembic ./alembic
 COPY alembic.ini .
 
+RUN uv sync --frozen --no-dev
+
 COPY entrypoint /entrypoint
 RUN chmod +x /entrypoint
 

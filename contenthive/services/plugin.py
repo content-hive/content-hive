@@ -3,13 +3,12 @@ Plugin management service.
 """
 
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Any
 
 from packaging.version import InvalidVersion
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from contenthive.config import settings
+from contenthive.core.setting_schema import schema_class_to_setting_items, validate_partial_config
 from contenthive.logger import logger
 from contenthive.models.api import OperationResult
 from contenthive.models.enumerates import OperationType
@@ -23,8 +22,6 @@ from contenthive.models.plugin import (
     PluginListResponse,
     PluginUpdateInfo,
     ReloadResponse,
-    SettingFieldType,
-    SettingItem,
     UpdatePluginConfigRequest,
     UpdatePluginConfigResponse,
     UpdatePluginsResponse,
@@ -36,7 +33,6 @@ from contenthive.plugins.config import (
     remove_plugin_config,
     set_plugin_field,
 )
-from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import (
     PluginEntryData,
@@ -45,13 +41,7 @@ from contenthive.plugins.manager import (
     is_plugin_update_available,
 )
 from contenthive.plugins.registry import PluginState
-
-_PYTHON_TYPE_TO_FIELD_TYPE: dict[type, SettingFieldType] = {
-    str: SettingFieldType.STRING,
-    int: SettingFieldType.INTEGER,
-    float: SettingFieldType.FLOAT,
-    bool: SettingFieldType.BOOLEAN,
-}
+from contenthive.settings.store import get_settings
 
 
 class ConfigValidationError(Exception):
@@ -60,119 +50,6 @@ class ConfigValidationError(Exception):
     def __init__(self, errors: list[str]):
         self.errors = errors
         super().__init__("; ".join(errors))
-
-
-def _schema_class_to_setting_items(schema_cls: type, config_obj: PluginConfigSchema) -> list[SettingItem]:
-    """Convert a PluginConfigSchema class + current config object into SettingItem list."""
-    items: list[SettingItem] = []
-    for field_name, field_info in schema_cls.model_fields.items():
-        annotation = field_info.annotation
-
-        # Determine type and options
-        if isinstance(annotation, type) and issubclass(annotation, Enum):
-            field_type = SettingFieldType.ENUM
-            options = [e.value for e in annotation]
-        else:
-            field_type = _PYTHON_TYPE_TO_FIELD_TYPE.get(annotation, SettingFieldType.STRING)
-            options = None
-
-        # label: use title if set, fallback to field name
-        label = field_info.title or field_name
-
-        # secret: from json_schema_extra
-        extra = field_info.json_schema_extra or {}
-        secret = bool(extra.get("secret", False))
-
-        required = field_info.is_required()
-
-        # default value: None for required fields or factory-based defaults
-        default = None if required or field_info.default_factory is not None else field_info.default
-        if isinstance(default, Enum):
-            default = default.value
-
-        # Current value from config object
-        raw_value = getattr(config_obj, field_name, None)
-        if isinstance(raw_value, Enum):
-            raw_value = raw_value.value
-
-        items.append(
-            SettingItem(
-                key=field_name,
-                type=field_type,
-                label=label,
-                description=field_info.description,
-                required=required,
-                secret=secret,
-                default=default,
-                options=options,
-                value=raw_value,
-            )
-        )
-    return items
-
-
-def _validate_partial_config(
-    schema_cls: type,
-    incoming: dict[str, Any],
-    stored: dict[str, Any] | None = None,
-) -> list[str]:
-    """
-    Validate a partial config dict against a PluginConfigSchema class.
-
-    Rules:
-    - Framework-reserved keys are always rejected.
-    - Keys not declared in the schema are silently ignored (not validated).
-    - Declared keys present in `incoming` are type-checked with strict=True.
-    - Required fields must be present in `incoming` OR already covered by `stored`
-      (the currently persisted config). This allows true partial updates where only
-      a subset of fields is sent.
-
-    Args:
-        schema_cls: The PluginConfigSchema subclass to validate against.
-        incoming: The raw dict from the request body.
-        stored: Optional dict of the currently persisted config values. When
-            provided, required fields already present there are not re-required
-            in `incoming`.
-
-    Returns a list of error strings. Empty list means valid.
-    """
-    errors: list[str] = []
-
-    # 1. Reject framework-reserved keys
-    for key in incoming:
-        if key in FRAMEWORK_KEYS:
-            errors.append(f"Key '{key}' is reserved by the framework and cannot be set via API")
-
-    declared_fields = schema_cls.model_fields
-
-    # 2. Type-check declared keys that are present in incoming
-    for key, value in incoming.items():
-        if key in FRAMEWORK_KEYS or key not in declared_fields:
-            continue
-        field_info = declared_fields[key]
-        annotation = field_info.annotation
-        if isinstance(annotation, type) and issubclass(annotation, Enum):
-            # Enum: check that value is a string matching one of the enum member values
-            valid_values = [e.value for e in annotation]
-            if value not in valid_values:
-                errors.append(f"Key '{key}': '{value}' is not a valid option, must be one of {valid_values}")
-        else:
-            try:
-                TypeAdapter(annotation).validate_python(value, strict=True)
-            except Exception:
-                expected = getattr(annotation, "__name__", str(annotation))
-                actual = type(value).__name__
-                errors.append(f"Key '{key}': expected {expected}, got {actual} ({value!r})")
-
-    # 3. Check required fields: satisfied when present in incoming OR in stored config
-    satisfied = {k for k in incoming if k in declared_fields}
-    if stored:
-        satisfied |= {k for k in stored if k in declared_fields}
-    for field_name, field_info in declared_fields.items():
-        if field_info.is_required() and field_name not in satisfied:
-            errors.append(f"Required field '{field_name}' is missing")
-
-    return errors
 
 
 def _get_plugin_manager() -> PluginManager:
@@ -254,9 +131,10 @@ class PluginService:
         """
         plugin_manager = _get_plugin_manager()
 
+        app_settings = get_settings()
         update_results = await plugin_manager.async_check_updates(
-            repo_url=settings.plugins_repo_url,
-            ref=settings.plugins_repo_ref,
+            repo_url=app_settings.plugins.repo_url,
+            ref=app_settings.plugins.repo_ref,
         )
 
         plugins_info: dict[str, PluginUpdateInfo] = {}
@@ -300,10 +178,11 @@ class PluginService:
         selected = domains if domains else None
 
         downloader = GitHubPluginDownloader(settings.plugins_dir)
+        app_settings = get_settings()
         download_results = await downloader.download_plugins(
-            repo_url=settings.plugins_repo_url,
-            ref=settings.plugins_repo_ref,
-            ref_type=settings.plugins_repo_ref_type,
+            repo_url=app_settings.plugins.repo_url,
+            ref=app_settings.plugins.repo_ref,
+            ref_type=app_settings.plugins.repo_ref_type,
             selected_plugins=selected,
             force_reinstall=True,
         )
@@ -356,9 +235,10 @@ class PluginService:
         plugin_manager = get_plugin_manager()
 
         downloader = GitHubPluginDownloader(settings.plugins_dir)
+        app_settings = get_settings()
         remote_manifest = await downloader.fetch_remote_manifest(
-            repo_url=settings.plugins_repo_url,
-            ref=settings.plugins_repo_ref,
+            repo_url=app_settings.plugins.repo_url,
+            ref=app_settings.plugins.repo_ref,
         )
         if remote_manifest is None:
             raise RuntimeError("Failed to fetch remote plugins manifest")
@@ -560,7 +440,7 @@ class PluginService:
             ) from e
         return PluginConfigResponse(
             domain=domain,
-            settings=_schema_class_to_setting_items(schema_cls, config_obj),
+            settings=schema_class_to_setting_items(schema_cls, config_obj),
         )
 
     def update_plugin_settings(self, domain: str, body: UpdatePluginConfigRequest) -> UpdatePluginConfigResponse:
@@ -608,7 +488,9 @@ class PluginService:
                     for err in e.errors()
                 ]
             ) from e
-        errors = _validate_partial_config(schema_cls, body.config, stored=current.model_dump())
+        errors = validate_partial_config(
+            schema_cls, body.config, stored=current.model_dump(), reserved_keys=FRAMEWORK_KEYS
+        )
         if errors:
             raise ConfigValidationError(errors)
 
@@ -619,7 +501,7 @@ class PluginService:
 
         return UpdatePluginConfigResponse(
             domain=domain,
-            settings=_schema_class_to_setting_items(schema_cls, updated),
+            settings=schema_class_to_setting_items(schema_cls, updated),
         )
 
 

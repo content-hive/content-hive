@@ -19,6 +19,7 @@ from contenthive.models.content import (
 from contenthive.plugins.contracts import ParserResult
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.services.media import media_service
+from contenthive.utils.content import ContentDirectory
 
 
 class ContentService:
@@ -31,6 +32,39 @@ class ContentService:
         Initialize the ParserService.
         """
         pass
+
+    def _delete_content_directories(self, content_dirs: list[ContentDirectory]) -> tuple[int, int]:
+        """
+        Delete unique content directories from disk.
+
+        Args:
+            content_dirs: Content directory references returned by ContentDAO delete methods
+
+        Returns:
+            Tuple of (deleted_count, failed_count)
+        """
+        if not content_dirs:
+            return 0, 0
+
+        seen: set[tuple[str, str, str]] = set()
+        deleted_count = 0
+        failed_count = 0
+
+        for ref in content_dirs:
+            key = (ref.platform_code, ref.author_uid, ref.content_id)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            if media_service.delete_content_directory(ref.platform_code, ref.author_uid, ref.content_id):
+                deleted_count += 1
+            else:
+                failed_count += 1
+
+        if deleted_count > 0 or failed_count > 0:
+            logger.info(f"Content directory cleanup: {deleted_count} deleted, {failed_count} failed")
+
+        return deleted_count, failed_count
 
     async def _find_parser_for_url(self, url: str, preferred_domain: str | None = None) -> str | None:
         """
@@ -251,12 +285,13 @@ class ContentService:
         """
         try:
             with ContentDAO() as dao:
-                success, file_paths = dao.delete_platform(user_id, platform_id, commit=True)
+                success, content_dirs = dao.delete_platform(user_id, platform_id, commit=True)
 
-            if success and file_paths:
-                deleted, failed = media_service.delete_media_files(file_paths)
+            if success and content_dirs:
+                deleted, failed = self._delete_content_directories(content_dirs)
                 logger.info(
-                    f"Deleted platform {platform_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)"
+                    f"Deleted platform {platform_id}: {len(content_dirs)} directories"
+                    f" ({deleted} deleted, {failed} failed)"
                 )
 
             return success
@@ -277,11 +312,13 @@ class ContentService:
         """
         try:
             with ContentDAO() as dao:
-                success, file_paths = dao.delete_author(user_id, author_id, commit=True)
+                success, content_dirs = dao.delete_author(user_id, author_id, commit=True)
 
-            if success and file_paths:
-                deleted, failed = media_service.delete_media_files(file_paths)
-                logger.info(f"Deleted author {author_id}: {len(file_paths)} files ({deleted} deleted, {failed} failed)")
+            if success and content_dirs:
+                deleted, failed = self._delete_content_directories(content_dirs)
+                logger.info(
+                    f"Deleted author {author_id}: {len(content_dirs)} directories ({deleted} deleted, {failed} failed)"
+                )
 
             return success
         except Exception:
@@ -301,12 +338,12 @@ class ContentService:
         """
         try:
             with ContentDAO() as dao:
-                success, file_paths = dao.delete_parse_result(user_id, parse_result_id, commit=True)
+                success, content_dirs = dao.delete_parse_result(user_id, parse_result_id, commit=True)
 
-            if success and file_paths:
-                deleted, failed = media_service.delete_media_files(file_paths)
+            if success and content_dirs:
+                deleted, failed = self._delete_content_directories(content_dirs)
                 logger.info(
-                    f"Deleted parse result {parse_result_id}: {len(file_paths)} files"
+                    f"Deleted parse result {parse_result_id}: {len(content_dirs)} directories"
                     f" ({deleted} deleted, {failed} failed)"
                 )
 

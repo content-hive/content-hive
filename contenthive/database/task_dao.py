@@ -493,9 +493,7 @@ class TaskDAO:
 
             if cursor_id is not None and cursor_value is not None:
                 if sort_by == "id":
-                    keyset_cond = (
-                        MainTask.id < cursor_id if order == "desc" else MainTask.id > cursor_id
-                    )
+                    keyset_cond = MainTask.id < cursor_id if order == "desc" else MainTask.id > cursor_id
                 else:
                     if order == "desc":
                         keyset_cond = or_(
