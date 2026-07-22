@@ -4,15 +4,40 @@ Models for content-related operations.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from contenthive.database.orm_models import Author, Media, ParseResult, Platform
+from contenthive.database.orm_models import Author, Media, ParseResult, Platform, Tag
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import MediaStatus, MediaType, ParserResultStatus
 from contenthive.utils.sidecar import SIDECAR_SCHEMA_VERSION
 
 # Database Models
+
+
+@dataclass
+class TagEntity:
+    """Tag database entity (per-user vocabulary)"""
+
+    id: int | None = None
+    user_id: int = 0
+    name: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    deleted_at: datetime | None = None
+
+    @classmethod
+    def from_orm(cls, orm: Tag) -> "TagEntity":
+        """Convert ORM Tag object to entity"""
+        return cls(
+            id=orm.id,
+            user_id=orm.user_id,
+            name=orm.name,
+            created_at=orm.created_at,
+            updated_at=orm.updated_at,
+            deleted_at=orm.deleted_at,
+        )
 
 
 @dataclass
@@ -63,9 +88,11 @@ class AuthorEntity:
     deleted_at: datetime | None = None
 
     platform: PlatformEntity = field(default_factory=PlatformEntity)
+    # Per-user tags resolved for the requesting user (not stored on authors)
+    tags: list[TagEntity] = field(default_factory=list)
 
     @classmethod
-    def from_orm(cls, orm: Author) -> "AuthorEntity":
+    def from_orm(cls, orm: Author, tags: list[TagEntity] | None = None) -> "AuthorEntity":
         """Convert ORM Author object to entity"""
 
         if orm.platform is None:
@@ -88,6 +115,7 @@ class AuthorEntity:
             updated_at=orm.updated_at,
             deleted_at=orm.deleted_at,
             platform=PlatformEntity.from_orm(orm.platform),
+            tags=tags or [],
         )
 
 
@@ -111,9 +139,11 @@ class MediaEntity:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     deleted_at: datetime | None = None
+    # Per-user tags resolved for the requesting user (not stored on media)
+    tags: list[TagEntity] = field(default_factory=list)
 
     @classmethod
-    def from_orm(cls, orm: Media) -> "MediaEntity":
+    def from_orm(cls, orm: Media, tags: list[TagEntity] | None = None) -> "MediaEntity":
         """Convert ORM Media object to entity"""
         return cls(
             id=orm.id,
@@ -132,6 +162,7 @@ class MediaEntity:
             created_at=orm.created_at,
             updated_at=orm.updated_at,
             deleted_at=orm.deleted_at,
+            tags=tags or [],
         )
 
 
@@ -157,9 +188,11 @@ class ParseResultEntity:
     author: AuthorEntity = field(default_factory=AuthorEntity)
     platform: PlatformEntity = field(default_factory=PlatformEntity)
     media: list[MediaEntity] = field(default_factory=list)
+    # Per-user tags resolved for the requesting user (not stored on parse_results)
+    tags: list[TagEntity] = field(default_factory=list)
 
     @classmethod
-    def from_orm(cls, orm: ParseResult) -> "ParseResultEntity":
+    def from_orm(cls, orm: ParseResult, tags: list[TagEntity] | None = None) -> "ParseResultEntity":
         """Convert ORM ParseResult object to entity"""
 
         if orm.author is None:
@@ -185,6 +218,7 @@ class ParseResultEntity:
             author=AuthorEntity.from_orm(orm.author),
             platform=PlatformEntity.from_orm(orm.platform),
             media=[MediaEntity.from_orm(m) for m in orm.media] if orm.media else [],
+            tags=tags or [],
         )
 
 
@@ -350,6 +384,52 @@ class DownloadedMediaInfo(BaseModel):
     cover_path: str | None = Field(None, description="Local cover file path")
 
 
+# API Request / Tag Models
+
+
+class TagInfo(APIBaseModel):
+    """Tag information returned by the API"""
+
+    id: int = Field(..., description="Tag ID")
+    name: str = Field(..., description="Tag name")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+
+    @classmethod
+    def from_entity(cls, entity: TagEntity) -> "TagInfo":
+        """Create TagInfo from TagEntity"""
+        return cls(
+            id=entity.id if entity.id else 0,
+            name=entity.name,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+        )
+
+
+class CreateTagRequest(APIBaseModel):
+    """Create a tag in the user's vocabulary (does not attach to content)"""
+
+    name: str = Field(..., min_length=1, description="Tag name")
+
+
+class UpdateTagRequest(APIBaseModel):
+    """Rename a tag"""
+
+    name: str = Field(..., min_length=1, description="New tag name")
+
+
+class TagAssignmentRequest(APIBaseModel):
+    """Assign tags to content, media, or author (upsert by name for replace/add)"""
+
+    target: Literal["content", "media", "author"] = Field(
+        ...,
+        description="Assignment target type",
+    )
+    id: int = Field(..., description="Target ID (parse_result_id, media_id, or author_id)")
+    names: list[str] = Field(default_factory=list, description="Tag names (upserted for replace/add)")
+    tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to remove (delete mode)")
+
+
 # API Response Models
 
 
@@ -396,6 +476,7 @@ class MediaInfo(APIBaseModel):
     cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
     media_path: str | None = Field(None, description="Local media file path")
     cover_path: str | None = Field(None, description="Local cover file path")
+    tags: list[TagInfo] = Field(default_factory=list, description="Per-user tags on this media item")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
     deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
@@ -417,6 +498,7 @@ class MediaInfo(APIBaseModel):
             cover_fallbacks=entity.cover_fallbacks,  # type: ignore
             media_path=entity.media_path,
             cover_path=entity.cover_path,
+            tags=[TagInfo.from_entity(tag) for tag in entity.tags],
             created_at=entity.created_at,
             updated_at=entity.updated_at,
             deleted_at=entity.deleted_at,
@@ -464,6 +546,7 @@ class AuthorInfo(APIBaseModel):
     banner_path: str | None = Field(None, description="Local banner path served under /media")
     description: str | None = Field(None, description="Author description")
     platform: PlatformInfo = Field(..., description="Platform information")
+    tags: list[TagInfo] = Field(default_factory=list, description="Per-user tags on this author")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
     deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
@@ -483,6 +566,7 @@ class AuthorInfo(APIBaseModel):
             banner_path=entity.banner_path,
             description=entity.description,
             platform=PlatformInfo.from_entity(entity.platform),
+            tags=[TagInfo.from_entity(tag) for tag in entity.tags],
             created_at=entity.created_at,
             updated_at=entity.updated_at,
             deleted_at=entity.deleted_at,
@@ -503,6 +587,7 @@ class URLParserResult(APIBaseModel):
     post_time: int | None = Field(None, description="Post timestamp in seconds since epoch")
     parser: str = Field(..., description="Parser type used")
     state: ParserResultStatus = Field(..., description="Parsing state")
+    tags: list[TagInfo] = Field(default_factory=list, description="Per-user tags on this content")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
     deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
@@ -522,6 +607,7 @@ class URLParserResult(APIBaseModel):
             post_time=entity.post_time,
             parser=entity.parser,
             state=entity.state,
+            tags=[TagInfo.from_entity(tag) for tag in entity.tags],
             created_at=entity.created_at,
             updated_at=entity.updated_at,
             deleted_at=entity.deleted_at,
