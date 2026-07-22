@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Integer, cast, column, exists, func, or_, select
+from sqlalchemy import Integer, cast, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -1702,7 +1702,9 @@ class ContentDAO:
                 func.json_each(UserParseResult.tags).table_valued("value").alias("include_content_tags")
             )
             content_has_tag = exists(
-                select(1).select_from(content_tag_values).where(cast(column("value"), Integer) == tag_id)
+                select(1)
+                .select_from(content_tag_values)
+                .where(cast(content_tag_values.c.value, Integer) == tag_id)
             )
             media_tag_values = func.json_each(UserMedia.tags).table_valued("value").alias("include_media_tags")
             media_has_tag = exists(
@@ -1710,10 +1712,15 @@ class ContentDAO:
                 .select_from(Media)
                 .join(
                     UserMedia,
-                    (UserMedia.media_id == Media.id) & (UserMedia.user_id == UserParseResult.user_id),
+                    (UserMedia.media_id == Media.id)
+                    & (UserMedia.user_id == UserParseResult.user_id)
+                    & (UserMedia.deleted_at.is_(None)),
                 )
                 .join(media_tag_values, cast(media_tag_values.c.value, Integer) == tag_id)
-                .where(Media.parse_result_id == ParseResult.id)
+                .where(
+                    Media.parse_result_id == ParseResult.id,
+                    Media.deleted_at.is_(None),
+                )
             )
             author_tag_values = func.json_each(UserAuthor.tags).table_valued("value").alias("include_author_tags")
             author_has_tag = exists(
@@ -1733,7 +1740,9 @@ class ContentDAO:
                 func.json_each(UserParseResult.tags).table_valued("value").alias("exclude_content_tags")
             )
             content_has_tag = exists(
-                select(1).select_from(content_tag_values).where(cast(column("value"), Integer) == exclude_tag_id)
+                select(1)
+                .select_from(content_tag_values)
+                .where(cast(content_tag_values.c.value, Integer) == exclude_tag_id)
             )
             media_tag_values = func.json_each(UserMedia.tags).table_valued("value").alias("exclude_media_tags")
             media_has_tag = exists(
@@ -1741,10 +1750,15 @@ class ContentDAO:
                 .select_from(Media)
                 .join(
                     UserMedia,
-                    (UserMedia.media_id == Media.id) & (UserMedia.user_id == UserParseResult.user_id),
+                    (UserMedia.media_id == Media.id)
+                    & (UserMedia.user_id == UserParseResult.user_id)
+                    & (UserMedia.deleted_at.is_(None)),
                 )
                 .join(media_tag_values, cast(media_tag_values.c.value, Integer) == exclude_tag_id)
-                .where(Media.parse_result_id == ParseResult.id)
+                .where(
+                    Media.parse_result_id == ParseResult.id,
+                    Media.deleted_at.is_(None),
+                )
             )
             author_tag_values = func.json_each(UserAuthor.tags).table_valued("value").alias("exclude_author_tags")
             author_has_tag = exists(
@@ -1767,13 +1781,19 @@ class ContentDAO:
         if tag_id is not None:
             author_tag_values = func.json_each(UserAuthor.tags).table_valued("value").alias("list_include_author_tags")
             query = query.where(
-                exists(select(1).select_from(author_tag_values).where(cast(column("value"), Integer) == tag_id))
+                exists(
+                    select(1)
+                    .select_from(author_tag_values)
+                    .where(cast(author_tag_values.c.value, Integer) == tag_id)
+                )
             )
         if exclude_tag_id is not None:
             author_tag_values = func.json_each(UserAuthor.tags).table_valued("value").alias("list_exclude_author_tags")
             query = query.where(
                 ~exists(
-                    select(1).select_from(author_tag_values).where(cast(column("value"), Integer) == exclude_tag_id)
+                    select(1)
+                    .select_from(author_tag_values)
+                    .where(cast(author_tag_values.c.value, Integer) == exclude_tag_id)
                 )
             )
         return query
