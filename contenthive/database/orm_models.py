@@ -271,7 +271,7 @@ class UserAuthor(Base, TimestampMixin):
         nullable=False,
     )
     # Per-user tag IDs referencing the tags table (JSON list of ints).
-    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    tags: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
 
 class UserParseResult(Base, TimestampMixin):
@@ -290,7 +290,7 @@ class UserParseResult(Base, TimestampMixin):
         nullable=False,
     )
     # Per-user tag IDs referencing the tags table (JSON list of ints).
-    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    tags: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
 
 class UserMedia(Base, TimestampMixin):
@@ -309,7 +309,7 @@ class UserMedia(Base, TimestampMixin):
         nullable=False,
     )
     # Per-user tag IDs referencing the tags table (JSON list of ints).
-    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    tags: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
 
 class MainTask(Base, TimestampMixin):

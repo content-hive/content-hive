@@ -427,7 +427,7 @@ class TagAssignmentRequest(APIBaseModel):
     )
     id: int = Field(..., description="Target ID (parse_result_id, media_id, or author_id)")
     names: list[str] = Field(default_factory=list, description="Tag names (upserted for replace/add)")
-    tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to remove (delete mode)")
+    tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to remove (remove mode)")
 
 
 # API Response Models
