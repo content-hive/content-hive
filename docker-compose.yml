@@ -9,6 +9,7 @@ services:
       - "6123:6123"
     volumes:
       - ./runtime-data:/config
+      - ../plugins:/config/plugins
     environment:
       - TZ=Asia/Shanghai
     restart: unless-stopped

@@ -14,6 +14,7 @@ from contenthive.models.content import (
     PaginationInfo,
     PlatformInfo,
     SyncResponse,
+    TagInfo,
     URLParserResult,
 )
 from contenthive.plugins.contracts import ParserResult
@@ -139,6 +140,8 @@ class ContentService:
         user_id: int,
         platform_id: int | None = None,
         author_id: int | None = None,
+        tag_id: int | None = None,
+        exclude_tag_id: int | None = None,
         page: int = 1,
         page_size: int = 10,
         sort_by: str = "created_at",
@@ -151,6 +154,8 @@ class ContentService:
             user_id: User ID to filter contents
             platform_id: Filter by platform ID
             author_id: Filter by author ID
+            tag_id: Only include contents with this tag ID
+            exclude_tag_id: Exclude contents with this tag ID
             page: Page number (starting from 1)
             page_size: Number of items per page
             sort_by: Field to sort by
@@ -166,6 +171,8 @@ class ContentService:
                     user_id=user_id,
                     platform_id=platform_id,
                     author_id=author_id,
+                    tag_id=tag_id,
+                    exclude_tag_id=exclude_tag_id,
                     limit=page_size,
                     offset=offset,
                     sort_by=sort_by,
@@ -181,6 +188,120 @@ class ContentService:
             )
         except Exception:
             logger.exception("Error fetching contents from the database")
+            raise
+
+    async def list_tags(self, user_id: int) -> list[TagInfo]:
+        """
+        List tags in the user's vocabulary.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of TagInfo
+        """
+        try:
+            with ContentDAO() as dao:
+                tags = dao.list_tags(user_id)
+            return [TagInfo.from_entity(tag) for tag in tags]
+        except Exception:
+            logger.exception(f"Error listing tags for user {user_id}")
+            raise
+
+    async def create_tag(self, user_id: int, name: str) -> TagInfo:
+        """
+        Create a tag in the user's vocabulary without attaching it to content.
+
+        Args:
+            user_id: User ID
+            name: Tag name
+
+        Returns:
+            Created TagInfo
+        """
+        try:
+            with ContentDAO() as dao:
+                tag = dao.create_tag(user_id, name, commit=True)
+            return TagInfo.from_entity(tag)
+        except Exception:
+            logger.exception(f"Error creating tag for user {user_id}")
+            raise
+
+    async def rename_tag(self, user_id: int, tag_id: int, name: str) -> TagInfo | None:
+        """
+        Rename a tag in the user's vocabulary.
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            name: New tag name
+
+        Returns:
+            Updated TagInfo, or None if not found
+        """
+        try:
+            with ContentDAO() as dao:
+                tag = dao.rename_tag(user_id, tag_id, name, commit=True)
+            return TagInfo.from_entity(tag) if tag else None
+        except Exception:
+            logger.exception(f"Error renaming tag {tag_id} for user {user_id}")
+            raise
+
+    async def delete_tag(self, user_id: int, tag_id: int) -> bool:
+        """
+        Delete a tag and remove it from all of the user's content.
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+
+        Returns:
+            True if deleted
+        """
+        try:
+            with ContentDAO() as dao:
+                return dao.delete_tag(user_id, tag_id, commit=True)
+        except Exception:
+            logger.exception(f"Error deleting tag {tag_id} for user {user_id}")
+            raise
+
+    async def assign_tags(
+        self,
+        user_id: int,
+        target: str,
+        target_id: int,
+        mode: str,
+        names: list[str] | None = None,
+        tag_ids: list[int] | None = None,
+    ) -> list[TagInfo] | None:
+        """
+        Assign tags to content, media, or author.
+
+        Args:
+            user_id: User ID
+            target: content, media, or author
+            target_id: Target resource ID
+            mode: replace, add, or remove
+            names: Tag names
+            tag_ids: Tag IDs (remove mode)
+
+        Returns:
+            Resulting tags, or None if target not found / not accessible
+        """
+        try:
+            with ContentDAO() as dao:
+                tags = dao.apply_tag_assignment(
+                    user_id=user_id,
+                    target=target,
+                    target_id=target_id,
+                    mode=mode,
+                    names=names,
+                    tag_ids=tag_ids,
+                    commit=True,
+                )
+            return [TagInfo.from_entity(tag) for tag in tags] if tags is not None else None
+        except Exception:
+            logger.exception(f"Error assigning tags to {target} {target_id} (mode={mode})")
             raise
 
     async def list_platforms(
@@ -230,6 +351,8 @@ class ContentService:
         self,
         user_id: int,
         platform_id: int | None = None,
+        tag_id: int | None = None,
+        exclude_tag_id: int | None = None,
         page: int = 1,
         page_size: int = 10,
         sort_by: str = "id",
@@ -241,6 +364,8 @@ class ContentService:
         Args:
             user_id: User ID to filter authors
             platform_id: Filter by platform ID
+            tag_id: Only include authors with this tag ID
+            exclude_tag_id: Exclude authors with this tag ID
             page: Page number (starting from 1)
             page_size: Number of items per page
             sort_by: Field to sort by
@@ -255,6 +380,8 @@ class ContentService:
                 authors, total = dao.list_authors(
                     user_id=user_id,
                     platform_id=platform_id,
+                    tag_id=tag_id,
+                    exclude_tag_id=exclude_tag_id,
                     limit=page_size,
                     offset=offset,
                     sort_by=sort_by,
