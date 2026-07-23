@@ -1101,12 +1101,13 @@ class ContentDAO:
 
         current_ids = list(association.tags or [])
         new_ids = [tid for tid in current_ids if tid not in remove_ids]
-        association.tags = new_ids
-        flag_modified(association, "tags")
-        association.updated_at = datetime.now(UTC)
-        session.flush()
-        if commit:
-            session.commit()
+        if new_ids != current_ids:
+            association.tags = new_ids
+            flag_modified(association, "tags")
+            association.updated_at = datetime.now(UTC)
+            session.flush()
+            if commit:
+                session.commit()
 
         return self._resolve_tags_for_ids(user_id, new_ids)
 
@@ -1186,12 +1187,13 @@ class ContentDAO:
 
         current_ids = list(user_media.tags or [])
         new_ids = [tid for tid in current_ids if tid not in remove_ids]
-        user_media.tags = new_ids
-        flag_modified(user_media, "tags")
-        user_media.updated_at = datetime.now(UTC)
-        session.flush()
-        if commit:
-            session.commit()
+        if new_ids != current_ids:
+            user_media.tags = new_ids
+            flag_modified(user_media, "tags")
+            user_media.updated_at = datetime.now(UTC)
+            session.flush()
+            if commit:
+                session.commit()
 
         return self._resolve_tags_for_ids(user_id, new_ids)
 
@@ -1270,12 +1272,13 @@ class ContentDAO:
 
         current_ids = list(association.tags or [])
         new_ids = [tid for tid in current_ids if tid not in remove_ids]
-        association.tags = new_ids
-        flag_modified(association, "tags")
-        association.updated_at = datetime.now(UTC)
-        session.flush()
-        if commit:
-            session.commit()
+        if new_ids != current_ids:
+            association.tags = new_ids
+            flag_modified(association, "tags")
+            association.updated_at = datetime.now(UTC)
+            session.flush()
+            if commit:
+                session.commit()
 
         return self._resolve_tags_for_ids(user_id, new_ids)
 
@@ -1339,21 +1342,23 @@ class ContentDAO:
 
         tag_entities = self.get_or_create_tags_by_names(user_id, names, commit=False)
         new_ids = [tag.id for tag in tag_entities if tag.id is not None]
+        current_ids = list(association.tags or [])
 
         if mode == "replace":
-            association.tags = new_ids
+            target_ids = new_ids
         else:
-            current_ids = list(association.tags or [])
             seen = set(current_ids)
-            merged = list(current_ids)
+            target_ids = list(current_ids)
             for tag_id in new_ids:
                 if tag_id not in seen:
-                    merged.append(tag_id)
+                    target_ids.append(tag_id)
                     seen.add(tag_id)
-            association.tags = merged
 
-        flag_modified(association, "tags")
-        association.updated_at = datetime.now(UTC)
+        if target_ids != current_ids:
+            association.tags = target_ids
+            flag_modified(association, "tags")
+            association.updated_at = datetime.now(UTC)
+
         session.flush()
         if commit:
             session.commit()
@@ -1379,21 +1384,23 @@ class ContentDAO:
 
         tag_entities = self.get_or_create_tags_by_names(user_id, names, commit=False)
         new_ids = [tag.id for tag in tag_entities if tag.id is not None]
+        current_ids = list(user_media.tags or [])
 
         if mode == "replace":
-            user_media.tags = new_ids
+            target_ids = new_ids
         else:
-            current_ids = list(user_media.tags or [])
             seen = set(current_ids)
-            merged = list(current_ids)
+            target_ids = list(current_ids)
             for tag_id in new_ids:
                 if tag_id not in seen:
-                    merged.append(tag_id)
+                    target_ids.append(tag_id)
                     seen.add(tag_id)
-            user_media.tags = merged
 
-        flag_modified(user_media, "tags")
-        user_media.updated_at = datetime.now(UTC)
+        if target_ids != current_ids:
+            user_media.tags = target_ids
+            flag_modified(user_media, "tags")
+            user_media.updated_at = datetime.now(UTC)
+
         session.flush()
         if commit:
             session.commit()
@@ -1416,21 +1423,23 @@ class ContentDAO:
 
         tag_entities = self.get_or_create_tags_by_names(user_id, names, commit=False)
         new_ids = [tag.id for tag in tag_entities if tag.id is not None]
+        current_ids = list(association.tags or [])
 
         if mode == "replace":
-            association.tags = new_ids
+            target_ids = new_ids
         else:
-            current_ids = list(association.tags or [])
             seen = set(current_ids)
-            merged = list(current_ids)
+            target_ids = list(current_ids)
             for tag_id in new_ids:
                 if tag_id not in seen:
-                    merged.append(tag_id)
+                    target_ids.append(tag_id)
                     seen.add(tag_id)
-            association.tags = merged
 
-        flag_modified(association, "tags")
-        association.updated_at = datetime.now(UTC)
+        if target_ids != current_ids:
+            association.tags = target_ids
+            flag_modified(association, "tags")
+            association.updated_at = datetime.now(UTC)
+
         session.flush()
         if commit:
             session.commit()
@@ -1453,13 +1462,17 @@ class ContentDAO:
         return session.execute(stmt).scalar_one_or_none() is not None
 
     def _get_or_create_user_media(self, user_id: int, media_id: int, create: bool) -> UserMedia | None:
-        """Get UserMedia row, optionally creating it when the user can access the media."""
+        """Get UserMedia row, optionally creating/reviving it when the user can access the media."""
         session = self._get_session()
         user_media = session.execute(
             select(UserMedia).where(UserMedia.user_id == user_id, UserMedia.media_id == media_id)
         ).scalar_one_or_none()
         if user_media is not None:
             if user_media.deleted_at is not None:
+                # Only revive soft-deleted rows when create=True (replace/add).
+                # create=False callers (e.g. remove) must not resurrect old tags.
+                if not create:
+                    return None
                 user_media.deleted_at = None
                 user_media.updated_at = datetime.now(UTC)
             return user_media
@@ -1702,9 +1715,7 @@ class ContentDAO:
                 func.json_each(UserParseResult.tags).table_valued("value").alias("include_content_tags")
             )
             content_has_tag = exists(
-                select(1)
-                .select_from(content_tag_values)
-                .where(cast(content_tag_values.c.value, Integer) == tag_id)
+                select(1).select_from(content_tag_values).where(cast(content_tag_values.c.value, Integer) == tag_id)
             )
             media_tag_values = func.json_each(UserMedia.tags).table_valued("value").alias("include_media_tags")
             media_has_tag = exists(
@@ -1782,9 +1793,7 @@ class ContentDAO:
             author_tag_values = func.json_each(UserAuthor.tags).table_valued("value").alias("list_include_author_tags")
             query = query.where(
                 exists(
-                    select(1)
-                    .select_from(author_tag_values)
-                    .where(cast(author_tag_values.c.value, Integer) == tag_id)
+                    select(1).select_from(author_tag_values).where(cast(author_tag_values.c.value, Integer) == tag_id)
                 )
             )
         if exclude_tag_id is not None:
