@@ -4,40 +4,16 @@ Models for content-related operations.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from contenthive.database.orm_models import Author, Media, ParseResult, Platform, Tag
+from contenthive.database.orm_models import Author, Media, ParseResult, Platform
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import MediaStatus, MediaType, ParserResultStatus
+from contenthive.models.tag import TagEntity, TagInfo
 from contenthive.utils.sidecar import SIDECAR_SCHEMA_VERSION
 
 # Database Models
-
-
-@dataclass
-class TagEntity:
-    """Tag database entity (per-user vocabulary)"""
-
-    id: int | None = None
-    user_id: int = 0
-    name: str = ""
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    deleted_at: datetime | None = None
-
-    @classmethod
-    def from_orm(cls, orm: Tag) -> "TagEntity":
-        """Convert ORM Tag object to entity"""
-        return cls(
-            id=orm.id,
-            user_id=orm.user_id,
-            name=orm.name,
-            created_at=orm.created_at,
-            updated_at=orm.updated_at,
-            deleted_at=orm.deleted_at,
-        )
 
 
 @dataclass
@@ -90,6 +66,8 @@ class AuthorEntity:
     platform: PlatformEntity = field(default_factory=PlatformEntity)
     # Per-user tags resolved for the requesting user (not stored on authors)
     tags: list[TagEntity] = field(default_factory=list)
+    # Sync path: raw tag IDs without resolving vocabulary rows
+    tag_ids: list[int] = field(default_factory=list)
 
     @classmethod
     def from_orm(cls, orm: Author, tags: list[TagEntity] | None = None) -> "AuthorEntity":
@@ -141,6 +119,8 @@ class MediaEntity:
     deleted_at: datetime | None = None
     # Per-user tags resolved for the requesting user (not stored on media)
     tags: list[TagEntity] = field(default_factory=list)
+    # Sync path: raw tag IDs without resolving vocabulary rows
+    tag_ids: list[int] = field(default_factory=list)
 
     @classmethod
     def from_orm(cls, orm: Media, tags: list[TagEntity] | None = None) -> "MediaEntity":
@@ -190,6 +170,8 @@ class ParseResultEntity:
     media: list[MediaEntity] = field(default_factory=list)
     # Per-user tags resolved for the requesting user (not stored on parse_results)
     tags: list[TagEntity] = field(default_factory=list)
+    # Sync path: raw tag IDs without resolving vocabulary rows
+    tag_ids: list[int] = field(default_factory=list)
 
     @classmethod
     def from_orm(cls, orm: ParseResult, tags: list[TagEntity] | None = None) -> "ParseResultEntity":
@@ -384,52 +366,6 @@ class DownloadedMediaInfo(BaseModel):
     cover_path: str | None = Field(None, description="Local cover file path")
 
 
-# API Request / Tag Models
-
-
-class TagInfo(APIBaseModel):
-    """Tag information returned by the API"""
-
-    id: int = Field(..., description="Tag ID")
-    name: str = Field(..., description="Tag name")
-    created_at: datetime = Field(..., description="Database creation timestamp")
-    updated_at: datetime = Field(..., description="Database update timestamp")
-
-    @classmethod
-    def from_entity(cls, entity: TagEntity) -> "TagInfo":
-        """Create TagInfo from TagEntity"""
-        return cls(
-            id=entity.id if entity.id else 0,
-            name=entity.name,
-            created_at=entity.created_at,
-            updated_at=entity.updated_at,
-        )
-
-
-class CreateTagRequest(APIBaseModel):
-    """Create a tag in the user's vocabulary (does not attach to content)"""
-
-    name: str = Field(..., min_length=1, description="Tag name")
-
-
-class UpdateTagRequest(APIBaseModel):
-    """Rename a tag"""
-
-    name: str = Field(..., min_length=1, description="New tag name")
-
-
-class TagAssignmentRequest(APIBaseModel):
-    """Assign tags to content, media, or author (upsert by name for replace/add)"""
-
-    target: Literal["content", "media", "author"] = Field(
-        ...,
-        description="Assignment target type",
-    )
-    id: int = Field(..., description="Target ID (parse_result_id, media_id, or author_id)")
-    names: list[str] = Field(default_factory=list, description="Tag names (upserted for replace/add)")
-    tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to remove (remove mode)")
-
-
 # API Response Models
 
 
@@ -608,6 +544,136 @@ class URLParserResult(APIBaseModel):
             parser=entity.parser,
             state=entity.state,
             tags=[TagInfo.from_entity(tag) for tag in entity.tags],
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+            deleted_at=entity.deleted_at,
+        )
+
+
+
+
+
+class SyncMediaInfo(APIBaseModel):
+    """Media item in content sync responses (tag IDs only)."""
+
+    id: int = Field(..., description="Media ID")
+    status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
+    url: HttpUrl = Field(..., description="Original media URL")
+    type: MediaType | None = Field(None, description="Media type")
+    title: str | None = Field(None, description="Media title")
+    duration: int | None = Field(None, description="Video duration in seconds")
+    width: int | None = Field(None, description="Media width in pixels")
+    height: int | None = Field(None, description="Media height in pixels")
+    cover: HttpUrl | None = Field(None, description="Original video cover URL")
+    url_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback media URLs")
+    cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
+    media_path: str | None = Field(None, description="Local media file path")
+    cover_path: str | None = Field(None, description="Local cover file path")
+    tag_ids: list[int] = Field(default_factory=list, description="Per-user tag IDs on this media item")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
+
+    @classmethod
+    def from_entity(cls, entity: MediaEntity) -> "SyncMediaInfo":
+        """Create SyncMediaInfo from MediaEntity"""
+        return cls(
+            id=entity.id if entity.id else 0,
+            status=entity.status,
+            url=entity.url,  # type: ignore
+            type=entity.type,
+            title=entity.title,
+            duration=entity.duration,
+            width=entity.width,
+            height=entity.height,
+            cover=entity.cover,  # type: ignore
+            url_fallbacks=entity.url_fallbacks,  # type: ignore
+            cover_fallbacks=entity.cover_fallbacks,  # type: ignore
+            media_path=entity.media_path,
+            cover_path=entity.cover_path,
+            tag_ids=entity.tag_ids,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+            deleted_at=entity.deleted_at,
+        )
+
+
+class SyncAuthorInfo(APIBaseModel):
+    """Author information in content sync responses (tag IDs only)."""
+
+    id: int = Field(..., description="Author ID")
+    uid: str = Field(..., description="User ID")
+    name: str | None = Field(None, description="Author name")
+    username: str = Field(..., description="Username")
+    avatar: HttpUrl | None = Field(None, description="Avatar URL")
+    avatar_path: str | None = Field(None, description="Local avatar path served under /media")
+    url: HttpUrl | None = Field(None, description="Author profile URL")
+    banner: HttpUrl | None = Field(None, description="Author banner URL")
+    banner_path: str | None = Field(None, description="Local banner path served under /media")
+    description: str | None = Field(None, description="Author description")
+    platform: PlatformInfo = Field(..., description="Platform information")
+    tag_ids: list[int] = Field(default_factory=list, description="Per-user tag IDs on this author")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
+
+    @classmethod
+    def from_entity(cls, entity: AuthorEntity) -> "SyncAuthorInfo":
+        """Create SyncAuthorInfo from AuthorEntity"""
+        return cls(
+            id=entity.id if entity.id else 0,
+            uid=entity.uid,
+            name=entity.name,
+            username=entity.username,
+            avatar=entity.avatar,  # type: ignore
+            avatar_path=entity.avatar_path,
+            url=entity.url,  # type: ignore
+            banner=entity.banner,  # type: ignore
+            banner_path=entity.banner_path,
+            description=entity.description,
+            platform=PlatformInfo.from_entity(entity.platform),
+            tag_ids=entity.tag_ids,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+            deleted_at=entity.deleted_at,
+        )
+
+
+class SyncURLParserResult(APIBaseModel):
+    """Content sync response item (tag IDs only)."""
+
+    id: int = Field(..., description="Parser result ID")
+    pid: str = Field(..., description="Content ID")
+    url: HttpUrl = Field(..., description="The URL that was fetched")
+    title: str | None = Field(None, description="Content title")
+    content: str | None = Field(None, description="Content text")
+    media: list[SyncMediaInfo] = Field(default_factory=list, description="List of stored media items")
+    author: SyncAuthorInfo = Field(..., description="Author information")
+    platform: PlatformInfo = Field(..., description="Platform information")
+    post_time: int | None = Field(None, description="Post timestamp in seconds since epoch")
+    parser: str = Field(..., description="Parser type used")
+    state: ParserResultStatus = Field(..., description="Parsing state")
+    tag_ids: list[int] = Field(default_factory=list, description="Per-user tag IDs on this content")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+    deleted_at: datetime | None = Field(None, description="Deletion timestamp (null if not deleted)")
+
+    @classmethod
+    def from_entity(cls, entity: ParseResultEntity) -> "SyncURLParserResult":
+        """Create SyncURLParserResult from ParseResultEntity"""
+        return cls(
+            id=entity.id if entity.id else 0,
+            pid=entity.pid,
+            url=entity.url,  # type: ignore
+            title=entity.title,
+            content=entity.content,
+            media=[SyncMediaInfo.from_entity(media) for media in entity.media],
+            author=SyncAuthorInfo.from_entity(entity.author),
+            platform=PlatformInfo.from_entity(entity.platform),
+            post_time=entity.post_time,
+            parser=entity.parser,
+            state=entity.state,
+            tag_ids=entity.tag_ids,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
             deleted_at=entity.deleted_at,
