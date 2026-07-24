@@ -11,7 +11,7 @@ from contenthive.database.database import initialize_db
 from contenthive.logger import logger, setup_file_logging
 from contenthive.models.api import DetailedHTTPException, http_exception_handler
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
-from contenthive.routers import admin, content, plugin, setup, system, task, user
+from contenthive.routers import admin, content, plugin, setup, system, tag, task, user
 from contenthive.services.setup import setup_service
 from contenthive.services.task_queue import task_queue
 from contenthive.settings.store import init_settings
@@ -77,6 +77,7 @@ app.add_exception_handler(DetailedHTTPException, http_exception_handler)
 
 app.include_router(task.router_v1)
 app.include_router(content.router_v1)
+app.include_router(tag.router_v1)
 app.include_router(user.router_v1)
 app.include_router(admin.router_v1)
 app.include_router(plugin.router_v1)

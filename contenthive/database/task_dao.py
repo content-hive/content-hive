@@ -433,7 +433,10 @@ class TaskDAO:
             }
             sort_field = sort_field_map.get(sort_by, MainTask.created_at)
 
-            stmt = stmt.order_by(sort_field.asc()) if order.lower() == "asc" else stmt.order_by(sort_field.desc())
+            if order.lower() == "asc":
+                stmt = stmt.order_by(sort_field.asc(), MainTask.id.asc())
+            else:
+                stmt = stmt.order_by(sort_field.desc(), MainTask.id.desc())
 
             stmt = stmt.limit(limit).offset(offset)
 
@@ -855,7 +858,7 @@ class TaskDAO:
             if status is not None:
                 stmt = stmt.where(SubTask.status == status)
 
-            stmt = stmt.order_by(SubTask.created_at.desc()).limit(limit).offset(offset)
+            stmt = stmt.order_by(SubTask.created_at.desc(), SubTask.id.desc()).limit(limit).offset(offset)
 
             result = session.execute(stmt).scalars().all()
             return [SubTaskEntity.from_orm(task) for task in result]
