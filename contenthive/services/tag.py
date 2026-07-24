@@ -1,11 +1,12 @@
-"""Tag service for vocabulary CRUD, assignments, and sync."""
+"""Tag service for vocabulary CRUD, assignments, effects, and sync."""
 
 from datetime import UTC, datetime
 
 from contenthive.database.tag_dao import TagDAO
 from contenthive.logger import logger
 from contenthive.models.content import PaginatedResponse, PaginationInfo, SyncResponse
-from contenthive.models.tag import SyncTagInfo, TagInfo
+from contenthive.models.enumerates import TagEffect
+from contenthive.models.tag import SyncTagInfo, TagEffectInfo, TagInfo
 
 
 class TagService:
@@ -107,6 +108,82 @@ class TagService:
                 return dao.delete_tag(user_id, tag_id, commit=True)
         except Exception:
             logger.exception(f"Error deleting tag {tag_id} for user {user_id}")
+            raise
+
+    async def list_tag_effects(self, user_id: int) -> list[TagEffectInfo]:
+        """
+        List all tag display effects for the user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of TagEffectInfo
+        """
+        try:
+            with TagDAO() as dao:
+                effects = dao.list_tag_effects(user_id)
+            return [TagEffectInfo.from_entity(effect) for effect in effects]
+        except Exception:
+            logger.exception(f"Error listing tag effects for user {user_id}")
+            raise
+
+    async def upsert_tag_effect(self, user_id: int, tag_id: int, effect: TagEffect) -> TagEffectInfo | None:
+        """
+        Add a display effect to a tag without removing other effects.
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            effect: Display effect to add (blur or hide)
+
+        Returns:
+            TagEffectInfo, or None if the tag is not found / not owned
+        """
+        try:
+            with TagDAO() as dao:
+                row = dao.upsert_tag_effect(user_id, tag_id, effect, commit=True)
+            return TagEffectInfo.from_entity(row) if row else None
+        except Exception:
+            logger.exception(f"Error upserting tag effect for tag {tag_id} user {user_id}")
+            raise
+
+    async def delete_tag_effect(self, user_id: int, tag_id: int, effect: TagEffect | None = None) -> bool:
+        """
+        Hard-delete one effect (when set) or all effects for a tag (idempotent).
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            effect: When set, remove only that effect; otherwise remove all effects for the tag
+
+        Returns:
+            True (idempotent even when nothing matched)
+        """
+        try:
+            with TagDAO() as dao:
+                return dao.delete_tag_effect(user_id, tag_id, effect=effect, commit=True)
+        except Exception:
+            logger.exception(f"Error deleting tag effect for tag {tag_id} user {user_id}")
+            raise
+
+    async def replace_tag_effects(self, user_id: int, items: list[tuple[int, TagEffect]]) -> list[TagEffectInfo] | None:
+        """
+        Replace all tag effects for the user (hard-deletes existing rows, then inserts items).
+
+        Args:
+            user_id: User ID
+            items: List of (tag_id, effect) pairs (same tag_id may appear with multiple effects)
+
+        Returns:
+            Resulting list of TagEffectInfo, or None if any tag_id is invalid
+        """
+        try:
+            with TagDAO() as dao:
+                effects = dao.replace_tag_effects(user_id, items, commit=True)
+            return [TagEffectInfo.from_entity(effect) for effect in effects] if effects is not None else None
+        except Exception:
+            logger.exception(f"Error replacing tag effects for user {user_id}")
             raise
 
     async def assign_tags(

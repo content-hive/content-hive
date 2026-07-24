@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -13,8 +13,10 @@ from contenthive.database.orm_models import (
     UserAuthor,
     UserMedia,
     UserParseResult,
+    UserTagEffect,
 )
-from contenthive.models.tag import TagEntity
+from contenthive.models.enumerates import TagEffect
+from contenthive.models.tag import TagEffectEntity, TagEntity
 
 
 def normalize_tag_name(name: str) -> str:
@@ -207,7 +209,7 @@ class TagDAO:
 
     def delete_tag(self, user_id: int, tag_id: int, commit: bool = True) -> bool:
         """
-        Soft-delete a tag and remove its ID from all of the user's content tag lists.
+        Soft-delete a tag, hard-delete its display effects, and remove its ID from all of the user's content tag lists.
 
         Args:
             user_id: User ID
@@ -227,6 +229,8 @@ class TagDAO:
         now = datetime.now(UTC)
         tag.deleted_at = now
         tag.updated_at = now
+
+        session.execute(delete(UserTagEffect).where(UserTagEffect.user_id == user_id, UserTagEffect.tag_id == tag_id))
 
         associations = (
             session.execute(select(UserParseResult).where(UserParseResult.user_id == user_id)).scalars().all()
@@ -928,6 +932,155 @@ class TagDAO:
             .all()
         )
         return {row.author_id: row.updated_at for row in rows if row.updated_at is not None}
+
+    def list_tag_effects(self, user_id: int) -> list[TagEffectEntity]:
+        """
+        List all display effects configured for the user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of TagEffectEntity
+        """
+        session = self._get_session()
+        rows = (
+            session.execute(
+                select(UserTagEffect)
+                .where(UserTagEffect.user_id == user_id)
+                .order_by(UserTagEffect.tag_id.asc(), UserTagEffect.effect.asc())
+            )
+            .scalars()
+            .all()
+        )
+        return [TagEffectEntity.from_orm(row) for row in rows]
+
+    def upsert_tag_effect(
+        self, user_id: int, tag_id: int, effect: TagEffect, commit: bool = True
+    ) -> TagEffectEntity | None:
+        """
+        Add a display effect for a tag (keeps any other effects on the same tag).
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            effect: Display effect to add
+            commit: Whether to commit immediately
+
+        Returns:
+            TagEffectEntity, or None if the tag is missing / not owned / soft-deleted
+        """
+        session = self._get_session()
+        tag = session.execute(
+            select(Tag).where(Tag.id == tag_id, Tag.user_id == user_id, Tag.deleted_at.is_(None))
+        ).scalar_one_or_none()
+        if not tag:
+            return None
+
+        row = session.execute(
+            select(UserTagEffect).where(
+                UserTagEffect.user_id == user_id,
+                UserTagEffect.tag_id == tag_id,
+                UserTagEffect.effect == effect,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = UserTagEffect(user_id=user_id, tag_id=tag_id, effect=effect)
+            session.add(row)
+            session.flush()
+            if commit:
+                session.commit()
+                session.refresh(row)
+        elif commit:
+            # Already present; ensure we return a persistent instance
+            session.refresh(row)
+
+        return TagEffectEntity.from_orm(row)
+
+    def delete_tag_effect(
+        self,
+        user_id: int,
+        tag_id: int,
+        effect: TagEffect | None = None,
+        commit: bool = True,
+    ) -> bool:
+        """
+        Hard-delete display effect row(s). Idempotent.
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            effect: When set, remove only that effect; otherwise remove all effects for the tag
+            commit: Whether to commit immediately
+
+        Returns:
+            True (idempotent even when nothing matched)
+        """
+        session = self._get_session()
+        stmt = delete(UserTagEffect).where(UserTagEffect.user_id == user_id, UserTagEffect.tag_id == tag_id)
+        if effect is not None:
+            stmt = stmt.where(UserTagEffect.effect == effect)
+        session.execute(stmt)
+        session.flush()
+        if commit:
+            session.commit()
+        return True
+
+    def replace_tag_effects(
+        self, user_id: int, items: list[tuple[int, TagEffect]], commit: bool = True
+    ) -> list[TagEffectEntity] | None:
+        """
+        Replace all tag effects for the user (hard-deletes existing rows, then inserts items).
+
+        Args:
+            user_id: User ID
+            items: List of (tag_id, effect) pairs (same tag_id may appear with multiple effects)
+            commit: Whether to commit immediately
+
+        Returns:
+            Resulting effect list, or None if any tag_id is invalid for the user
+        """
+        session = self._get_session()
+        if items:
+            tag_ids = list(dict.fromkeys(tag_id for tag_id, _ in items))
+            found = (
+                session.execute(
+                    select(Tag.id).where(
+                        Tag.user_id == user_id,
+                        Tag.id.in_(tag_ids),
+                        Tag.deleted_at.is_(None),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if set(found) != set(tag_ids):
+                return None
+
+        session.execute(delete(UserTagEffect).where(UserTagEffect.user_id == user_id))
+        now = datetime.now(UTC)
+        # Deduplicate identical (tag_id, effect) pairs; keep multiple effects per tag
+        unique_pairs = list(dict.fromkeys(items))
+
+        rows: list[UserTagEffect] = []
+        for tag_id, effect in unique_pairs:
+            row = UserTagEffect(
+                user_id=user_id,
+                tag_id=tag_id,
+                effect=effect,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(row)
+            rows.append(row)
+
+        session.flush()
+        if commit:
+            session.commit()
+            for row in rows:
+                session.refresh(row)
+
+        return [TagEffectEntity.from_orm(row) for row in rows]
 
     def sync_tags(
         self,

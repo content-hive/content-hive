@@ -12,13 +12,16 @@ from contenthive.models.api import (
     OperationResult,
 )
 from contenthive.models.content import PaginatedResponse, SyncResponse
-from contenthive.models.enumerates import OperationType, ResponseStatus
+from contenthive.models.enumerates import OperationType, ResponseStatus, TagEffect
 from contenthive.models.tag import (
     CreateTagRequest,
+    ReplaceTagEffectsRequest,
     SyncTagInfo,
     TagAssignmentRequest,
+    TagEffectInfo,
     TagInfo,
     UpdateTagRequest,
+    UpsertTagEffectRequest,
 )
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_active_user
@@ -215,6 +218,117 @@ async def remove_tag_assignment(
             error=ErrorDetail(
                 code="TAG_ASSIGNMENT_REMOVE_ERROR",
                 message="Failed to remove tag assignment",
+                details={"error": str(e)},
+            ),
+        )
+
+
+@router_v1.get("/effects", response_model=APIResponse[list[TagEffectInfo]])
+async def list_tag_effects(
+    current_user: Annotated[UserModel, Depends(get_current_active_user)],
+) -> APIResponse[list[TagEffectInfo]]:
+    try:
+        effects = await tag_service.list_tag_effects(current_user.id)
+        return APIResponse(status=ResponseStatus.SUCCESS, data=effects)
+    except Exception as e:
+        return APIResponse(
+            status=ResponseStatus.ERROR,
+            error=ErrorDetail(
+                code="TAG_EFFECTS_FETCH_ERROR",
+                message="Failed to fetch tag effects",
+                details={"error": str(e)},
+            ),
+        )
+
+
+@router_v1.put("/effects", response_model=APIResponse[list[TagEffectInfo]])
+async def replace_tag_effects(
+    body: ReplaceTagEffectsRequest,
+    current_user: Annotated[UserModel, Depends(get_current_active_user)],
+) -> APIResponse[list[TagEffectInfo]]:
+    try:
+        items = [(item.tag_id, item.effect) for item in body.items]
+        effects = await tag_service.replace_tag_effects(current_user.id, items)
+        if effects is None:
+            raise DetailedHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorDetail(
+                    code="TAG_NOT_FOUND",
+                    message="One or more tags were not found",
+                ),
+            )
+        return APIResponse(status=ResponseStatus.SUCCESS, data=effects)
+    except DetailedHTTPException:
+        raise
+    except Exception as e:
+        return APIResponse(
+            status=ResponseStatus.ERROR,
+            error=ErrorDetail(
+                code="TAG_EFFECTS_REPLACE_ERROR",
+                message="Failed to replace tag effects",
+                details={"error": str(e)},
+            ),
+        )
+
+
+@router_v1.put("/effects/{tag_id}", response_model=APIResponse[TagEffectInfo])
+async def upsert_tag_effect(
+    tag_id: int,
+    body: UpsertTagEffectRequest,
+    current_user: Annotated[UserModel, Depends(get_current_active_user)],
+) -> APIResponse[TagEffectInfo]:
+    try:
+        effect = await tag_service.upsert_tag_effect(current_user.id, tag_id, body.effect)
+        if effect is None:
+            raise DetailedHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorDetail(code="TAG_NOT_FOUND", message=f"Tag {tag_id} not found"),
+            )
+        return APIResponse(status=ResponseStatus.SUCCESS, data=effect)
+    except DetailedHTTPException:
+        raise
+    except Exception as e:
+        return APIResponse(
+            status=ResponseStatus.ERROR,
+            error=ErrorDetail(
+                code="TAG_EFFECT_UPSERT_ERROR",
+                message="Failed to upsert tag effect",
+                details={"error": str(e)},
+            ),
+        )
+
+
+@router_v1.delete("/effects/{tag_id}", response_model=APIResponse[OperationResult])
+async def delete_tag_effect(
+    tag_id: int,
+    current_user: Annotated[UserModel, Depends(get_current_active_user)],
+    effect: TagEffect | None = Query(
+        None,
+        description="Effect to remove; omit to clear all effects for this tag",
+    ),
+) -> APIResponse[OperationResult]:
+    try:
+        await tag_service.delete_tag_effect(current_user.id, tag_id, effect=effect)
+        message = (
+            f"Tag effect {effect.value} for {tag_id} cleared"
+            if effect is not None
+            else f"All tag effects for {tag_id} cleared"
+        )
+        return APIResponse(
+            status=ResponseStatus.SUCCESS,
+            data=OperationResult(
+                operation=OperationType.DELETE,
+                id=str(tag_id),
+                success=True,
+                message=message,
+            ),
+        )
+    except Exception as e:
+        return APIResponse(
+            status=ResponseStatus.ERROR,
+            error=ErrorDetail(
+                code="TAG_EFFECT_DELETE_ERROR",
+                message="Failed to delete tag effect",
                 details={"error": str(e)},
             ),
         )
