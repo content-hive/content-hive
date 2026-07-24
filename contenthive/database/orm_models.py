@@ -22,6 +22,7 @@ from contenthive.models.enumerates import (
     MediaStatus,
     MediaType,
     ParserResultStatus,
+    TagEffect,
     TaskRole,
     TaskStatus,
     TaskType,
@@ -236,6 +237,35 @@ class Tag(Base, TimestampMixin):
     __table_args__ = (UniqueConstraint("user_id", "name", name="uq_user_tag_name"),)
 
     user: Mapped["User"] = relationship("User", back_populates="tags")
+    effects: Mapped[list["UserTagEffect"]] = relationship(
+        "UserTagEffect", back_populates="tag", cascade="all, delete-orphan"
+    )
+
+
+class UserTagEffect(Base, TimestampMixin):
+    """Per-user display effect for a vocabulary tag (no row means none)."""
+
+    __tablename__ = "user_tag_effects"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    tag_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("tags.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    effect: Mapped[TagEffect] = mapped_column(
+        SQLEnum(TagEffect, values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+    )
+
+    tag: Mapped["Tag"] = relationship("Tag", back_populates="effects")
 
 
 class UserPlatform(Base, TimestampMixin):

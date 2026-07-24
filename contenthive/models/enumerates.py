@@ -68,3 +68,10 @@ class MediaStorageType(StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     OTHER = "other"
+
+
+class TagEffect(StrEnum):
+    """Client display treatment for a tag (absence of a row means none)."""
+
+    BLUR = "blur"
+    HIDE = "hide"

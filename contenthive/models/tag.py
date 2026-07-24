@@ -6,8 +6,9 @@ from typing import Literal
 
 from pydantic import Field
 
-from contenthive.database.orm_models import Tag
+from contenthive.database.orm_models import Tag, UserTagEffect
 from contenthive.models.api import APIBaseModel
+from contenthive.models.enumerates import TagEffect
 
 
 @dataclass
@@ -31,6 +32,28 @@ class TagEntity:
             created_at=orm.created_at,
             updated_at=orm.updated_at,
             deleted_at=orm.deleted_at,
+        )
+
+
+@dataclass
+class TagEffectEntity:
+    """Per-user tag display effect entity"""
+
+    user_id: int = 0
+    tag_id: int = 0
+    effect: TagEffect = TagEffect.BLUR
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    @classmethod
+    def from_orm(cls, orm: UserTagEffect) -> "TagEffectEntity":
+        """Convert ORM UserTagEffect to entity"""
+        return cls(
+            user_id=orm.user_id,
+            tag_id=orm.tag_id,
+            effect=orm.effect,
+            created_at=orm.created_at,
+            updated_at=orm.updated_at,
         )
 
 
@@ -59,6 +82,25 @@ class SyncTagInfo(TagInfo):
     """Tag vocabulary row for incremental sync (includes soft-deleted rows)."""
 
 
+class TagEffectInfo(APIBaseModel):
+    """Per-user display effect for a tag"""
+
+    tag_id: int = Field(..., description="Tag ID")
+    effect: TagEffect = Field(..., description="Display effect (blur or hide)")
+    created_at: datetime = Field(..., description="Database creation timestamp")
+    updated_at: datetime = Field(..., description="Database update timestamp")
+
+    @classmethod
+    def from_entity(cls, entity: TagEffectEntity) -> "TagEffectInfo":
+        """Create TagEffectInfo from TagEffectEntity"""
+        return cls(
+            tag_id=entity.tag_id,
+            effect=entity.effect,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+        )
+
+
 class CreateTagRequest(APIBaseModel):
     """Create a tag in the user's vocabulary (does not attach to content)"""
 
@@ -69,6 +111,25 @@ class UpdateTagRequest(APIBaseModel):
     """Rename a tag"""
 
     name: str = Field(..., min_length=1, description="New tag name")
+
+
+class UpsertTagEffectRequest(APIBaseModel):
+    """Set display effect for a single tag"""
+
+    effect: TagEffect = Field(..., description="Display effect (blur or hide)")
+
+
+class TagEffectItem(APIBaseModel):
+    """One tag effect entry for bulk replace"""
+
+    tag_id: int = Field(..., description="Tag ID")
+    effect: TagEffect = Field(..., description="Display effect (blur or hide)")
+
+
+class ReplaceTagEffectsRequest(APIBaseModel):
+    """Replace all tag effects for the current user"""
+
+    items: list[TagEffectItem] = Field(default_factory=list, description="Full effect list after replace")
 
 
 class TagAssignmentRequest(APIBaseModel):
