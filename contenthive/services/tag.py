@@ -111,7 +111,15 @@ class TagService:
             raise
 
     async def list_tag_effects(self, user_id: int) -> list[TagEffectInfo]:
-        """List all tag display effects for the user."""
+        """
+        List all tag display effects for the user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of TagEffectInfo
+        """
         try:
             with TagDAO() as dao:
                 effects = dao.list_tag_effects(user_id)
@@ -123,6 +131,11 @@ class TagService:
     async def upsert_tag_effect(self, user_id: int, tag_id: int, effect: TagEffect) -> TagEffectInfo | None:
         """
         Add a display effect to a tag without removing other effects.
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            effect: Display effect to add (blur or hide)
 
         Returns:
             TagEffectInfo, or None if the tag is not found / not owned
@@ -136,7 +149,17 @@ class TagService:
             raise
 
     async def delete_tag_effect(self, user_id: int, tag_id: int, effect: TagEffect | None = None) -> bool:
-        """Remove one effect (when set) or all effects for a tag (idempotent)."""
+        """
+        Hard-delete one effect (when set) or all effects for a tag (idempotent).
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            effect: When set, remove only that effect; otherwise remove all effects for the tag
+
+        Returns:
+            True (idempotent even when nothing matched)
+        """
         try:
             with TagDAO() as dao:
                 return dao.delete_tag_effect(user_id, tag_id, effect=effect, commit=True)
@@ -146,10 +169,14 @@ class TagService:
 
     async def replace_tag_effects(self, user_id: int, items: list[tuple[int, TagEffect]]) -> list[TagEffectInfo] | None:
         """
-        Replace all tag effects for the user.
+        Replace all tag effects for the user (hard-deletes existing rows, then inserts items).
+
+        Args:
+            user_id: User ID
+            items: List of (tag_id, effect) pairs (same tag_id may appear with multiple effects)
 
         Returns:
-            Resulting list, or None if any tag_id is invalid
+            Resulting list of TagEffectInfo, or None if any tag_id is invalid
         """
         try:
             with TagDAO() as dao:

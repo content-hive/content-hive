@@ -209,7 +209,7 @@ class TagDAO:
 
     def delete_tag(self, user_id: int, tag_id: int, commit: bool = True) -> bool:
         """
-        Soft-delete a tag and remove its ID from all of the user's content tag lists.
+        Soft-delete a tag, hard-delete its display effects, and remove its ID from all of the user's content tag lists.
 
         Args:
             user_id: User ID
@@ -934,7 +934,15 @@ class TagDAO:
         return {row.author_id: row.updated_at for row in rows if row.updated_at is not None}
 
     def list_tag_effects(self, user_id: int) -> list[TagEffectEntity]:
-        """List all display effects configured for the user."""
+        """
+        List all display effects configured for the user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            List of TagEffectEntity
+        """
         session = self._get_session()
         rows = (
             session.execute(
@@ -952,6 +960,12 @@ class TagDAO:
     ) -> TagEffectEntity | None:
         """
         Add a display effect for a tag (keeps any other effects on the same tag).
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            effect: Display effect to add
+            commit: Whether to commit immediately
 
         Returns:
             TagEffectEntity, or None if the tag is missing / not owned / soft-deleted
@@ -991,10 +1005,16 @@ class TagDAO:
         commit: bool = True,
     ) -> bool:
         """
-        Remove display effect row(s). Idempotent.
+        Hard-delete display effect row(s). Idempotent.
 
         Args:
-            effect: When set, remove only that effect; otherwise remove all effects for the tag.
+            user_id: User ID
+            tag_id: Tag ID
+            effect: When set, remove only that effect; otherwise remove all effects for the tag
+            commit: Whether to commit immediately
+
+        Returns:
+            True (idempotent even when nothing matched)
         """
         session = self._get_session()
         stmt = delete(UserTagEffect).where(UserTagEffect.user_id == user_id, UserTagEffect.tag_id == tag_id)
@@ -1010,7 +1030,7 @@ class TagDAO:
         self, user_id: int, items: list[tuple[int, TagEffect]], commit: bool = True
     ) -> list[TagEffectEntity] | None:
         """
-        Replace all tag effects for the user.
+        Replace all tag effects for the user (hard-deletes existing rows, then inserts items).
 
         Args:
             user_id: User ID
