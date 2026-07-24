@@ -107,8 +107,10 @@ class TagDAO:
             "updated_at": Tag.updated_at,
         }
         sort_field = sort_field_map.get(sort_by, Tag.name)
-        ordered = sort_field.asc() if order.lower() == "asc" else sort_field.desc()
-        stmt = base.order_by(ordered).limit(limit).offset(offset)
+        if order.lower() == "asc":
+            stmt = base.order_by(sort_field.asc(), Tag.id.asc()).limit(limit).offset(offset)
+        else:
+            stmt = base.order_by(sort_field.desc(), Tag.id.desc()).limit(limit).offset(offset)
         tags = session.execute(stmt).scalars().all()
         return [TagEntity.from_orm(tag) for tag in tags], total
 
@@ -951,6 +953,6 @@ class TagDAO:
         total = session.execute(count_query).scalar()
         total = total if total is not None else 0
 
-        query = query.order_by(Tag.updated_at.desc()).limit(limit).offset(offset)
+        query = query.order_by(Tag.updated_at.desc(), Tag.id.desc()).limit(limit).offset(offset)
         tags = session.execute(query).scalars().all()
         return [TagEntity.from_orm(tag) for tag in tags], total

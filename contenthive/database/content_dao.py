@@ -632,7 +632,7 @@ class ContentDAO:
         count_query = self._apply_tag_filters(count_query, tag_id=tag_id, exclude_tag_id=exclude_tag_id)
         total = session.execute(count_query).scalar() or 0
 
-        # Add sorting
+        # Add sorting (id tie-breaker keeps offset pages stable when sort values collide)
         if sort_by == "post_time":
             sort_field = ParseResult.post_time
         elif sort_by == "updated_at":
@@ -642,7 +642,10 @@ class ContentDAO:
         else:
             sort_field = ParseResult.created_at
 
-        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
+        if order.lower() == "asc":
+            query = query.order_by(sort_field.asc(), ParseResult.id.asc())
+        else:
+            query = query.order_by(sort_field.desc(), ParseResult.id.desc())
 
         query = query.limit(limit).offset(offset)
         results_orm = session.execute(query).scalars().all()
@@ -728,8 +731,8 @@ class ContentDAO:
         total = session.execute(count_query).scalar()
         total = total if total is not None else 0
 
-        # Sort by updated_at desc (most recent first)
-        query = query.order_by(ParseResult.updated_at.desc())
+        # Sort by updated_at desc (most recent first); id tie-breaker for stable pages
+        query = query.order_by(ParseResult.updated_at.desc(), ParseResult.id.desc())
 
         query = query.limit(limit).offset(offset)
         results_orm = session.execute(query).scalars().all()
@@ -991,7 +994,7 @@ class ContentDAO:
         )
         total = session.execute(count_query).scalar() or 0
 
-        # Add sorting
+        # Add sorting (id tie-breaker keeps offset pages stable when sort values collide)
         sort_field_map = {
             "name": Platform.name,
             "created_at": Platform.created_at,
@@ -999,7 +1002,10 @@ class ContentDAO:
         }
         sort_field = sort_field_map.get(sort_by, Platform.id)
 
-        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
+        if order.lower() == "asc":
+            query = query.order_by(sort_field.asc(), Platform.id.asc())
+        else:
+            query = query.order_by(sort_field.desc(), Platform.id.desc())
 
         query = query.limit(limit).offset(offset)
         platforms_orm = session.execute(query).scalars().all()
@@ -1068,7 +1074,7 @@ class ContentDAO:
         count_query = self._apply_author_list_tag_filters(count_query, tag_id=tag_id, exclude_tag_id=exclude_tag_id)
         total = session.execute(count_query).scalar() or 0
 
-        # Add sorting
+        # Add sorting (id tie-breaker keeps offset pages stable when sort values collide)
         sort_field_map = {
             "name": Author.name,
             "created_at": Author.created_at,
@@ -1076,7 +1082,10 @@ class ContentDAO:
         }
         sort_field = sort_field_map.get(sort_by, Author.id)
 
-        query = query.order_by(sort_field.asc()) if order.lower() == "asc" else query.order_by(sort_field.desc())
+        if order.lower() == "asc":
+            query = query.order_by(sort_field.asc(), Author.id.asc())
+        else:
+            query = query.order_by(sort_field.desc(), Author.id.desc())
 
         query = query.limit(limit).offset(offset)
         authors_orm = session.execute(query).scalars().all()
