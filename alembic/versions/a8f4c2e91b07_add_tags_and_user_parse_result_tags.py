@@ -11,6 +11,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from alembic import op
+from contenthive.database.orm_models import AwareDatetime
 
 # revision identifiers, used by Alembic.
 revision: str = "a8f4c2e91b07"
@@ -26,9 +27,9 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("name", sa.String(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.Column("deleted_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", AwareDatetime(), nullable=False),
+        sa.Column("updated_at", AwareDatetime(), nullable=False),
+        sa.Column("deleted_at", AwareDatetime(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "name", name="uq_user_tag_name"),
