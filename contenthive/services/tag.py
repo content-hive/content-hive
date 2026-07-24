@@ -122,7 +122,7 @@ class TagService:
 
     async def upsert_tag_effect(self, user_id: int, tag_id: int, effect: TagEffect) -> TagEffectInfo | None:
         """
-        Upsert a display effect for a tag.
+        Add a display effect to a tag without removing other effects.
 
         Returns:
             TagEffectInfo, or None if the tag is not found / not owned
@@ -135,11 +135,11 @@ class TagService:
             logger.exception(f"Error upserting tag effect for tag {tag_id} user {user_id}")
             raise
 
-    async def delete_tag_effect(self, user_id: int, tag_id: int) -> bool:
-        """Remove a tag display effect (idempotent)."""
+    async def delete_tag_effect(self, user_id: int, tag_id: int, effect: TagEffect | None = None) -> bool:
+        """Remove one effect (when set) or all effects for a tag (idempotent)."""
         try:
             with TagDAO() as dao:
-                return dao.delete_tag_effect(user_id, tag_id, commit=True)
+                return dao.delete_tag_effect(user_id, tag_id, effect=effect, commit=True)
         except Exception:
             logger.exception(f"Error deleting tag effect for tag {tag_id} user {user_id}")
             raise

@@ -938,7 +938,9 @@ class TagDAO:
         session = self._get_session()
         rows = (
             session.execute(
-                select(UserTagEffect).where(UserTagEffect.user_id == user_id).order_by(UserTagEffect.tag_id.asc())
+                select(UserTagEffect)
+                .where(UserTagEffect.user_id == user_id)
+                .order_by(UserTagEffect.tag_id.asc(), UserTagEffect.effect.asc())
             )
             .scalars()
             .all()
@@ -949,7 +951,7 @@ class TagDAO:
         self, user_id: int, tag_id: int, effect: TagEffect, commit: bool = True
     ) -> TagEffectEntity | None:
         """
-        Create or update a display effect for a tag.
+        Add a display effect for a tag (keeps any other effects on the same tag).
 
         Returns:
             TagEffectEntity, or None if the tag is missing / not owned / soft-deleted
@@ -961,36 +963,47 @@ class TagDAO:
         if not tag:
             return None
 
-        now = datetime.now(UTC)
         row = session.execute(
-            select(UserTagEffect).where(UserTagEffect.user_id == user_id, UserTagEffect.tag_id == tag_id)
+            select(UserTagEffect).where(
+                UserTagEffect.user_id == user_id,
+                UserTagEffect.tag_id == tag_id,
+                UserTagEffect.effect == effect,
+            )
         ).scalar_one_or_none()
         if row is None:
             row = UserTagEffect(user_id=user_id, tag_id=tag_id, effect=effect)
             session.add(row)
-        else:
-            row.effect = effect
-            row.updated_at = now
-
-        session.flush()
-        if commit:
-            session.commit()
+            session.flush()
+            if commit:
+                session.commit()
+                session.refresh(row)
+        elif commit:
+            # Already present; ensure we return a persistent instance
             session.refresh(row)
+
         return TagEffectEntity.from_orm(row)
 
-    def delete_tag_effect(self, user_id: int, tag_id: int, commit: bool = True) -> bool:
+    def delete_tag_effect(
+        self,
+        user_id: int,
+        tag_id: int,
+        effect: TagEffect | None = None,
+        commit: bool = True,
+    ) -> bool:
         """
-        Remove a display effect row (restore none). Idempotent: returns True even if no row existed.
+        Remove display effect row(s). Idempotent.
+
+        Args:
+            effect: When set, remove only that effect; otherwise remove all effects for the tag.
         """
         session = self._get_session()
-        result = session.execute(
-            delete(UserTagEffect).where(UserTagEffect.user_id == user_id, UserTagEffect.tag_id == tag_id)
-        )
+        stmt = delete(UserTagEffect).where(UserTagEffect.user_id == user_id, UserTagEffect.tag_id == tag_id)
+        if effect is not None:
+            stmt = stmt.where(UserTagEffect.effect == effect)
+        session.execute(stmt)
         session.flush()
         if commit:
             session.commit()
-        # Idempotent success whether or not a row was deleted
-        _ = result.rowcount
         return True
 
     def replace_tag_effects(
@@ -1001,7 +1014,7 @@ class TagDAO:
 
         Args:
             user_id: User ID
-            items: List of (tag_id, effect) pairs
+            items: List of (tag_id, effect) pairs (same tag_id may appear with multiple effects)
             commit: Whether to commit immediately
 
         Returns:
@@ -1026,13 +1039,11 @@ class TagDAO:
 
         session.execute(delete(UserTagEffect).where(UserTagEffect.user_id == user_id))
         now = datetime.now(UTC)
-        # Last write wins if duplicate tag_ids appear in items
-        by_tag: dict[int, TagEffect] = {}
-        for tag_id, effect in items:
-            by_tag[tag_id] = effect
+        # Deduplicate identical (tag_id, effect) pairs; keep multiple effects per tag
+        unique_pairs = list(dict.fromkeys(items))
 
         rows: list[UserTagEffect] = []
-        for tag_id, effect in by_tag.items():
+        for tag_id, effect in unique_pairs:
             row = UserTagEffect(
                 user_id=user_id,
                 tag_id=tag_id,

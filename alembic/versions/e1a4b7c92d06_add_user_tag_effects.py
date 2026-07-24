@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column("deleted_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["tag_id"], ["tags.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("user_id", "tag_id"),
+        sa.PrimaryKeyConstraint("user_id", "tag_id", "effect"),
     )
     with op.batch_alter_table("user_tag_effects", schema=None) as batch_op:
         batch_op.create_index(batch_op.f("ix_user_tag_effects_user_id"), ["user_id"], unique=False)

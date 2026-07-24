@@ -12,7 +12,7 @@ from contenthive.models.api import (
     OperationResult,
 )
 from contenthive.models.content import PaginatedResponse, SyncResponse
-from contenthive.models.enumerates import OperationType, ResponseStatus
+from contenthive.models.enumerates import OperationType, ResponseStatus, TagEffect
 from contenthive.models.tag import (
     CreateTagRequest,
     ReplaceTagEffectsRequest,
@@ -302,16 +302,25 @@ async def upsert_tag_effect(
 async def delete_tag_effect(
     tag_id: int,
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
+    effect: TagEffect | None = Query(
+        None,
+        description="Effect to remove; omit to clear all effects for this tag",
+    ),
 ) -> APIResponse[OperationResult]:
     try:
-        await tag_service.delete_tag_effect(current_user.id, tag_id)
+        await tag_service.delete_tag_effect(current_user.id, tag_id, effect=effect)
+        message = (
+            f"Tag effect {effect.value} for {tag_id} cleared"
+            if effect is not None
+            else f"All tag effects for {tag_id} cleared"
+        )
         return APIResponse(
             status=ResponseStatus.SUCCESS,
             data=OperationResult(
                 operation=OperationType.DELETE,
                 id=str(tag_id),
                 success=True,
-                message=f"Tag effect for {tag_id} cleared",
+                message=message,
             ),
         )
     except Exception as e:

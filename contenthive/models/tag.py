@@ -83,7 +83,7 @@ class SyncTagInfo(TagInfo):
 
 
 class TagEffectInfo(APIBaseModel):
-    """Per-user display effect for a tag"""
+    """One display effect assigned to a tag (a tag may have multiple rows)."""
 
     tag_id: int = Field(..., description="Tag ID")
     effect: TagEffect = Field(..., description="Display effect (blur or hide)")
@@ -114,13 +114,13 @@ class UpdateTagRequest(APIBaseModel):
 
 
 class UpsertTagEffectRequest(APIBaseModel):
-    """Set display effect for a single tag"""
+    """Add a display effect to a tag (does not remove other effects on the same tag)"""
 
-    effect: TagEffect = Field(..., description="Display effect (blur or hide)")
+    effect: TagEffect = Field(..., description="Display effect to add (blur or hide)")
 
 
 class TagEffectItem(APIBaseModel):
-    """One tag effect entry for bulk replace"""
+    """One tag-effect pair for bulk replace"""
 
     tag_id: int = Field(..., description="Tag ID")
     effect: TagEffect = Field(..., description="Display effect (blur or hide)")
@@ -129,7 +129,10 @@ class TagEffectItem(APIBaseModel):
 class ReplaceTagEffectsRequest(APIBaseModel):
     """Replace all tag effects for the current user"""
 
-    items: list[TagEffectItem] = Field(default_factory=list, description="Full effect list after replace")
+    items: list[TagEffectItem] = Field(
+        default_factory=list,
+        description="Full effect list after replace (same tag_id may appear with multiple effects)",
+    )
 
 
 class TagAssignmentRequest(APIBaseModel):

@@ -243,7 +243,7 @@ class Tag(Base, TimestampMixin):
 
 
 class UserTagEffect(Base, TimestampMixin):
-    """Per-user display effect for a vocabulary tag (no row means none)."""
+    """Per-user display effects for a vocabulary tag (one row per effect; no rows means none)."""
 
     __tablename__ = "user_tag_effects"
 
@@ -262,6 +262,7 @@ class UserTagEffect(Base, TimestampMixin):
     )
     effect: Mapped[TagEffect] = mapped_column(
         SQLEnum(TagEffect, values_callable=lambda obj: [e.value for e in obj]),
+        primary_key=True,
         nullable=False,
     )
 
