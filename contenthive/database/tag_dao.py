@@ -41,6 +41,14 @@ class TagDAO:
     """Data Access Object for tag vocabulary and per-user tag assignments."""
 
     def __init__(self, session: Session | None = None):
+        """
+        Initialize TagDAO.
+
+        Args:
+            session: Optional shared SQLAlchemy session. When provided (e.g. from
+                ContentDAO), TagDAO does not own or close the session. Prefer
+                ``with TagDAO() as dao:`` or ``with TagDAO(session=...) as dao:``.
+        """
         self.engine = get_engine()
         self.SessionLocal = get_session_local()
         self.session = session

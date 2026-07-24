@@ -64,10 +64,6 @@ class ContentDAO:
             self.session.close()
             self.session = None
 
-    def _tag_dao(self) -> TagDAO:
-        """TagDAO bound to this ContentDAO session."""
-        return TagDAO(session=self._get_session())
-
     def save_platform(self, platform: ParserPlatformInfo, user_id: int, commit: bool = False) -> int:
         """
         Save or update platform information and create user association.
@@ -542,11 +538,12 @@ class ContentDAO:
         )
         user_parse_result = session.execute(stmt).scalar_one_or_none()
         tag_ids = list(user_parse_result.tags or []) if user_parse_result else []
-        tags = self._tag_dao().resolve_tags_for_ids(user_id, tag_ids)
-        entity = ParseResultEntity.from_orm(result_orm, tags=tags)
-        media_ids = [media.id for media in result_orm.media]
-        self._apply_media_tags_to_entity(entity, self._tag_dao().load_media_tags_map(user_id, media_ids))
-        self._apply_author_tags_to_entity(entity, self._tag_dao().load_author_tags_map(user_id, [result_orm.author_id]))
+        with TagDAO(session=session) as tag_dao:
+            tags = tag_dao.resolve_tags_for_ids(user_id, tag_ids)
+            entity = ParseResultEntity.from_orm(result_orm, tags=tags)
+            media_ids = [media.id for media in result_orm.media]
+            self._apply_media_tags_to_entity(entity, tag_dao.load_media_tags_map(user_id, media_ids))
+            self._apply_author_tags_to_entity(entity, tag_dao.load_author_tags_map(user_id, [result_orm.author_id]))
         return entity
 
     def find_parse_result_by_url(self, url: str) -> ParseResultEntity | None:
@@ -739,12 +736,12 @@ class ContentDAO:
 
         results = []
         media_ids = [media.id for result_orm in results_orm for media in result_orm.media]
-        tag_dao = self._tag_dao()
-        media_tag_ids_map = tag_dao.load_media_tag_ids_map(user_id, media_ids)
-        user_media_updated = tag_dao.load_user_media_updated_at(user_id, media_ids)
         author_ids = [result_orm.author_id for result_orm in results_orm]
-        author_tag_ids_map = tag_dao.load_author_tag_ids_map(user_id, author_ids)
-        user_author_updated = tag_dao.load_user_author_updated_at(user_id, author_ids)
+        with TagDAO(session=session) as tag_dao:
+            media_tag_ids_map = tag_dao.load_media_tag_ids_map(user_id, media_ids)
+            user_media_updated = tag_dao.load_user_media_updated_at(user_id, media_ids)
+            author_tag_ids_map = tag_dao.load_author_tag_ids_map(user_id, author_ids)
+            user_author_updated = tag_dao.load_user_author_updated_at(user_id, author_ids)
 
         for result_orm in results_orm:
             # Check if association is deleted
@@ -826,14 +823,12 @@ class ContentDAO:
         all_tag_ids: list[int] = []
         for ids in tags_by_result.values():
             all_tag_ids.extend(ids)
-        resolved = {
-            tag.id: tag for tag in self._tag_dao().resolve_tags_for_ids(user_id, all_tag_ids) if tag.id is not None
-        }
-
-        media_ids = [media.id for result in results_orm for media in result.media]
-        media_tags_map = self._tag_dao().load_media_tags_map(user_id, media_ids)
-        author_ids = [result.author_id for result in results_orm]
-        author_tags_map = self._tag_dao().load_author_tags_map(user_id, author_ids)
+        with TagDAO(session=session) as tag_dao:
+            resolved = {tag.id: tag for tag in tag_dao.resolve_tags_for_ids(user_id, all_tag_ids) if tag.id is not None}
+            media_ids = [media.id for result in results_orm for media in result.media]
+            media_tags_map = tag_dao.load_media_tags_map(user_id, media_ids)
+            author_ids = [result.author_id for result in results_orm]
+            author_tags_map = tag_dao.load_author_tags_map(user_id, author_ids)
 
         entities: list[ParseResultEntity] = []
         for result_orm in results_orm:
@@ -1087,7 +1082,8 @@ class ContentDAO:
         authors_orm = session.execute(query).scalars().all()
 
         author_ids = [author.id for author in authors_orm]
-        author_tags_map = self._tag_dao().load_author_tags_map(user_id, author_ids)
+        with TagDAO(session=session) as tag_dao:
+            author_tags_map = tag_dao.load_author_tags_map(user_id, author_ids)
         authors = [AuthorEntity.from_orm(author, tags=author_tags_map.get(author.id, [])) for author in authors_orm]
         return authors, total
 

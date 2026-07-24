@@ -19,7 +19,19 @@ class TagService:
         sort_by: str = "name",
         order: str = "asc",
     ) -> PaginatedResponse[TagInfo]:
-        """List tags in the user's vocabulary with pagination and sorting."""
+        """
+        List tags in the user's vocabulary with pagination and sorting.
+
+        Args:
+            user_id: User ID
+            page: Page number (starting from 1)
+            page_size: Number of items per page
+            sort_by: Field to sort by (name, created_at, updated_at)
+            order: Sort order (asc/desc)
+
+        Returns:
+            PaginatedResponse containing list of TagInfo and pagination info
+        """
         try:
             offset = (page - 1) * page_size
             with TagDAO() as dao:
@@ -41,7 +53,16 @@ class TagService:
             raise
 
     async def create_tag(self, user_id: int, name: str) -> TagInfo:
-        """Create a tag in the user's vocabulary without attaching it to content."""
+        """
+        Create a tag in the user's vocabulary without attaching it to content.
+
+        Args:
+            user_id: User ID
+            name: Tag name
+
+        Returns:
+            Created TagInfo
+        """
         try:
             with TagDAO() as dao:
                 tag = dao.create_tag(user_id, name, commit=True)
@@ -51,7 +72,17 @@ class TagService:
             raise
 
     async def rename_tag(self, user_id: int, tag_id: int, name: str) -> TagInfo | None:
-        """Rename a tag in the user's vocabulary."""
+        """
+        Rename a tag in the user's vocabulary.
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+            name: New tag name
+
+        Returns:
+            Updated TagInfo, or None if not found
+        """
         try:
             with TagDAO() as dao:
                 tag = dao.rename_tag(user_id, tag_id, name, commit=True)
@@ -61,7 +92,16 @@ class TagService:
             raise
 
     async def delete_tag(self, user_id: int, tag_id: int) -> bool:
-        """Delete a tag and remove it from all of the user's associations."""
+        """
+        Delete a tag and remove it from all of the user's associations.
+
+        Args:
+            user_id: User ID
+            tag_id: Tag ID
+
+        Returns:
+            True if deleted
+        """
         try:
             with TagDAO() as dao:
                 return dao.delete_tag(user_id, tag_id, commit=True)
@@ -78,7 +118,20 @@ class TagService:
         names: list[str] | None = None,
         tag_ids: list[int] | None = None,
     ) -> list[TagInfo] | None:
-        """Assign tags to content, media, or author."""
+        """
+        Assign tags to content, media, or author.
+
+        Args:
+            user_id: User ID
+            target: content, media, or author
+            target_id: Target resource ID
+            mode: replace, add, or remove
+            names: Tag names
+            tag_ids: Tag IDs (remove mode)
+
+        Returns:
+            Resulting tags, or None if target not found / not accessible
+        """
         try:
             with TagDAO() as dao:
                 tags = dao.apply_tag_assignment(
@@ -102,7 +155,18 @@ class TagService:
         page: int = 1,
         page_size: int = 10,
     ) -> SyncResponse[SyncTagInfo]:
-        """Incrementally sync tag vocabulary for the user."""
+        """
+        Incrementally sync tag vocabulary for the user based on last sync time.
+
+        Args:
+            user_id: User ID to sync tags for
+            last_sync_time: Optional datetime of the last sync. If not provided, returns all active tags.
+            page: Page number (starting from 1)
+            page_size: Number of items per page
+
+        Returns:
+            SyncResponse with items, pagination info, and server sync_timestamp
+        """
         try:
             sync_timestamp = datetime.now(UTC)
             offset = (page - 1) * page_size
