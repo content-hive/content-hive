@@ -15,6 +15,7 @@ from contenthive.database.task_dao import TaskDAO
 from contenthive.logger import logger
 from contenthive.models.content import (
     DownloadedMediaInfo,
+    MediaEntity,
     PaginatedResponse,
     PaginationInfo,
 )
@@ -659,10 +660,15 @@ class TaskService:
 
             try:
                 with ContentDAO() as content_dao:
-                    parse_result_id = content_dao.save_parse_result(parse_result, user_id=task.user_id)
+                    parse_result_id, orphan_media_paths = content_dao.save_parse_result(
+                        parse_result, user_id=task.user_id
+                    )
             except Exception as e:
                 logger.exception(f"[{task.task_id}] Failed to save parse result")
                 raise ValueError(f"Failed to save parse result to database: {e}") from e
+
+            for relative_path in orphan_media_paths:
+                media_service.delete_media_file(relative_path)
 
             metadata_service.sync_content_sidecar(parse_result_id, task.user_id)
             if parse_result.author:
@@ -708,10 +714,28 @@ class TaskService:
                     saved_media_ids=[],
                 )
 
-            # Create download sub tasks
+            # Create download sub tasks (skip media already completed with local files)
             content_id = resolve_content_id(parse_result.pid, str(parse_result.url))
 
+            existing_media_by_url: dict[str, MediaEntity] = {}
+            try:
+                with ContentDAO() as content_dao:
+                    for row in content_dao.list_medias_for_parse_result(parse_result_id):
+                        existing_media_by_url[row.url] = row
+            except Exception:
+                logger.exception(f"[{task.task_id}] Failed to load existing media for download skip checks")
+
+            skipped_downloads = 0
             for idx, media in enumerate(parse_result.media):
+                media_url = str(media.url)
+                existing = existing_media_by_url.get(media_url)
+                if existing is not None and self._should_skip_media_download(existing, media):
+                    skipped_downloads += 1
+                    logger.debug(
+                        f"[{task.task_id}] Skipping download for media {idx}: already completed with local file"
+                    )
+                    continue
+
                 download_subtask = self.create_sub_task(
                     main_task_id=task.id,
                     task_type=TaskType.MEDIA_DOWNLOAD,
@@ -731,9 +755,20 @@ class TaskService:
                 else:
                     logger.warning(f"[{task.task_id}] Failed to create download sub task for media {idx}")
 
+            if skipped_downloads:
+                logger.info(
+                    f"[{task.task_id}] Skipped {skipped_downloads}/{media_count} media downloads "
+                    f"(already completed with local files)"
+                )
+
             # Execute downloads with concurrency control
             if not download_subtasks:
-                logger.warning(f"[{task.task_id}] No download sub tasks created")
+                if media_count > 0:
+                    logger.info(
+                        f"[{task.task_id}] All {media_count} media already completed locally, skipping download phase"
+                    )
+                else:
+                    logger.warning(f"[{task.task_id}] No download sub tasks created")
                 return self._build_task_result(
                     task_id=task.task_id,
                     parse_result_id=parse_result_id,
@@ -922,6 +957,22 @@ class TaskService:
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
             self.update_sub_task_result(sub_task.id, {"status": "failed", "error": error_msg})
             raise
+
+    @staticmethod
+    def _should_skip_media_download(existing: MediaEntity, media: ParserMediaInfo) -> bool:
+        """
+        Whether a reparse can skip downloading this media item.
+
+        Requires COMPLETED status and a present main media file. If the parse result
+        still advertises a cover (or cover fallbacks), the local cover file must also
+        exist — otherwise a missing cover would never be retried.
+        """
+        if existing.status != MediaStatus.COMPLETED:
+            return False
+        if not media_service.media_file_exists(existing.media_path):
+            return False
+        expects_cover = bool(media.cover) or bool(media.cover_fallbacks)
+        return (not expects_cover) or media_service.media_file_exists(existing.cover_path)
 
     def _categorize_download_results(
         self,

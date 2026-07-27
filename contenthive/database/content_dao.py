@@ -348,35 +348,101 @@ class ContentDAO:
                 session.rollback()
             raise Exception(f"Failed to save media: {e}") from e
 
-    def save_medias(self, medias: list[ParserMediaInfo], parse_result_id: int, commit: bool = False) -> list[int]:
+    def save_medias(
+        self, medias: list[ParserMediaInfo], parse_result_id: int, commit: bool = False
+    ) -> tuple[list[int], list[str]]:
         """
-        Save multiple media entities for a parse result.
+        Reconcile media rows for a parse result by URL (upsert + drop orphans).
+
+        Does not delete on-disk files; returns orphaned relative paths so the
+        caller can unlink them after a successful commit.
 
         Args:
             medias: List of ParserMediaInfo objects
             parse_result_id: Owning parse result ID
             commit: Whether to commit immediately (default: False)
 
-        Returns list of media_ids.
+        Returns:
+            Tuple of (media_ids in parse order, orphaned /media-relative paths).
         """
-        media_ids = []
-        for order, media in enumerate(medias):
-            media_entity = MediaEntity(
-                status=MediaStatus.PENDING,  # Default to pending when saving from parser result
-                url=str(media.url),
-                type=media.type if media.type else None,
-                title=media.title,
-                cover=str(media.cover) if media.cover else None,
-                url_fallbacks=[str(u) for u in (media.url_fallbacks or [])],
-                cover_fallbacks=[str(u) for u in (media.cover_fallbacks or [])],
-            )
-            media_id = self._save_media(media_entity, parse_result_id, order=order, commit=False)
-            media_ids.append(media_id)
-
+        media_ids, orphan_paths = self._reconcile_medias(medias, parse_result_id)
         if commit:
             self._get_session().commit()
+        return media_ids, orphan_paths
 
-        return media_ids
+    def list_medias_for_parse_result(self, parse_result_id: int) -> list[MediaEntity]:
+        """Return media entities for a parse result, ordered by display order."""
+        session = self._get_session()
+        rows = (
+            session.execute(
+                select(Media)
+                .where(Media.parse_result_id == parse_result_id)
+                .order_by(Media.order.asc(), Media.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        return [MediaEntity.from_orm(row) for row in rows]
+
+    def _reconcile_medias(self, medias: list[ParserMediaInfo], parse_result_id: int) -> tuple[list[int], list[str]]:
+        """
+        Align Media rows with a fresh parse list keyed by URL.
+
+        Same URL: update parse metadata; keep status, local paths, and dimensions.
+        New URL: insert a pending row.
+        Missing URL: hard-delete the row (UserMedia cascades) and return paths for
+        post-commit filesystem cleanup.
+        """
+        session = self._get_session()
+        existing_rows = session.execute(select(Media).where(Media.parse_result_id == parse_result_id)).scalars().all()
+        by_url = {row.url: row for row in existing_rows}
+
+        media_ids: list[int] = []
+        seen_urls: set[str] = set()
+
+        for order, media in enumerate(medias):
+            url = str(media.url)
+            seen_urls.add(url)
+            cover = str(media.cover) if media.cover else None
+            url_fallbacks = [str(u) for u in (media.url_fallbacks or [])]
+            cover_fallbacks = [str(u) for u in (media.cover_fallbacks or [])]
+            media_type = media.type if media.type else None
+
+            existing = by_url.get(url)
+            if existing is not None:
+                existing.order = order
+                existing.type = media_type
+                existing.title = media.title
+                existing.cover = cover
+                existing.url_fallbacks = url_fallbacks
+                existing.cover_fallbacks = cover_fallbacks
+                media_ids.append(existing.id)
+            else:
+                media_entity = MediaEntity(
+                    status=MediaStatus.PENDING,
+                    url=url,
+                    type=media_type,
+                    title=media.title,
+                    cover=cover,
+                    url_fallbacks=url_fallbacks,
+                    cover_fallbacks=cover_fallbacks,
+                )
+                media_ids.append(self._save_media(media_entity, parse_result_id, order=order, commit=False))
+
+        session.flush()
+
+        orphan_paths: list[str] = []
+        for url, row in by_url.items():
+            if url in seen_urls:
+                continue
+            if row.media_path:
+                orphan_paths.append(row.media_path)
+            if row.cover_path:
+                orphan_paths.append(row.cover_path)
+            session.delete(row)
+
+        session.flush()
+        return media_ids, orphan_paths
 
     def save_downloaded_medias(
         self, medias: list[DownloadedMediaInfo], parse_result_id: int, commit: bool = False
@@ -418,7 +484,7 @@ class ContentDAO:
 
         return media_ids
 
-    def save_parse_result(self, result: ParserResult, user_id: int) -> int:
+    def save_parse_result(self, result: ParserResult, user_id: int) -> tuple[int, list[str]]:
         """
         Save complete parse result including platform, author, media and user association.
         Uses a single transaction for all operations.
@@ -427,7 +493,8 @@ class ContentDAO:
             result: ParserResult from parser
             user_id: User ID
 
-        Returns the saved parse result ID.
+        Returns:
+            Tuple of (parse_result_id, orphaned media file paths to delete after commit).
         """
         session = self._get_session()
         try:
@@ -456,9 +523,6 @@ class ContentDAO:
                     existing_result.deleted_at = None
                     logger.info(f"Restored soft-deleted parse result {existing_result.id}")
                 session.flush()
-
-                # Clear old media rows (one-to-many: media belongs to this parse result)
-                session.query(Media).filter(Media.parse_result_id == parse_result_id).delete()
             else:
                 # Insert new parse result
                 new_result = ParseResult(
@@ -488,8 +552,12 @@ class ContentDAO:
                 session.add(user_parse_result)
                 session.flush()
             elif user_parse_result.deleted_at is not None:
-                # Restore soft-deleted association
+                # Restore soft-deleted association; reset created_at so "recently added"
+                # reflects when the user re-added this content.
+                now = datetime.now(UTC)
                 user_parse_result.deleted_at = None
+                user_parse_result.created_at = now
+                user_parse_result.updated_at = now
                 session.flush()
             else:
                 # Update updated_at to reflect re-parse, ensures sync detects the change
@@ -497,12 +565,12 @@ class ContentDAO:
                 session.flush()
 
             # Save media rows owned by this parse result
-            self.save_medias(result.media, parse_result_id, commit=False)
+            _media_ids, orphan_media_paths = self.save_medias(result.media, parse_result_id, commit=False)
 
             # Commit all changes
             session.commit()
 
-            return parse_result_id
+            return parse_result_id, orphan_media_paths
         except Exception as e:
             session.rollback()
             raise Exception(
@@ -541,6 +609,8 @@ class ContentDAO:
         with TagDAO(session=session) as tag_dao:
             tags = tag_dao.resolve_tags_for_ids(user_id, tag_ids)
             entity = ParseResultEntity.from_orm(result_orm, tags=tags)
+            if user_parse_result is not None:
+                entity.created_at = user_parse_result.created_at
             media_ids = [media.id for media in result_orm.media]
             self._apply_media_tags_to_entity(entity, tag_dao.load_media_tags_map(user_id, media_ids))
             self._apply_author_tags_to_entity(entity, tag_dao.load_author_tags_map(user_id, [result_orm.author_id]))
@@ -632,7 +702,8 @@ class ContentDAO:
         count_query = self._apply_tag_filters(count_query, tag_id=tag_id, exclude_tag_id=exclude_tag_id)
         total = session.execute(count_query).scalar() or 0
 
-        # Add sorting (id tie-breaker keeps offset pages stable when sort values collide)
+        # Add sorting (id tie-breaker keeps offset pages stable when sort values collide).
+        # created_at uses the per-user association time (when the user added/restored the content).
         if sort_by == "post_time":
             sort_field = ParseResult.post_time
         elif sort_by == "updated_at":
@@ -640,7 +711,7 @@ class ContentDAO:
         elif sort_by == "id":
             sort_field = ParseResult.id
         else:
-            sort_field = ParseResult.created_at
+            sort_field = UserParseResult.created_at
 
         if order.lower() == "asc":
             query = query.order_by(sort_field.asc(), ParseResult.id.asc())
@@ -742,9 +813,7 @@ class ContentDAO:
         author_ids = [result_orm.author_id for result_orm in results_orm]
         with TagDAO(session=session) as tag_dao:
             media_tag_ids_map = tag_dao.load_media_tag_ids_map(user_id, media_ids)
-            user_media_updated = tag_dao.load_user_media_updated_at(user_id, media_ids)
             author_tag_ids_map = tag_dao.load_author_tag_ids_map(user_id, author_ids)
-            user_author_updated = tag_dao.load_user_author_updated_at(user_id, author_ids)
 
         for result_orm in results_orm:
             # Check if association is deleted
@@ -768,22 +837,18 @@ class ContentDAO:
             if entity.author.id is not None:
                 entity.author.tag_ids = list(author_tag_ids_map.get(entity.author.id, []))
             entity.deleted_at = association_deleted_at or result_orm.deleted_at
+            if user_parse_result is not None:
+                entity.created_at = user_parse_result.created_at
 
-            # Use the latest updated_at across parse result, user association, media, and user_media.
-            # This ensures the client's next last_sync_time advances correctly when the trigger
-            # was a media update (media_update_subquery), preventing infinite re-sync.
+            # Content/media updated_at only — exclude user-association timestamps so tag
+            # assignments (which bump UserParseResult / UserMedia / UserAuthor) do not
+            # change the displayed "updated" time. Sync still filters on those association
+            # timestamps so tag changes are delivered; the client advances last_sync via
+            # response.sync_timestamp, not max(item.updated_at).
             timestamps = [result_orm.updated_at]
-            if user_parse_result and user_parse_result.updated_at:
-                timestamps.append(user_parse_result.updated_at)
             for media in result_orm.media:
                 if media.updated_at:
                     timestamps.append(media.updated_at)
-                um_updated = user_media_updated.get(media.id)
-                if um_updated:
-                    timestamps.append(um_updated)
-            ua_updated = user_author_updated.get(result_orm.author_id)
-            if ua_updated:
-                timestamps.append(ua_updated)
             entity.updated_at = max(timestamps)
             results.append(entity)
 
@@ -822,6 +887,7 @@ class ContentDAO:
             .all()
         )
         tags_by_result = {association.parse_result_id: list(association.tags or []) for association in associations}
+        created_at_by_result = {association.parse_result_id: association.created_at for association in associations}
 
         all_tag_ids: list[int] = []
         for ids in tags_by_result.values():
@@ -838,6 +904,8 @@ class ContentDAO:
             tag_ids = tags_by_result.get(result_orm.id, [])
             tags = [resolved[tid] for tid in dict.fromkeys(tag_ids) if tid in resolved]
             entity = ParseResultEntity.from_orm(result_orm, tags=tags)
+            if result_orm.id in created_at_by_result:
+                entity.created_at = created_at_by_result[result_orm.id]
             self._apply_media_tags_to_entity(entity, media_tags_map)
             self._apply_author_tags_to_entity(entity, author_tags_map)
             entities.append(entity)
