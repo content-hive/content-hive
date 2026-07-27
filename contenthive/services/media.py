@@ -9,7 +9,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import ClassVar
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import aiofiles
 import aiohttp
@@ -520,6 +520,9 @@ class MediaService:
         """
         Resolve a /media-relative web path to an absolute path under media_dir.
 
+        Path components are URL-decoded to match `_get_relative_media_path`, which
+        stores quoted segments (e.g. spaces as %20).
+
         Args:
             relative_path: Web path beginning with /media/
 
@@ -529,7 +532,9 @@ class MediaService:
         if not relative_path.startswith("/media/"):
             return None
         try:
-            abs_path = self.media_dir / relative_path[len("/media/") :]
+            encoded = relative_path[len("/media/") :]
+            parts = [unquote(part) for part in encoded.split("/") if part != ""]
+            abs_path = self.media_dir.joinpath(*parts)
             resolved_path = abs_path.resolve()
             if not self._is_within_media_root(resolved_path):
                 return None

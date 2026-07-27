@@ -729,11 +729,7 @@ class TaskService:
             for idx, media in enumerate(parse_result.media):
                 media_url = str(media.url)
                 existing = existing_media_by_url.get(media_url)
-                if (
-                    existing is not None
-                    and existing.status == MediaStatus.COMPLETED
-                    and media_service.media_file_exists(existing.media_path)
-                ):
+                if existing is not None and self._should_skip_media_download(existing, media):
                     skipped_downloads += 1
                     logger.debug(
                         f"[{task.task_id}] Skipping download for media {idx}: already completed with local file"
@@ -961,6 +957,22 @@ class TaskService:
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
             self.update_sub_task_result(sub_task.id, {"status": "failed", "error": error_msg})
             raise
+
+    @staticmethod
+    def _should_skip_media_download(existing: MediaEntity, media: ParserMediaInfo) -> bool:
+        """
+        Whether a reparse can skip downloading this media item.
+
+        Requires COMPLETED status and a present main media file. If the parse result
+        still advertises a cover (or cover fallbacks), the local cover file must also
+        exist — otherwise a missing cover would never be retried.
+        """
+        if existing.status != MediaStatus.COMPLETED:
+            return False
+        if not media_service.media_file_exists(existing.media_path):
+            return False
+        expects_cover = bool(media.cover) or bool(media.cover_fallbacks)
+        return (not expects_cover) or media_service.media_file_exists(existing.cover_path)
 
     def _categorize_download_results(
         self,
