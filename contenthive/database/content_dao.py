@@ -488,8 +488,12 @@ class ContentDAO:
                 session.add(user_parse_result)
                 session.flush()
             elif user_parse_result.deleted_at is not None:
-                # Restore soft-deleted association
+                # Restore soft-deleted association; reset created_at so "recently added"
+                # reflects when the user re-added this content.
+                now = datetime.now(UTC)
                 user_parse_result.deleted_at = None
+                user_parse_result.created_at = now
+                user_parse_result.updated_at = now
                 session.flush()
             else:
                 # Update updated_at to reflect re-parse, ensures sync detects the change
@@ -541,6 +545,8 @@ class ContentDAO:
         with TagDAO(session=session) as tag_dao:
             tags = tag_dao.resolve_tags_for_ids(user_id, tag_ids)
             entity = ParseResultEntity.from_orm(result_orm, tags=tags)
+            if user_parse_result is not None:
+                entity.created_at = user_parse_result.created_at
             media_ids = [media.id for media in result_orm.media]
             self._apply_media_tags_to_entity(entity, tag_dao.load_media_tags_map(user_id, media_ids))
             self._apply_author_tags_to_entity(entity, tag_dao.load_author_tags_map(user_id, [result_orm.author_id]))
@@ -632,7 +638,8 @@ class ContentDAO:
         count_query = self._apply_tag_filters(count_query, tag_id=tag_id, exclude_tag_id=exclude_tag_id)
         total = session.execute(count_query).scalar() or 0
 
-        # Add sorting (id tie-breaker keeps offset pages stable when sort values collide)
+        # Add sorting (id tie-breaker keeps offset pages stable when sort values collide).
+        # created_at uses the per-user association time (when the user added/restored the content).
         if sort_by == "post_time":
             sort_field = ParseResult.post_time
         elif sort_by == "updated_at":
@@ -640,7 +647,7 @@ class ContentDAO:
         elif sort_by == "id":
             sort_field = ParseResult.id
         else:
-            sort_field = ParseResult.created_at
+            sort_field = UserParseResult.created_at
 
         if order.lower() == "asc":
             query = query.order_by(sort_field.asc(), ParseResult.id.asc())
@@ -768,6 +775,8 @@ class ContentDAO:
             if entity.author.id is not None:
                 entity.author.tag_ids = list(author_tag_ids_map.get(entity.author.id, []))
             entity.deleted_at = association_deleted_at or result_orm.deleted_at
+            if user_parse_result is not None:
+                entity.created_at = user_parse_result.created_at
 
             # Use the latest updated_at across parse result, user association, media, and user_media.
             # This ensures the client's next last_sync_time advances correctly when the trigger
@@ -822,6 +831,7 @@ class ContentDAO:
             .all()
         )
         tags_by_result = {association.parse_result_id: list(association.tags or []) for association in associations}
+        created_at_by_result = {association.parse_result_id: association.created_at for association in associations}
 
         all_tag_ids: list[int] = []
         for ids in tags_by_result.values():
@@ -838,6 +848,8 @@ class ContentDAO:
             tag_ids = tags_by_result.get(result_orm.id, [])
             tags = [resolved[tid] for tid in dict.fromkeys(tag_ids) if tid in resolved]
             entity = ParseResultEntity.from_orm(result_orm, tags=tags)
+            if result_orm.id in created_at_by_result:
+                entity.created_at = created_at_by_result[result_orm.id]
             self._apply_media_tags_to_entity(entity, media_tags_map)
             self._apply_author_tags_to_entity(entity, author_tags_map)
             entities.append(entity)
