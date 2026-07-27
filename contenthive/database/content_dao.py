@@ -749,9 +749,7 @@ class ContentDAO:
         author_ids = [result_orm.author_id for result_orm in results_orm]
         with TagDAO(session=session) as tag_dao:
             media_tag_ids_map = tag_dao.load_media_tag_ids_map(user_id, media_ids)
-            user_media_updated = tag_dao.load_user_media_updated_at(user_id, media_ids)
             author_tag_ids_map = tag_dao.load_author_tag_ids_map(user_id, author_ids)
-            user_author_updated = tag_dao.load_user_author_updated_at(user_id, author_ids)
 
         for result_orm in results_orm:
             # Check if association is deleted
@@ -778,21 +776,15 @@ class ContentDAO:
             if user_parse_result is not None:
                 entity.created_at = user_parse_result.created_at
 
-            # Use the latest updated_at across parse result, user association, media, and user_media.
-            # This ensures the client's next last_sync_time advances correctly when the trigger
-            # was a media update (media_update_subquery), preventing infinite re-sync.
+            # Content/media updated_at only — exclude user-association timestamps so tag
+            # assignments (which bump UserParseResult / UserMedia / UserAuthor) do not
+            # change the displayed "updated" time. Sync still filters on those association
+            # timestamps so tag changes are delivered; the client advances last_sync via
+            # response.sync_timestamp, not max(item.updated_at).
             timestamps = [result_orm.updated_at]
-            if user_parse_result and user_parse_result.updated_at:
-                timestamps.append(user_parse_result.updated_at)
             for media in result_orm.media:
                 if media.updated_at:
                     timestamps.append(media.updated_at)
-                um_updated = user_media_updated.get(media.id)
-                if um_updated:
-                    timestamps.append(um_updated)
-            ua_updated = user_author_updated.get(result_orm.author_id)
-            if ua_updated:
-                timestamps.append(ua_updated)
             entity.updated_at = max(timestamps)
             results.append(entity)
 
