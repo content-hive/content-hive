@@ -348,29 +348,50 @@ class ContentDAO:
                 session.rollback()
             raise Exception(f"Failed to save media: {e}") from e
 
-    def save_medias(self, medias: list[ParserMediaInfo], parse_result_id: int, commit: bool = False) -> list[int]:
+    def save_medias(
+        self, medias: list[ParserMediaInfo], parse_result_id: int, commit: bool = False
+    ) -> tuple[list[int], list[str]]:
         """
         Reconcile media rows for a parse result by URL (upsert + drop orphans).
+
+        Does not delete on-disk files; returns orphaned relative paths so the
+        caller can unlink them after a successful commit.
 
         Args:
             medias: List of ParserMediaInfo objects
             parse_result_id: Owning parse result ID
             commit: Whether to commit immediately (default: False)
 
-        Returns list of media_ids in parse order.
+        Returns:
+            Tuple of (media_ids in parse order, orphaned /media-relative paths).
         """
-        media_ids = self._reconcile_medias(medias, parse_result_id)
+        media_ids, orphan_paths = self._reconcile_medias(medias, parse_result_id)
         if commit:
             self._get_session().commit()
-        return media_ids
+        return media_ids, orphan_paths
 
-    def _reconcile_medias(self, medias: list[ParserMediaInfo], parse_result_id: int) -> list[int]:
+    def list_medias_for_parse_result(self, parse_result_id: int) -> list[MediaEntity]:
+        """Return media entities for a parse result, ordered by display order."""
+        session = self._get_session()
+        rows = (
+            session.execute(
+                select(Media)
+                .where(Media.parse_result_id == parse_result_id)
+                .order_by(Media.order.asc(), Media.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        return [MediaEntity.from_orm(row) for row in rows]
+
+    def _reconcile_medias(self, medias: list[ParserMediaInfo], parse_result_id: int) -> tuple[list[int], list[str]]:
         """
         Align Media rows with a fresh parse list keyed by URL.
 
         Same URL: update parse metadata; keep status, local paths, and dimensions.
         New URL: insert a pending row.
-        Missing URL: hard-delete the row (UserMedia cascades) and best-effort unlink files.
+        Missing URL: hard-delete the row (UserMedia cascades) and return paths for
+        post-commit filesystem cleanup.
         """
         session = self._get_session()
         existing_rows = session.execute(select(Media).where(Media.parse_result_id == parse_result_id)).scalars().all()
@@ -421,29 +442,7 @@ class ContentDAO:
             session.delete(row)
 
         session.flush()
-
-        if orphan_paths:
-            # Lazy import avoids coupling DAO module load to media service init.
-            from contenthive.services.media import media_service
-
-            for relative_path in orphan_paths:
-                media_service.delete_media_file(relative_path)
-
-        return media_ids
-
-    def list_medias_for_parse_result(self, parse_result_id: int) -> list[MediaEntity]:
-        """Return media entities for a parse result, ordered by display order."""
-        session = self._get_session()
-        rows = (
-            session.execute(
-                select(Media)
-                .where(Media.parse_result_id == parse_result_id)
-                .order_by(Media.order.asc(), Media.id.asc())
-            )
-            .scalars()
-            .all()
-        )
-        return [MediaEntity.from_orm(row) for row in rows]
+        return media_ids, orphan_paths
 
     def save_downloaded_medias(
         self, medias: list[DownloadedMediaInfo], parse_result_id: int, commit: bool = False
@@ -485,7 +484,7 @@ class ContentDAO:
 
         return media_ids
 
-    def save_parse_result(self, result: ParserResult, user_id: int) -> int:
+    def save_parse_result(self, result: ParserResult, user_id: int) -> tuple[int, list[str]]:
         """
         Save complete parse result including platform, author, media and user association.
         Uses a single transaction for all operations.
@@ -494,7 +493,8 @@ class ContentDAO:
             result: ParserResult from parser
             user_id: User ID
 
-        Returns the saved parse result ID.
+        Returns:
+            Tuple of (parse_result_id, orphaned media file paths to delete after commit).
         """
         session = self._get_session()
         try:
@@ -565,12 +565,12 @@ class ContentDAO:
                 session.flush()
 
             # Save media rows owned by this parse result
-            self.save_medias(result.media, parse_result_id, commit=False)
+            _media_ids, orphan_media_paths = self.save_medias(result.media, parse_result_id, commit=False)
 
             # Commit all changes
             session.commit()
 
-            return parse_result_id
+            return parse_result_id, orphan_media_paths
         except Exception as e:
             session.rollback()
             raise Exception(

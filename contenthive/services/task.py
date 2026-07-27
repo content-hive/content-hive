@@ -660,10 +660,15 @@ class TaskService:
 
             try:
                 with ContentDAO() as content_dao:
-                    parse_result_id = content_dao.save_parse_result(parse_result, user_id=task.user_id)
+                    parse_result_id, orphan_media_paths = content_dao.save_parse_result(
+                        parse_result, user_id=task.user_id
+                    )
             except Exception as e:
                 logger.exception(f"[{task.task_id}] Failed to save parse result")
                 raise ValueError(f"Failed to save parse result to database: {e}") from e
+
+            for relative_path in orphan_media_paths:
+                media_service.delete_media_file(relative_path)
 
             metadata_service.sync_content_sidecar(parse_result_id, task.user_id)
             if parse_result.author:
@@ -720,6 +725,7 @@ class TaskService:
             except Exception:
                 logger.exception(f"[{task.task_id}] Failed to load existing media for download skip checks")
 
+            skipped_downloads = 0
             for idx, media in enumerate(parse_result.media):
                 media_url = str(media.url)
                 existing = existing_media_by_url.get(media_url)
@@ -728,7 +734,8 @@ class TaskService:
                     and existing.status == MediaStatus.COMPLETED
                     and media_service.media_file_exists(existing.media_path)
                 ):
-                    logger.info(
+                    skipped_downloads += 1
+                    logger.debug(
                         f"[{task.task_id}] Skipping download for media {idx}: already completed with local file"
                     )
                     continue
@@ -751,6 +758,12 @@ class TaskService:
                     download_subtasks.append(download_subtask)
                 else:
                     logger.warning(f"[{task.task_id}] Failed to create download sub task for media {idx}")
+
+            if skipped_downloads:
+                logger.info(
+                    f"[{task.task_id}] Skipped {skipped_downloads}/{media_count} media downloads "
+                    f"(already completed with local files)"
+                )
 
             # Execute downloads with concurrency control
             if not download_subtasks:
