@@ -15,6 +15,7 @@ from contenthive.database.task_dao import TaskDAO
 from contenthive.logger import logger
 from contenthive.models.content import (
     DownloadedMediaInfo,
+    MediaEntity,
     PaginatedResponse,
     PaginationInfo,
 )
@@ -708,10 +709,30 @@ class TaskService:
                     saved_media_ids=[],
                 )
 
-            # Create download sub tasks
+            # Create download sub tasks (skip media already completed with local files)
             content_id = resolve_content_id(parse_result.pid, str(parse_result.url))
 
+            existing_media_by_url: dict[str, MediaEntity] = {}
+            try:
+                with ContentDAO() as content_dao:
+                    for row in content_dao.list_medias_for_parse_result(parse_result_id):
+                        existing_media_by_url[row.url] = row
+            except Exception:
+                logger.exception(f"[{task.task_id}] Failed to load existing media for download skip checks")
+
             for idx, media in enumerate(parse_result.media):
+                media_url = str(media.url)
+                existing = existing_media_by_url.get(media_url)
+                if (
+                    existing is not None
+                    and existing.status == MediaStatus.COMPLETED
+                    and media_service.media_file_exists(existing.media_path)
+                ):
+                    logger.info(
+                        f"[{task.task_id}] Skipping download for media {idx}: already completed with local file"
+                    )
+                    continue
+
                 download_subtask = self.create_sub_task(
                     main_task_id=task.id,
                     task_type=TaskType.MEDIA_DOWNLOAD,
@@ -733,7 +754,12 @@ class TaskService:
 
             # Execute downloads with concurrency control
             if not download_subtasks:
-                logger.warning(f"[{task.task_id}] No download sub tasks created")
+                if media_count > 0:
+                    logger.info(
+                        f"[{task.task_id}] All {media_count} media already completed locally, skipping download phase"
+                    )
+                else:
+                    logger.warning(f"[{task.task_id}] No download sub tasks created")
                 return self._build_task_result(
                     task_id=task.task_id,
                     parse_result_id=parse_result_id,

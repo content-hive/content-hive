@@ -350,33 +350,100 @@ class ContentDAO:
 
     def save_medias(self, medias: list[ParserMediaInfo], parse_result_id: int, commit: bool = False) -> list[int]:
         """
-        Save multiple media entities for a parse result.
+        Reconcile media rows for a parse result by URL (upsert + drop orphans).
 
         Args:
             medias: List of ParserMediaInfo objects
             parse_result_id: Owning parse result ID
             commit: Whether to commit immediately (default: False)
 
-        Returns list of media_ids.
+        Returns list of media_ids in parse order.
         """
-        media_ids = []
-        for order, media in enumerate(medias):
-            media_entity = MediaEntity(
-                status=MediaStatus.PENDING,  # Default to pending when saving from parser result
-                url=str(media.url),
-                type=media.type if media.type else None,
-                title=media.title,
-                cover=str(media.cover) if media.cover else None,
-                url_fallbacks=[str(u) for u in (media.url_fallbacks or [])],
-                cover_fallbacks=[str(u) for u in (media.cover_fallbacks or [])],
-            )
-            media_id = self._save_media(media_entity, parse_result_id, order=order, commit=False)
-            media_ids.append(media_id)
-
+        media_ids = self._reconcile_medias(medias, parse_result_id)
         if commit:
             self._get_session().commit()
+        return media_ids
+
+    def _reconcile_medias(self, medias: list[ParserMediaInfo], parse_result_id: int) -> list[int]:
+        """
+        Align Media rows with a fresh parse list keyed by URL.
+
+        Same URL: update parse metadata; keep status, local paths, and dimensions.
+        New URL: insert a pending row.
+        Missing URL: hard-delete the row (UserMedia cascades) and best-effort unlink files.
+        """
+        session = self._get_session()
+        existing_rows = session.execute(select(Media).where(Media.parse_result_id == parse_result_id)).scalars().all()
+        by_url = {row.url: row for row in existing_rows}
+
+        media_ids: list[int] = []
+        seen_urls: set[str] = set()
+
+        for order, media in enumerate(medias):
+            url = str(media.url)
+            seen_urls.add(url)
+            cover = str(media.cover) if media.cover else None
+            url_fallbacks = [str(u) for u in (media.url_fallbacks or [])]
+            cover_fallbacks = [str(u) for u in (media.cover_fallbacks or [])]
+            media_type = media.type if media.type else None
+
+            existing = by_url.get(url)
+            if existing is not None:
+                existing.order = order
+                existing.type = media_type
+                existing.title = media.title
+                existing.cover = cover
+                existing.url_fallbacks = url_fallbacks
+                existing.cover_fallbacks = cover_fallbacks
+                media_ids.append(existing.id)
+            else:
+                media_entity = MediaEntity(
+                    status=MediaStatus.PENDING,
+                    url=url,
+                    type=media_type,
+                    title=media.title,
+                    cover=cover,
+                    url_fallbacks=url_fallbacks,
+                    cover_fallbacks=cover_fallbacks,
+                )
+                media_ids.append(self._save_media(media_entity, parse_result_id, order=order, commit=False))
+
+        session.flush()
+
+        orphan_paths: list[str] = []
+        for url, row in by_url.items():
+            if url in seen_urls:
+                continue
+            if row.media_path:
+                orphan_paths.append(row.media_path)
+            if row.cover_path:
+                orphan_paths.append(row.cover_path)
+            session.delete(row)
+
+        session.flush()
+
+        if orphan_paths:
+            # Lazy import avoids coupling DAO module load to media service init.
+            from contenthive.services.media import media_service
+
+            for relative_path in orphan_paths:
+                media_service.delete_media_file(relative_path)
 
         return media_ids
+
+    def list_medias_for_parse_result(self, parse_result_id: int) -> list[MediaEntity]:
+        """Return media entities for a parse result, ordered by display order."""
+        session = self._get_session()
+        rows = (
+            session.execute(
+                select(Media)
+                .where(Media.parse_result_id == parse_result_id)
+                .order_by(Media.order.asc(), Media.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        return [MediaEntity.from_orm(row) for row in rows]
 
     def save_downloaded_medias(
         self, medias: list[DownloadedMediaInfo], parse_result_id: int, commit: bool = False
@@ -456,9 +523,6 @@ class ContentDAO:
                     existing_result.deleted_at = None
                     logger.info(f"Restored soft-deleted parse result {existing_result.id}")
                 session.flush()
-
-                # Clear old media rows (one-to-many: media belongs to this parse result)
-                session.query(Media).filter(Media.parse_result_id == parse_result_id).delete()
             else:
                 # Insert new parse result
                 new_result = ParseResult(
