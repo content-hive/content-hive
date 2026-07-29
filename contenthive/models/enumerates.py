@@ -28,6 +28,13 @@ class TaskType(StrEnum):
     # Add more task types as needed
 
 
+class AuthorProfileAsset(StrEnum):
+    """Which author profile file an AUTHOR_PROFILE_DOWNLOAD sub task targets."""
+
+    AVATAR = "avatar"
+    BANNER = "banner"
+
+
 class TaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -39,7 +46,15 @@ class TaskStatus(StrEnum):
 class TaskRole(StrEnum):
     PRIMARY = "primary"
     LINKED = "linked"
-    REUSED = "reused"
+
+
+class SubTaskResultStatus(StrEnum):
+    """Outcome summary stored inside a sub task result (richer than TaskStatus)."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    COMPLETED = "completed"
 
 
 class MediaStatus(StrEnum):

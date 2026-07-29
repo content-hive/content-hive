@@ -200,61 +200,37 @@ class MediaService:
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
 
-    async def download_author_profile(
+    async def download_author_profile_asset(
         self,
         platform: str,
         author_uid: str,
-        avatar_url: str | None,
-        banner_url: str | None,
-    ) -> tuple[str | None, str | None]:
+        asset: str,
+        url: str,
+    ) -> str | None:
         """
-        Download an author's avatar and/or banner into the author directory.
+        Download a single author profile asset (avatar or banner).
 
-        Files are stored directly under {media_dir}/{platform}/{author_uid}/ and named
-        avatar_{url_hash}{ext} / banner_{url_hash}{ext}. Always uses the built-in
-        downloader (plugin download services are scoped to content media).
+        Files are stored under {media_dir}/{platform}/{author_uid}/ and named
+        {asset}_{url_hash}{ext}. Always uses the built-in downloader.
 
         Args:
             platform: Platform code
             author_uid: Author uid (used as the directory name)
-            avatar_url: Remote avatar URL, or None to skip
-            banner_url: Remote banner URL, or None to skip
+            asset: "avatar" or "banner"
+            url: Remote asset URL
 
         Returns:
-            Tuple of (avatar_path, banner_path) as /media-relative web paths. Each
-            element is None when its URL is absent or its download failed.
+            /media-relative web path, or None if download failed.
         """
-        if not avatar_url and not banner_url:
-            return None, None
-
         save_dir = self._prepare_author_directory(platform, author_uid)
-
         headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-            pending: list[tuple[str, str]] = []
-            if avatar_url:
-                pending.append(("avatar", avatar_url))
-            if banner_url:
-                pending.append(("banner", banner_url))
-
-            results = await asyncio.gather(
-                *[self._download_file(session, [url], save_dir, None, file_type) for file_type, url in pending],
-                return_exceptions=True,
-            )
-
-        avatar_path: str | None = None
-        banner_path: str | None = None
-        for (file_type, _), result in zip(pending, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.warning(f"Failed to download author {file_type} for {platform}/{author_uid}: {result}")
-                continue
-            relative_path = self._get_relative_media_path(result)
-            if file_type == "avatar":
-                avatar_path = relative_path
-            else:
-                banner_path = relative_path
-
-        return avatar_path, banner_path
+            try:
+                result = await self._download_file(session, [url], save_dir, None, asset)
+            except Exception:
+                logger.exception(f"Failed to download author {asset} for {platform}/{author_uid}")
+                return None
+        return self._get_relative_media_path(result)
 
     def _move_plugin_download_result(
         self,

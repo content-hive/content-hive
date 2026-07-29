@@ -31,7 +31,6 @@ async def create_parser_task(
     1. Creates a task with deduplication logic
     2. If it's a PRIMARY task, executes it immediately in the background
     3. If it's a LINKED task, it will be completed when the primary finishes
-    4. If it's a REUSED task, it's already completed with historical data
 
     Args:
         current_user: The currently authenticated user

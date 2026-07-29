@@ -356,7 +356,7 @@ class MainTask(Base, TimestampMixin):
     status: Mapped[TaskStatus] = mapped_column(
         SQLEnum(TaskStatus), nullable=False, index=True
     )  # pending, running, canceled, completed, failed, waiting_for_primary
-    role: Mapped[TaskRole | None] = mapped_column(SQLEnum(TaskRole), nullable=True)  # primary, linked, reused
+    role: Mapped[TaskRole | None] = mapped_column(SQLEnum(TaskRole), nullable=True)  # primary, linked
 
     url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
