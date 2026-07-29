@@ -758,7 +758,8 @@ class TaskService:
                 return self._build_task_result(
                     parse_result_id=parse_result_id,
                     media_count=0,
-                    downloaded_count=0,
+                    success_count=0,
+                    saved_count=0,
                     failed_count=0,
                 )
 
@@ -791,7 +792,8 @@ class TaskService:
                 return self._build_task_result(
                     parse_result_id=parse_result_id,
                     media_count=media_count,
-                    downloaded_count=0,
+                    success_count=0,
+                    saved_count=0,
                     failed_count=0,
                 )
 
@@ -810,14 +812,15 @@ class TaskService:
             )
 
             # ========== Phase 5: Process Download Results ==========
-            downloaded_count, failed_count = self._categorize_download_results(
+            success_count, saved_count, failed_count = self._categorize_download_results(
                 task_id=task.task_id,
                 download_results=download_results,
                 download_subtasks=download_subtasks,
             )
 
             logger.info(
-                f"[{task.task_id}] Download phase completed: {downloaded_count} succeeded, {failed_count} failed"
+                f"[{task.task_id}] Download phase completed: "
+                f"{success_count} new, {saved_count} on disk, {failed_count} failed"
             )
 
             # ========== Phase 6: Sync sidecar (media rows already saved in executors) ==========
@@ -827,13 +830,15 @@ class TaskService:
             result = self._build_task_result(
                 parse_result_id=parse_result_id,
                 media_count=media_count,
-                downloaded_count=downloaded_count,
+                success_count=success_count,
+                saved_count=saved_count,
                 failed_count=failed_count,
             )
 
             logger.info(
                 f"[{task.task_id}] Parse content task completed: parse_result_id={parse_result_id}, "
-                f"media={media_count}, downloaded={downloaded_count}, failed={failed_count}"
+                f"media={media_count}, success_count={success_count}, "
+                f"saved={saved_count}, failed={failed_count}"
             )
 
             return result
@@ -954,11 +959,9 @@ class TaskService:
         task_id: str,
         download_results: list[MediaDownloadSubResult],
         download_subtasks: list[SubTaskEntity],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, int]:
         """
-        Categorize download sub task results into downloaded and failed counts.
-
-        SKIPPED results are ignored in the main task summary (visible on sub tasks).
+        Categorize download sub task results.
 
         Args:
             task_id: Main task ID for logging
@@ -966,17 +969,22 @@ class TaskService:
             download_subtasks: List of download sub tasks
 
         Returns:
-            Tuple of (downloaded_count, failed_count)
+            Tuple of (success_count, saved_count, failed_count) where
+            success_count is this-run SUCCESS count and saved_count is
+            SUCCESS + SKIPPED (present on disk after this run).
         """
-        downloaded_count = 0
+        success_count = 0
+        saved_count = 0
         failed_count = 0
 
         for idx, result in enumerate(download_results):
             subtask_id = download_subtasks[idx].sub_task_id if idx < len(download_subtasks) else None
 
             if result.status == SubTaskResultStatus.SUCCESS:
-                downloaded_count += 1
+                success_count += 1
+                saved_count += 1
             elif result.status == SubTaskResultStatus.SKIPPED:
+                saved_count += 1
                 logger.debug(f"[{task_id}] Download [{idx + 1}/{len(download_results)}] skipped: {subtask_id}")
             elif result.status == SubTaskResultStatus.FAILED:
                 failed_count += 1
@@ -988,13 +996,14 @@ class TaskService:
                     f"{subtask_id} - {result.status}"
                 )
 
-        return downloaded_count, failed_count
+        return success_count, saved_count, failed_count
 
     def _build_task_result(
         self,
         parse_result_id: int | None,
         media_count: int,
-        downloaded_count: int,
+        success_count: int,
+        saved_count: int,
         failed_count: int,
     ) -> tuple[ParseContentMainResult, int | None]:
         """
@@ -1003,7 +1012,8 @@ class TaskService:
         Args:
             parse_result_id: Saved parse result ID (returned separately for the column)
             media_count: Total media count from parse result
-            downloaded_count: Number of newly downloaded media (sub task SUCCESS)
+            success_count: Newly downloaded in this run (sub task SUCCESS)
+            saved_count: On disk after this run (SUCCESS + SKIPPED)
             failed_count: Number of failed downloads
 
         Returns:
@@ -1012,7 +1022,8 @@ class TaskService:
         return (
             ParseContentMainResult(
                 media_count=media_count,
-                downloaded_count=downloaded_count,
+                success_count=success_count,
+                saved_count=saved_count,
                 failed_count=failed_count,
             ),
             parse_result_id,
