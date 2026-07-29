@@ -22,7 +22,6 @@ class ParseContentMainResult(TaskResultBase):
 
     media_count: int = Field(0, description="Total media items from parse")
     downloaded_count: int = Field(0, description="Successfully downloaded media count")
-    skipped_count: int = Field(0, description="Media downloads skipped (already present locally)")
     failed_count: int = Field(0, description="Failed download count")
 
 

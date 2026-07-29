@@ -38,6 +38,7 @@ class MediaDownloadSubParameters(TaskParametersBase):
     platform: str = Field(..., description="Platform code")
     author: str = Field(..., description="Author uid")
     content_id: str = Field(..., description="Resolved content ID")
+    parse_result_id: int = Field(..., description="Owning parse result ID for skip checks")
     plugin_domain: str | None = Field(None, description="Plugin domain used for download")
     media_index: int = Field(0, description="Index of this media item in the parse result")
     media: ParserMediaInfo = Field(..., description="Media metadata to download")

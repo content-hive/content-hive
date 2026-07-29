@@ -625,10 +625,9 @@ class TaskService:
         Execution flow:
         1. Create and execute parse sub task → get ParserResult
         2. Save parse result to database → get parse_result_id
-        3. Create download sub tasks for each media (if any)
-        4. Execute all download sub tasks in parallel
-        5. Save all download results to database
-        6. Return comprehensive task statistics
+        3. Create download sub tasks for each media (skip decided at execution)
+        4. Execute all download sub tasks in parallel (each persists its own media row)
+        5. Sync content sidecar and return task statistics
 
         Args:
             task: MainTaskEntity object
@@ -759,33 +758,14 @@ class TaskService:
                 return self._build_task_result(
                     parse_result_id=parse_result_id,
                     media_count=0,
-                    success_downloads=[],
+                    downloaded_count=0,
                     failed_count=0,
-                    skipped_count=0,
                 )
 
-            # Create download sub tasks (skip media already completed with local files)
+            # Create a download sub task for every media item; skip is decided at execution.
             content_id = resolve_content_id(parse_result.pid, str(parse_result.url))
 
-            existing_media_by_url: dict[str, MediaEntity] = {}
-            try:
-                with ContentDAO() as content_dao:
-                    for row in content_dao.list_medias_for_parse_result(parse_result_id):
-                        existing_media_by_url[row.url] = row
-            except Exception:
-                logger.exception(f"[{task.task_id}] Failed to load existing media for download skip checks")
-
-            skipped_downloads = 0
             for idx, media in enumerate(parse_result.media):
-                media_url = str(media.url)
-                existing = existing_media_by_url.get(media_url)
-                if existing is not None and self._should_skip_media_download(existing, media):
-                    skipped_downloads += 1
-                    logger.debug(
-                        f"[{task.task_id}] Skipping download for media {idx}: already completed with local file"
-                    )
-                    continue
-
                 download_subtask = self.create_sub_task(
                     main_task_id=task.id,
                     task_type=TaskType.MEDIA_DOWNLOAD,
@@ -793,6 +773,7 @@ class TaskService:
                         platform=platform_code,
                         author=author_uid,
                         content_id=content_id,
+                        parse_result_id=parse_result_id,
                         plugin_domain=parse_result.parser,
                         media_index=idx,
                         media=media,
@@ -805,26 +786,13 @@ class TaskService:
                 else:
                     logger.warning(f"[{task.task_id}] Failed to create download sub task for media {idx}")
 
-            if skipped_downloads:
-                logger.info(
-                    f"[{task.task_id}] Skipped {skipped_downloads}/{media_count} media downloads "
-                    f"(already completed with local files)"
-                )
-
-            # Execute downloads with concurrency control
             if not download_subtasks:
-                if media_count > 0:
-                    logger.info(
-                        f"[{task.task_id}] All {media_count} media already completed locally, skipping download phase"
-                    )
-                else:
-                    logger.warning(f"[{task.task_id}] No download sub tasks created")
+                logger.warning(f"[{task.task_id}] No download sub tasks created")
                 return self._build_task_result(
                     parse_result_id=parse_result_id,
                     media_count=media_count,
-                    success_downloads=[],
+                    downloaded_count=0,
                     failed_count=0,
-                    skipped_count=skipped_downloads,
                 )
 
             logger.info(f"[{task.task_id}] Executing {len(download_subtasks)}/{media_count} downloads")
@@ -842,43 +810,30 @@ class TaskService:
             )
 
             # ========== Phase 5: Process Download Results ==========
-            success_downloads, failed_count = self._categorize_download_results(
+            downloaded_count, failed_count = self._categorize_download_results(
                 task_id=task.task_id,
                 download_results=download_results,
                 download_subtasks=download_subtasks,
             )
 
             logger.info(
-                f"[{task.task_id}] Download phase completed: {len(success_downloads)} succeeded, {failed_count} failed"
+                f"[{task.task_id}] Download phase completed: {downloaded_count} succeeded, {failed_count} failed"
             )
 
-            # ========== Phase 6: Save Downloaded Media ==========
-            try:
-                if download_results:
-                    with ContentDAO() as content_dao:
-                        content_dao.save_downloaded_medias(download_results, parse_result_id, commit=True)
-            except Exception as e:
-                logger.exception(f"[{task.task_id}] Failed to save media records")
-                # Keep the association so a retry can skip local files and re-save paths.
-                if parse_result_id is not None:
-                    self.update_main_task_parse_result_id(task.id, parse_result_id)
-                raise RuntimeError(f"Media download succeeded but failed to save media records: {e}") from e
-
+            # ========== Phase 6: Sync sidecar (media rows already saved in executors) ==========
             metadata_service.sync_content_sidecar(parse_result_id, task.user_id)
 
             # ========== Phase 7: Build and Return Result ==========
             result = self._build_task_result(
                 parse_result_id=parse_result_id,
                 media_count=media_count,
-                success_downloads=success_downloads,
+                downloaded_count=downloaded_count,
                 failed_count=failed_count,
-                skipped_count=skipped_downloads,
             )
 
             logger.info(
                 f"[{task.task_id}] Parse content task completed: parse_result_id={parse_result_id}, "
-                f"media={media_count}, downloaded={len(success_downloads)}, "
-                f"skipped={skipped_downloads}, failed={failed_count}"
+                f"media={media_count}, downloaded={downloaded_count}, failed={failed_count}"
             )
 
             return result
@@ -980,11 +935,12 @@ class TaskService:
     @staticmethod
     def _should_skip_media_download(existing: MediaEntity, media: ParserMediaInfo) -> bool:
         """
-        Whether a reparse can skip downloading this media item.
+        Whether a MEDIA_DOWNLOAD sub task can skip the actual download.
 
-        Requires COMPLETED status and a present main media file. If the parse result
-        still advertises a cover (or cover fallbacks), the local cover file must also
-        exist — otherwise a missing cover would never be retried.
+        Evaluated at sub task execution time. Requires COMPLETED status and a
+        present main media file. If the parse result still advertises a cover
+        (or cover fallbacks), the local cover file must also exist — otherwise a
+        missing cover would never be retried.
         """
         if existing.status != MediaStatus.COMPLETED:
             return False
@@ -996,48 +952,50 @@ class TaskService:
     def _categorize_download_results(
         self,
         task_id: str,
-        download_results: list[DownloadedMediaInfo],
+        download_results: list[MediaDownloadSubResult],
         download_subtasks: list[SubTaskEntity],
-    ) -> tuple[list[DownloadedMediaInfo], int]:
+    ) -> tuple[int, int]:
         """
-        Categorize download results into successful downloads and a failed count.
+        Categorize download sub task results into downloaded and failed counts.
+
+        SKIPPED results are ignored in the main task summary (visible on sub tasks).
 
         Args:
             task_id: Main task ID for logging
-            download_results: List of download results
+            download_results: List of media download sub task results
             download_subtasks: List of download sub tasks
 
         Returns:
-            Tuple of (success_downloads, failed_count)
+            Tuple of (downloaded_count, failed_count)
         """
-        success_downloads: list[DownloadedMediaInfo] = []
+        downloaded_count = 0
         failed_count = 0
 
         for idx, result in enumerate(download_results):
             subtask_id = download_subtasks[idx].sub_task_id if idx < len(download_subtasks) else None
 
-            if result.status == MediaStatus.COMPLETED:
-                success_downloads.append(result)
-            elif result.status == MediaStatus.FAILED:
+            if result.status == SubTaskResultStatus.SUCCESS:
+                downloaded_count += 1
+            elif result.status == SubTaskResultStatus.SKIPPED:
+                logger.debug(f"[{task_id}] Download [{idx + 1}/{len(download_results)}] skipped: {subtask_id}")
+            elif result.status == SubTaskResultStatus.FAILED:
                 failed_count += 1
-                logger.warning(
-                    f"[{task_id}] Download [{idx + 1}/{len(download_results)}] failed: {subtask_id} - {result.url}"
-                )
+                logger.warning(f"[{task_id}] Download [{idx + 1}/{len(download_results)}] failed: {subtask_id}")
             else:
                 failed_count += 1
                 logger.warning(
-                    f"[{task_id}] Download [{idx + 1}/{len(download_results)}] unexpected status: {result.status}"
+                    f"[{task_id}] Download [{idx + 1}/{len(download_results)}] unexpected status: "
+                    f"{subtask_id} - {result.status}"
                 )
 
-        return success_downloads, failed_count
+        return downloaded_count, failed_count
 
     def _build_task_result(
         self,
         parse_result_id: int | None,
         media_count: int,
-        success_downloads: list[DownloadedMediaInfo],
+        downloaded_count: int,
         failed_count: int,
-        skipped_count: int = 0,
     ) -> tuple[ParseContentMainResult, int | None]:
         """
         Build comprehensive task result model.
@@ -1045,9 +1003,8 @@ class TaskService:
         Args:
             parse_result_id: Saved parse result ID (returned separately for the column)
             media_count: Total media count from parse result
-            success_downloads: List of successfully downloaded media
+            downloaded_count: Number of newly downloaded media (sub task SUCCESS)
             failed_count: Number of failed downloads
-            skipped_count: Number of downloads skipped (already present locally)
 
         Returns:
             Tuple of (task result summary, parse_result_id)
@@ -1055,8 +1012,7 @@ class TaskService:
         return (
             ParseContentMainResult(
                 media_count=media_count,
-                downloaded_count=len(success_downloads),
-                skipped_count=skipped_count,
+                downloaded_count=downloaded_count,
                 failed_count=failed_count,
             ),
             parse_result_id,
@@ -1126,36 +1082,57 @@ class TaskService:
             # Re-raise exception to propagate to main task
             raise
 
-    async def _execute_media_download_sub_task(self, sub_task: SubTaskEntity) -> DownloadedMediaInfo:
+    async def _execute_media_download_sub_task(self, sub_task: SubTaskEntity) -> MediaDownloadSubResult:
         """
         Execute a media download sub task.
-        Downloads a single media file and updates the database.
+
+        Skips when the media is already COMPLETED with local files present.
+        Otherwise downloads, persists the media row, and updates the sub task.
 
         Args:
             sub_task: SubTaskEntity object
 
         Returns:
-            DownloadedMediaInfo with status indicating success or failure
+            MediaDownloadSubResult for this media item
         """
         params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
-        media: ParserMediaInfo | None = None
-        if isinstance(params, MediaDownloadSubParameters):
-            media = params.media
+        if not isinstance(params, MediaDownloadSubParameters):
+            error_msg = "platform, author, and content_id parameters are required"
+            logger.error(f"[{sub_task.sub_task_id}] {error_msg}")
+            self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
+            result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+            self.update_sub_task_result(sub_task.id, result)
+            return result
 
         try:
-            if not isinstance(params, MediaDownloadSubParameters):
-                raise ValueError("platform, author, and content_id parameters are required")
-
-            # Get main task to get user_id
             main_task = self.get_main_task(sub_task.main_task_id)
             if not main_task:
                 raise ValueError(f"Main task {sub_task.main_task_id} not found")
 
-            # Update sub task status to RUNNING
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
-            # Download media — MediaService decides whether to use plugin or built-in downloader
-            result = await media_service.download_media(
+            media_url = str(params.media.url)
+            existing: MediaEntity | None = None
+            try:
+                with ContentDAO() as content_dao:
+                    for row in content_dao.list_medias_for_parse_result(params.parse_result_id):
+                        if row.url == media_url:
+                            existing = row
+                            break
+            except Exception:
+                logger.exception(f"[{sub_task.sub_task_id}] Failed to load existing media for download skip check")
+
+            if existing is not None and self._should_skip_media_download(existing, params.media):
+                logger.debug(f"[{sub_task.sub_task_id}] Skipping download: already completed with local file")
+                result = MediaDownloadSubResult(
+                    status=SubTaskResultStatus.SKIPPED,
+                    media_path=existing.media_path,
+                )
+                self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+                self.update_sub_task_result(sub_task.id, result)
+                return result
+
+            downloaded = await media_service.download_media(
                 platform=params.platform,
                 author=params.author,
                 content_id=params.content_id,
@@ -1164,63 +1141,89 @@ class TaskService:
                 plugin_domain=params.plugin_domain,
             )
 
-            # Update sub task status to COMPLETED
-            self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
-            self.update_sub_task_result(
-                sub_task.id,
-                MediaDownloadSubResult(
-                    status=SubTaskResultStatus.SUCCESS,
-                    media_path=result.media_path if result else None,
-                ),
-            )
-
-            # If download_single_media returns None, treat as failure
-            if result is None:
+            if downloaded is None:
                 logger.warning(f"Media download sub task {sub_task.sub_task_id} returned None")
-                return DownloadedMediaInfo(
-                    status=MediaStatus.FAILED,
-                    url=params.media.url,
-                    type=params.media.type,
-                    title=params.media.title,
-                    cover=params.media.cover,
-                    url_fallbacks=params.media.url_fallbacks or [],
-                    cover_fallbacks=params.media.cover_fallbacks or [],
-                    duration=params.media.duration,
-                    width=params.media.width,
-                    height=params.media.height,
-                    media_path=None,
-                    cover_path=None,
-                )
+                try:
+                    with ContentDAO() as content_dao:
+                        content_dao.save_downloaded_media(
+                            DownloadedMediaInfo(
+                                status=MediaStatus.FAILED,
+                                url=params.media.url,
+                                type=params.media.type,
+                                title=params.media.title,
+                                cover=params.media.cover,
+                                url_fallbacks=params.media.url_fallbacks or [],
+                                cover_fallbacks=params.media.cover_fallbacks or [],
+                                duration=params.media.duration,
+                                width=params.media.width,
+                                height=params.media.height,
+                                media_path=None,
+                                cover_path=None,
+                            ),
+                            params.parse_result_id,
+                            order=params.media_index,
+                            commit=True,
+                        )
+                except Exception:
+                    logger.exception(f"[{sub_task.sub_task_id}] Failed to persist FAILED media status")
+                result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+                self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message="Download returned None")
+                self.update_sub_task_result(sub_task.id, result)
+                return result
 
+            try:
+                with ContentDAO() as content_dao:
+                    content_dao.save_downloaded_media(
+                        downloaded,
+                        params.parse_result_id,
+                        order=params.media_index,
+                        commit=True,
+                    )
+            except Exception:
+                logger.exception(f"[{sub_task.sub_task_id}] Failed to save downloaded media")
+                result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+                self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message="Failed to save media record")
+                self.update_sub_task_result(sub_task.id, result)
+                return result
+
+            result = MediaDownloadSubResult(
+                status=SubTaskResultStatus.SUCCESS,
+                media_path=downloaded.media_path,
+            )
+            self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+            self.update_sub_task_result(sub_task.id, result)
             return result
 
         except Exception as e:
             error_msg = str(e)
             logger.exception(f"Media download sub task {sub_task.sub_task_id} failed")
-
-            # Update sub task status to FAILED
+            try:
+                with ContentDAO() as content_dao:
+                    content_dao.save_downloaded_media(
+                        DownloadedMediaInfo(
+                            status=MediaStatus.FAILED,
+                            url=params.media.url,
+                            type=params.media.type,
+                            title=params.media.title,
+                            cover=params.media.cover,
+                            url_fallbacks=params.media.url_fallbacks or [],
+                            cover_fallbacks=params.media.cover_fallbacks or [],
+                            duration=params.media.duration,
+                            width=params.media.width,
+                            height=params.media.height,
+                            media_path=None,
+                            cover_path=None,
+                        ),
+                        params.parse_result_id,
+                        order=params.media_index,
+                        commit=True,
+                    )
+            except Exception:
+                logger.exception(f"[{sub_task.sub_task_id}] Failed to persist FAILED media status")
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
-            self.update_sub_task_result(
-                sub_task.id,
-                MediaDownloadSubResult(status=SubTaskResultStatus.FAILED),
-            )
-
-            # Return a failed DownloadedMediaInfo object instead of raising exception
-            _url = media.url if media is not None else "https://unknown.url"
-            return DownloadedMediaInfo(
-                status=MediaStatus.FAILED,
-                url=_url,
-                type=media.type if media is not None else None,
-                title=media.title if media is not None else None,
-                cover=media.cover if media is not None else None,
-                url_fallbacks=(media.url_fallbacks or []) if media is not None else [],
-                cover_fallbacks=(media.cover_fallbacks or []) if media is not None else [],
-                duration=media.duration if media is not None else None,
-                width=media.width if media is not None else None,
-                height=media.height if media is not None else None,
-                media_path=None,
-                cover_path=None,
-            )
+            result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+            self.update_sub_task_result(sub_task.id, result)
+            return result
 
     async def _execute_content_analysis_sub_task(self, sub_task: SubTaskEntity) -> ContentAnalysisSubResult:
         """
