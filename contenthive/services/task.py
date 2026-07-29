@@ -10,8 +10,6 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
-
 from contenthive.database.content_dao import ContentDAO
 from contenthive.database.task_dao import TaskDAO
 from contenthive.logger import logger
@@ -31,12 +29,24 @@ from contenthive.models.enumerates import (
 )
 from contenthive.models.system import CursorPaginatedResponse
 from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
+from contenthive.models.task_parameters import (
+    AuthorProfileDownloadSubParameters,
+    MainTaskParameters,
+    MediaDownloadSubParameters,
+    ParseContentMainParameters,
+    ParseContentSubParameters,
+    SubTaskParameters,
+    parse_main_task_parameters,
+    parse_sub_task_parameters,
+)
 from contenthive.models.task_result import (
     AuthorProfileDownloadSubResult,
     ContentAnalysisSubResult,
+    MainTaskResult,
     MediaDownloadSubResult,
     ParseContentMainResult,
     ParseContentSubResult,
+    SubTaskResult,
     parse_main_task_result,
 )
 from contenthive.plugins.contracts import ParserMediaInfo, ParserResult
@@ -107,7 +117,7 @@ class TaskService:
         Returns:
             Created MainTaskInfo object or None
         """
-        parameters = {"url": url, "plugin_id": plugin_id}
+        parameters = ParseContentMainParameters(url=url, plugin_id=plugin_id)
 
         # Check if there's a running PRIMARY task for this URL
         with TaskDAO() as task_dao:
@@ -158,7 +168,7 @@ class TaskService:
         user_id: int,
         task_type: TaskType,
         url: str,
-        parameters: dict,
+        parameters: MainTaskParameters,
         role: TaskRole | None = None,
         primary_task_id: int | None = None,
         parse_result_id: int | None = None,
@@ -170,7 +180,7 @@ class TaskService:
             user_id: User ID who creates the task
             task_type: Type of the task
             url: Target URL for the task
-            parameters: Task parameters
+            parameters: Typed task parameters
             role: Task role (primary, linked)
             primary_task_id: ID of primary task if this is linked
             parse_result_id: Associated parse result ID
@@ -180,6 +190,7 @@ class TaskService:
         """
         try:
             task_id = self._generate_task_id()
+            payload = parameters.model_dump(mode="json")
 
             with TaskDAO() as dao:
                 id = dao.create_main_task(
@@ -187,7 +198,7 @@ class TaskService:
                     user_id=user_id,
                     task_type=task_type,
                     url=url,
-                    parameters=parameters,
+                    parameters=payload,
                     status=TaskStatus.PENDING,
                     role=role,
                     primary_task_id=primary_task_id,
@@ -247,20 +258,19 @@ class TaskService:
         with TaskDAO() as dao:
             return dao.update_main_task_status(id, status, error_message, commit=True)
 
-    def update_main_task_result(self, id: int, result: BaseModel | dict[str, Any]) -> bool:
+    def update_main_task_result(self, id: int, result: MainTaskResult) -> bool:
         """
         Update main task result.
 
         Args:
             id: Database ID of the task
-            result: Task result model or dict
+            result: Typed task result
 
         Returns:
             True if updated successfully
         """
-        payload = result.model_dump(mode="json") if isinstance(result, BaseModel) else result
         with TaskDAO() as dao:
-            return dao.update_main_task_result(id, payload, commit=True)
+            return dao.update_main_task_result(id, result.model_dump(mode="json"), commit=True)
 
     def update_main_task_parse_result_id(self, id: int, parse_result_id: int) -> bool:
         """
@@ -441,7 +451,7 @@ class TaskService:
         self,
         main_task_id: int,
         task_type: TaskType,
-        parameters: dict,
+        parameters: SubTaskParameters,
         depends_on_id: int | None = None,
     ) -> SubTaskEntity | None:
         """
@@ -450,7 +460,7 @@ class TaskService:
         Args:
             main_task_id: Parent main task ID
             task_type: Type of the sub task
-            parameters: Task parameters
+            parameters: Typed task parameters
             depends_on_id: ID of sub task this depends on
 
         Returns:
@@ -458,13 +468,14 @@ class TaskService:
         """
         try:
             sub_task_id = self._generate_sub_task_id()
+            payload = parameters.model_dump(mode="json")
 
             with TaskDAO() as dao:
                 sub_task_db_id = dao.create_sub_task(
                     sub_task_id=sub_task_id,
                     main_task_id=main_task_id,
                     task_type=task_type,
-                    parameters=parameters,
+                    parameters=payload,
                     status=TaskStatus.PENDING,
                     depends_on_id=depends_on_id,
                     commit=True,
@@ -534,20 +545,19 @@ class TaskService:
         with TaskDAO() as dao:
             return dao.update_sub_task_progress(id, progress, commit=True)
 
-    def update_sub_task_result(self, id: int, result: BaseModel | dict[str, Any]) -> bool:
+    def update_sub_task_result(self, id: int, result: SubTaskResult) -> bool:
         """
         Update sub task result.
 
         Args:
             id: Database ID of the sub task
-            result: Task result model or dict
+            result: Typed task result
 
         Returns:
             True if updated successfully
         """
-        payload = result.model_dump(mode="json") if isinstance(result, BaseModel) else result
         with TaskDAO() as dao:
-            return dao.update_sub_task_result(id, payload, commit=True)
+            return dao.update_sub_task_result(id, result.model_dump(mode="json"), commit=True)
 
     # Task Execution Methods
 
@@ -635,17 +645,17 @@ class TaskService:
 
         try:
             # ========== Phase 1: Parameter Validation ==========
-            url = task.parameters.get("url")
-            plugin_id = task.parameters.get("plugin_id")
-
-            if not url:
+            main_params = parse_main_task_parameters(task.type, task.parameters)
+            if main_params is None or not main_params.url:
                 raise ValueError("URL parameter is required")
+            url = main_params.url
+            plugin_id = main_params.plugin_id
 
             # ========== Phase 2: Parse Content ==========
             parse_subtask = self.create_sub_task(
                 main_task_id=task.id,
                 task_type=TaskType.PARSE_CONTENT,
-                parameters={"url": url, "plugin_id": plugin_id},
+                parameters=ParseContentSubParameters(url=url, plugin_id=plugin_id),
             )
 
             if not parse_subtask:
@@ -716,14 +726,14 @@ class TaskService:
                     subtask = self.create_sub_task(
                         main_task_id=task.id,
                         task_type=TaskType.AUTHOR_PROFILE_DOWNLOAD,
-                        parameters={
-                            "asset": asset.value,
-                            "platform": platform_code,
-                            "author_uid": author_uid,
-                            "url": url,
-                            "prev_url": prev_url,
-                            "prev_path": prev_path,
-                        },
+                        parameters=AuthorProfileDownloadSubParameters(
+                            asset=asset,
+                            platform=platform_code,
+                            author_uid=author_uid,
+                            url=url,
+                            prev_url=prev_url,
+                            prev_path=prev_path,
+                        ),
                         depends_on_id=parse_subtask.id,
                     )
                     if subtask:
@@ -779,14 +789,14 @@ class TaskService:
                 download_subtask = self.create_sub_task(
                     main_task_id=task.id,
                     task_type=TaskType.MEDIA_DOWNLOAD,
-                    parameters={
-                        "platform": platform_code,
-                        "author": author_uid,
-                        "content_id": content_id,
-                        "plugin_domain": parse_result.parser,
-                        "media_index": idx,
-                        "media": media.model_dump(mode="json"),
-                    },
+                    parameters=MediaDownloadSubParameters(
+                        platform=platform_code,
+                        author=author_uid,
+                        content_id=content_id,
+                        plugin_domain=parse_result.parser,
+                        media_index=idx,
+                        media=media,
+                    ),
                     depends_on_id=parse_subtask.id,
                 )
 
@@ -897,41 +907,33 @@ class TaskService:
         Returns:
             Typed outcome for this single asset.
         """
-        params = sub_task.parameters
-        asset_raw = params.get("asset")
-        platform_code = params.get("platform")
-        author_uid = params.get("author_uid")
-        url = params.get("url")
-        prev_url = params.get("prev_url")
-        prev_path = params.get("prev_path")
+        params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
 
         try:
-            if not platform_code or not author_uid or not asset_raw:
+            if not isinstance(params, AuthorProfileDownloadSubParameters):
                 raise ValueError("platform, author_uid, and asset parameters are required")
-            if not url:
-                raise ValueError("url parameter is required")
 
-            asset = AuthorProfileAsset(asset_raw)
+            asset = params.asset
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
-            url_changed = prev_url != url
-            file_missing = not media_service.media_file_exists(prev_path)
+            url_changed = params.prev_url != params.url
+            file_missing = not media_service.media_file_exists(params.prev_path)
             if not url_changed and not file_missing:
                 logger.debug(f"[{sub_task.sub_task_id}] Author {asset} unchanged, skipping download")
                 result = AuthorProfileDownloadSubResult(
                     status=SubTaskResultStatus.SKIPPED,
                     asset=asset,
-                    path=prev_path,
+                    path=params.prev_path,
                 )
                 self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
                 self.update_sub_task_result(sub_task.id, result)
                 return result
 
             path = await media_service.download_author_profile_asset(
-                platform=platform_code,
-                author_uid=author_uid,
+                platform=params.platform,
+                author_uid=params.author_uid,
                 asset=asset.value,
-                url=url,
+                url=params.url,
             )
 
             if path is None:
@@ -945,7 +947,7 @@ class TaskService:
                 return result
 
             with ContentDAO() as content_dao:
-                current_state = content_dao.get_author_profile_state(platform_code, author_uid)
+                current_state = content_dao.get_author_profile_state(params.platform, params.author_uid)
                 author_id = current_state.id if current_state else None
                 if author_id is None:
                     logger.warning(f"[{sub_task.sub_task_id}] Author not found after save, cannot persist {asset} path")
@@ -967,12 +969,7 @@ class TaskService:
         except Exception as e:
             error_msg = str(e)
             logger.exception(f"Author profile download sub task {sub_task.sub_task_id} failed")
-            asset = None
-            try:
-                if params.get("asset"):
-                    asset = AuthorProfileAsset(params["asset"])
-            except ValueError:
-                pass
+            asset = params.asset if isinstance(params, AuthorProfileDownloadSubParameters) else None
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
             self.update_sub_task_result(
                 sub_task.id,
@@ -1077,11 +1074,8 @@ class TaskService:
             ParserResult object containing parsed content metadata and media list
         """
         try:
-            # Extract parameters
-            url = sub_task.parameters.get("url")
-            plugin_id = sub_task.parameters.get("plugin_id")
-
-            if not url:
+            params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
+            if not isinstance(params, ParseContentSubParameters) or not params.url:
                 raise ValueError("URL parameter is required")
 
             # Get main task to get user_id
@@ -1093,10 +1087,10 @@ class TaskService:
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
             # Parse content
-            parse_result = await content_service.parser_content(url=url, plugin_id=plugin_id)
+            parse_result = await content_service.parser_content(url=params.url, plugin_id=params.plugin_id)
 
             if not parse_result:
-                raise ValueError(f"Failed to parse content from URL: {url}")
+                raise ValueError(f"Failed to parse content from URL: {params.url}")
 
             # Update sub task status to COMPLETED
             self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
@@ -1143,20 +1137,14 @@ class TaskService:
         Returns:
             DownloadedMediaInfo with status indicating success or failure
         """
-        # Extract parameters
-        platform = sub_task.parameters.get("platform")
-        author = sub_task.parameters.get("author")
-        content_id = sub_task.parameters.get("content_id")
-        plugin_domain = sub_task.parameters.get("plugin_domain")
-        media_index = sub_task.parameters.get("media_index", 0)
-        media_data = sub_task.parameters.get("media", {})
+        params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
+        media: ParserMediaInfo | None = None
+        if isinstance(params, MediaDownloadSubParameters):
+            media = params.media
 
         try:
-            # Validate required parameters
-            if not platform or not author or not content_id:
+            if not isinstance(params, MediaDownloadSubParameters):
                 raise ValueError("platform, author, and content_id parameters are required")
-
-            media = ParserMediaInfo.model_validate(media_data)
 
             # Get main task to get user_id
             main_task = self.get_main_task(sub_task.main_task_id)
@@ -1168,12 +1156,12 @@ class TaskService:
 
             # Download media — MediaService decides whether to use plugin or built-in downloader
             result = await media_service.download_media(
-                platform=platform,
-                author=author,
-                content_id=content_id,
-                media=media,
-                media_index=media_index,
-                plugin_domain=plugin_domain,
+                platform=params.platform,
+                author=params.author,
+                content_id=params.content_id,
+                media=params.media,
+                media_index=params.media_index,
+                plugin_domain=params.plugin_domain,
             )
 
             # Update sub task status to COMPLETED
@@ -1191,15 +1179,15 @@ class TaskService:
                 logger.warning(f"Media download sub task {sub_task.sub_task_id} returned None")
                 return DownloadedMediaInfo(
                     status=MediaStatus.FAILED,
-                    url=media.url,
-                    type=media.type,
-                    title=media.title,
-                    cover=media.cover,
-                    url_fallbacks=media.url_fallbacks or [],
-                    cover_fallbacks=media.cover_fallbacks or [],
-                    duration=media.duration,
-                    width=media.width,
-                    height=media.height,
+                    url=params.media.url,
+                    type=params.media.type,
+                    title=params.media.title,
+                    cover=params.media.cover,
+                    url_fallbacks=params.media.url_fallbacks or [],
+                    cover_fallbacks=params.media.cover_fallbacks or [],
+                    duration=params.media.duration,
+                    width=params.media.width,
+                    height=params.media.height,
                     media_path=None,
                     cover_path=None,
                 )
@@ -1218,18 +1206,18 @@ class TaskService:
             )
 
             # Return a failed DownloadedMediaInfo object instead of raising exception
-            _url = media_data.get("url", "https://unknown.url")
+            _url = media.url if media is not None else "https://unknown.url"
             return DownloadedMediaInfo(
                 status=MediaStatus.FAILED,
                 url=_url,
-                type=media_data.get("type"),
-                title=media_data.get("title"),
-                cover=media_data.get("cover"),
-                url_fallbacks=media_data.get("url_fallbacks") or [],
-                cover_fallbacks=media_data.get("cover_fallbacks") or [],
-                duration=media_data.get("duration"),
-                width=media_data.get("width"),
-                height=media_data.get("height"),
+                type=media.type if media is not None else None,
+                title=media.title if media is not None else None,
+                cover=media.cover if media is not None else None,
+                url_fallbacks=(media.url_fallbacks or []) if media is not None else [],
+                cover_fallbacks=(media.cover_fallbacks or []) if media is not None else [],
+                duration=media.duration if media is not None else None,
+                width=media.width if media is not None else None,
+                height=media.height if media is not None else None,
                 media_path=None,
                 cover_path=None,
             )

@@ -11,6 +11,12 @@ from pydantic import Field
 from contenthive.database.orm_models import MainTask, SubTask
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import TaskRole, TaskStatus, TaskType
+from contenthive.models.task_parameters import (
+    MainTaskParameters,
+    SubTaskParameters,
+    parse_main_task_parameters,
+    parse_sub_task_parameters,
+)
 from contenthive.models.task_result import (
     MainTaskResult,
     SubTaskResult,
@@ -155,7 +161,7 @@ class SubTaskInfo(APIBaseModel):
     type: TaskType = Field(..., description="Task type")
     status: TaskStatus = Field(..., description="Task status")
     progress: int = Field(..., description="Progress percentage (0-100)")
-    parameters: dict[str, Any] = Field(..., description="Task parameters")
+    parameters: SubTaskParameters | None = Field(None, description="Task parameters")
     result: SubTaskResult | None = Field(None, description="Task result summary")
     error_message: str | None = Field(None, description="Error message if failed")
     started_at: datetime | None = Field(None, description="Task start time")
@@ -174,7 +180,7 @@ class SubTaskInfo(APIBaseModel):
             type=entity.type,
             status=entity.status,
             progress=entity.progress,
-            parameters=entity.parameters,
+            parameters=parse_sub_task_parameters(entity.type, entity.parameters),
             result=parse_sub_task_result(entity.type, entity.result),
             error_message=entity.error_message,
             started_at=entity.started_at,
@@ -195,7 +201,7 @@ class MainTaskInfo(APIBaseModel):
     status: TaskStatus = Field(..., description="Task status")
     url: str = Field(..., description="Target URL for the task")
     role: TaskRole | None = Field(None, description="Task role (primary, linked)")
-    parameters: dict[str, Any] = Field(..., description="Task parameters")
+    parameters: MainTaskParameters | None = Field(None, description="Task parameters")
     result: MainTaskResult | None = Field(None, description="Task result summary")
     error_message: str | None = Field(None, description="Error message if failed")
     started_at: datetime | None = Field(None, description="Task start time")
@@ -221,7 +227,7 @@ class MainTaskInfo(APIBaseModel):
             status=entity.status,
             url=entity.url,
             role=entity.role,
-            parameters=entity.parameters,
+            parameters=parse_main_task_parameters(entity.type, entity.parameters),
             result=parse_main_task_result(entity.type, entity.result),
             error_message=entity.error_message,
             started_at=entity.started_at,
