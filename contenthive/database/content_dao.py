@@ -619,7 +619,6 @@ class ContentDAO:
     def find_parse_result_by_url(self, url: str) -> ParseResultEntity | None:
         """
         Find parse result by URL (globally, without user filtering).
-        Used for task deduplication.
 
         Args:
             url: URL to search for

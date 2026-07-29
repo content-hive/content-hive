@@ -65,8 +65,8 @@ class TaskDAO:
             url: Target URL for the task
             parameters: Task parameters as JSON
             status: Task status (default: PENDING)
-            role: Task role (primary, linked, reused)
-            primary_task_id: ID of primary task if this is linked/reused
+            role: Task role (primary, linked)
+            primary_task_id: ID of primary task if this is linked
             parse_result_id: Associated parse result ID
             commit: Whether to commit immediately (default: True)
 
@@ -98,64 +98,6 @@ class TaskDAO:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to create main task {task_id}")
-            raise
-
-    def create_reused_main_task(
-        self,
-        task_id: str,
-        user_id: int,
-        task_type: TaskType,
-        url: str,
-        parameters: dict,
-        parse_result_id: int,
-        commit: bool = True,
-    ) -> int:
-        """
-        Create a REUSED main task that's already completed.
-        This task instantly returns historical results without execution.
-
-        Args:
-            task_id: Unique task identifier
-            user_id: User ID who created the task
-            task_type: Type of the task
-            url: Target URL for the task
-            parameters: Task parameters as JSON
-            parse_result_id: Associated parse result ID
-            commit: Whether to commit immediately (default: True)
-
-        Returns:
-            Created task's database ID
-        """
-        session = self._get_session()
-        try:
-            now = datetime.now(UTC)
-
-            main_task = MainTask(
-                task_id=task_id,
-                user_id=user_id,
-                type=task_type,
-                status=TaskStatus.COMPLETED,
-                role=TaskRole.REUSED,
-                url=url,
-                parameters=parameters,
-                primary_task_id=None,
-                parse_result_id=parse_result_id,
-                started_at=now,
-                completed_at=now,
-                result={"parse_result_id": parse_result_id, "reused": True},
-            )
-            session.add(main_task)
-            session.flush()
-            task_db_id = main_task.id
-
-            if commit:
-                session.commit()
-
-            return task_db_id
-        except Exception:
-            if commit:
-                session.rollback()
-            logger.exception(f"Failed to create REUSED main task {task_id}")
             raise
 
     def get_main_task_by_id(self, id: int, include_sub_tasks: bool = False) -> MainTaskEntity | None:

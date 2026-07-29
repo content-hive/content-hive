@@ -11,6 +11,18 @@ from pydantic import Field
 from contenthive.database.orm_models import MainTask, SubTask
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import TaskRole, TaskStatus, TaskType
+from contenthive.models.task_parameters import (
+    MainTaskParameters,
+    SubTaskParameters,
+    parse_main_task_parameters,
+    parse_sub_task_parameters,
+)
+from contenthive.models.task_result import (
+    MainTaskResult,
+    SubTaskResult,
+    parse_main_task_result,
+    parse_sub_task_result,
+)
 
 # Database Models
 
@@ -149,8 +161,8 @@ class SubTaskInfo(APIBaseModel):
     type: TaskType = Field(..., description="Task type")
     status: TaskStatus = Field(..., description="Task status")
     progress: int = Field(..., description="Progress percentage (0-100)")
-    parameters: dict[str, Any] = Field(..., description="Task parameters")
-    result: dict[str, Any] | None = Field(None, description="Task result")
+    parameters: SubTaskParameters | None = Field(None, description="Task parameters")
+    result: SubTaskResult | None = Field(None, description="Task result summary")
     error_message: str | None = Field(None, description="Error message if failed")
     started_at: datetime | None = Field(None, description="Task start time")
     completed_at: datetime | None = Field(None, description="Task completion time")
@@ -168,8 +180,8 @@ class SubTaskInfo(APIBaseModel):
             type=entity.type,
             status=entity.status,
             progress=entity.progress,
-            parameters=entity.parameters,
-            result=entity.result,
+            parameters=parse_sub_task_parameters(entity.type, entity.parameters),
+            result=parse_sub_task_result(entity.type, entity.result),
             error_message=entity.error_message,
             started_at=entity.started_at,
             completed_at=entity.completed_at,
@@ -188,13 +200,13 @@ class MainTaskInfo(APIBaseModel):
     type: TaskType = Field(..., description="Task type")
     status: TaskStatus = Field(..., description="Task status")
     url: str = Field(..., description="Target URL for the task")
-    role: TaskRole | None = Field(None, description="Task role (primary, linked, reused)")
-    parameters: dict[str, Any] = Field(..., description="Task parameters")
-    result: dict[str, Any] | None = Field(None, description="Task result")
+    role: TaskRole | None = Field(None, description="Task role (primary, linked)")
+    parameters: MainTaskParameters | None = Field(None, description="Task parameters")
+    result: MainTaskResult | None = Field(None, description="Task result summary")
     error_message: str | None = Field(None, description="Error message if failed")
     started_at: datetime | None = Field(None, description="Task start time")
     completed_at: datetime | None = Field(None, description="Task completion time")
-    primary_task_id: int | None = Field(None, description="ID of primary task if this is linked/reused")
+    primary_task_id: int | None = Field(None, description="ID of primary task if this is linked")
     parse_result_id: int | None = Field(None, description="Associated parse result ID")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
@@ -215,8 +227,8 @@ class MainTaskInfo(APIBaseModel):
             status=entity.status,
             url=entity.url,
             role=entity.role,
-            parameters=entity.parameters,
-            result=entity.result,
+            parameters=parse_main_task_parameters(entity.type, entity.parameters),
+            result=parse_main_task_result(entity.type, entity.result),
             error_message=entity.error_message,
             started_at=entity.started_at,
             completed_at=entity.completed_at,
@@ -256,7 +268,7 @@ class TaskExecutionResponse(APIBaseModel):
 
     task_id: str = Field(..., description="Task identifier")
     status: TaskStatus = Field(..., description="Current task status")
-    result: dict[str, Any] | None = Field(None, description="Task execution result")
+    result: MainTaskResult | None = Field(None, description="Task execution result summary")
     error_message: str | None = Field(None, description="Error message if failed")
     started_at: datetime | None = Field(None, description="Task start time")
     completed_at: datetime | None = Field(None, description="Task completion time")
