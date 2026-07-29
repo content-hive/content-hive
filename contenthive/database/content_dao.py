@@ -384,6 +384,14 @@ class ContentDAO:
         )
         return [MediaEntity.from_orm(row) for row in rows]
 
+    def get_media_by_parse_result_url(self, parse_result_id: int, url: str) -> MediaEntity | None:
+        """Return a media entity for (parse_result_id, url), or None if missing."""
+        session = self._get_session()
+        row = session.execute(
+            select(Media).where((Media.parse_result_id == parse_result_id) & (Media.url == url))
+        ).scalar_one_or_none()
+        return MediaEntity.from_orm(row) if row is not None else None
+
     def _reconcile_medias(self, medias: list[ParserMediaInfo], parse_result_id: int) -> tuple[list[int], list[str]]:
         """
         Align Media rows with a fresh parse list keyed by URL.

@@ -1108,8 +1108,8 @@ class TaskService:
         """
         params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
         if not isinstance(params, MediaDownloadSubParameters):
-            error_msg = "platform, author, and content_id parameters are required"
-            logger.error(f"[{sub_task.sub_task_id}] {error_msg}")
+            error_msg = "Invalid MEDIA_DOWNLOAD parameters"
+            logger.error(f"[{sub_task.sub_task_id}] {error_msg}: {sub_task.parameters!r}")
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
             result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
             self.update_sub_task_result(sub_task.id, result)
@@ -1126,10 +1126,7 @@ class TaskService:
             existing: MediaEntity | None = None
             try:
                 with ContentDAO() as content_dao:
-                    for row in content_dao.list_medias_for_parse_result(params.parse_result_id):
-                        if row.url == media_url:
-                            existing = row
-                            break
+                    existing = content_dao.get_media_by_parse_result_url(params.parse_result_id, media_url)
             except Exception:
                 logger.exception(f"[{sub_task.sub_task_id}] Failed to load existing media for download skip check")
 
