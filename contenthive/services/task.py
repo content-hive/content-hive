@@ -749,7 +749,7 @@ class TaskService:
                         if isinstance(outcome, BaseException):
                             logger.error(
                                 f"[{task.task_id}] Author profile download subtask {subtask.sub_task_id} failed",
-                                exc_info=outcome,
+                                exc_info=(type(outcome), outcome, outcome.__traceback__),
                             )
                     metadata_service.sync_author_sidecar(platform_code, author_uid)
 
@@ -932,7 +932,7 @@ class TaskService:
             path = await media_service.download_author_profile_asset(
                 platform=params.platform,
                 author_uid=params.author_uid,
-                asset=asset.value,
+                asset=asset,
                 url=params.url,
             )
 

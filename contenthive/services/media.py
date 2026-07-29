@@ -18,7 +18,7 @@ import magic
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.models.content import DownloadedMediaInfo
-from contenthive.models.enumerates import MediaStatus
+from contenthive.models.enumerates import AuthorProfileAsset, MediaStatus
 from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.settings.store import get_settings
@@ -204,7 +204,7 @@ class MediaService:
         self,
         platform: str,
         author_uid: str,
-        asset: str,
+        asset: AuthorProfileAsset,
         url: str,
     ) -> str | None:
         """
@@ -216,7 +216,7 @@ class MediaService:
         Args:
             platform: Platform code
             author_uid: Author uid (used as the directory name)
-            asset: "avatar" or "banner"
+            asset: Avatar or banner
             url: Remote asset URL
 
         Returns:
@@ -226,9 +226,9 @@ class MediaService:
         headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             try:
-                result = await self._download_file(session, [url], save_dir, None, asset)
+                result = await self._download_file(session, [url], save_dir, None, asset.value)
             except Exception:
-                logger.exception(f"Failed to download author {asset} for {platform}/{author_uid}")
+                logger.exception(f"Failed to download author {asset.value} for {platform}/{author_uid}")
                 return None
         return self._get_relative_media_path(result)
 
