@@ -384,6 +384,14 @@ class ContentDAO:
         )
         return [MediaEntity.from_orm(row) for row in rows]
 
+    def get_media_by_parse_result_url(self, parse_result_id: int, url: str) -> MediaEntity | None:
+        """Return a media entity for (parse_result_id, url), or None if missing."""
+        session = self._get_session()
+        row = session.execute(
+            select(Media).where((Media.parse_result_id == parse_result_id) & (Media.url == url))
+        ).scalar_one_or_none()
+        return MediaEntity.from_orm(row) if row is not None else None
+
     def _reconcile_medias(self, medias: list[ParserMediaInfo], parse_result_id: int) -> tuple[list[int], list[str]]:
         """
         Align Media rows with a fresh parse list keyed by URL.
@@ -444,45 +452,46 @@ class ContentDAO:
         session.flush()
         return media_ids, orphan_paths
 
-    def save_downloaded_medias(
-        self, medias: list[DownloadedMediaInfo], parse_result_id: int, commit: bool = False
-    ) -> list[int]:
+    def save_downloaded_media(
+        self,
+        media: DownloadedMediaInfo,
+        parse_result_id: int,
+        order: int,
+        commit: bool = False,
+    ) -> int:
         """
-        Save multiple downloaded media entities for a parse result.
+        Save a single downloaded media entity for a parse result.
 
-        Updates the rows created during the parse phase (matched by
+        Updates the row created during the parse phase (matched by
         (parse_result_id, url)) with download status and local paths.
 
         Args:
-            medias: List of DownloadedMediaInfo objects
+            media: Downloaded media info
             parse_result_id: Owning parse result ID
+            order: Display order within the parse result
             commit: Whether to commit immediately (default: False)
 
-        Returns list of media_ids.
+        Returns:
+            media_id
         """
-        media_ids = []
-        for order, media in enumerate(medias):
-            media_entity = MediaEntity(
-                status=media.status,
-                url=str(media.url),
-                type=media.type if media.type else None,
-                title=media.title,
-                cover=str(media.cover) if media.cover else None,
-                url_fallbacks=[str(u) for u in media.url_fallbacks],
-                cover_fallbacks=[str(u) for u in media.cover_fallbacks],
-                duration=media.duration,
-                width=media.width,
-                height=media.height,
-                media_path=media.media_path,
-                cover_path=media.cover_path,
-            )
-            media_id = self._save_media(media_entity, parse_result_id, order=order, commit=False)
-            media_ids.append(media_id)
-
+        media_entity = MediaEntity(
+            status=media.status,
+            url=str(media.url),
+            type=media.type if media.type else None,
+            title=media.title,
+            cover=str(media.cover) if media.cover else None,
+            url_fallbacks=[str(u) for u in media.url_fallbacks],
+            cover_fallbacks=[str(u) for u in media.cover_fallbacks],
+            duration=media.duration,
+            width=media.width,
+            height=media.height,
+            media_path=media.media_path,
+            cover_path=media.cover_path,
+        )
+        media_id = self._save_media(media_entity, parse_result_id, order=order, commit=False)
         if commit:
             self._get_session().commit()
-
-        return media_ids
+        return media_id
 
     def save_parse_result(self, result: ParserResult, user_id: int) -> tuple[int, list[str]]:
         """

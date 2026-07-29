@@ -21,8 +21,8 @@ class ParseContentMainResult(TaskResultBase):
     """Main task result for PARSE_CONTENT (summary only; parse_result_id lives on the column)."""
 
     media_count: int = Field(0, description="Total media items from parse")
-    downloaded_count: int = Field(0, description="Successfully downloaded media count")
-    skipped_count: int = Field(0, description="Media downloads skipped (already present locally)")
+    success_count: int = Field(0, description="Media newly downloaded in this run")
+    saved_count: int = Field(0, description="Media on disk after this run (new + already local)")
     failed_count: int = Field(0, description="Failed download count")
 
 
