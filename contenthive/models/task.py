@@ -98,7 +98,6 @@ class SubTaskEntity:
     main_task_id: int
     type: TaskType
     status: TaskStatus
-    progress: int = field(default=0)
     parameters: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = field(default=None)
     error_message: str | None = field(default=None)
@@ -126,7 +125,6 @@ class SubTaskEntity:
             main_task_id=orm.main_task_id,
             type=orm.type,
             status=orm.status,
-            progress=orm.progress,
             parameters=orm.parameters,
             result=orm.result,
             error_message=orm.error_message,
@@ -160,7 +158,7 @@ class SubTaskInfo(APIBaseModel):
     main_task_id: int = Field(..., description="Parent main task ID")
     type: TaskType = Field(..., description="Task type")
     status: TaskStatus = Field(..., description="Task status")
-    progress: int = Field(..., description="Progress percentage (0-100)")
+    progress: int | None = Field(None, description="Live download progress 0-100, or null")
     parameters: SubTaskParameters | None = Field(None, description="Task parameters")
     result: SubTaskResult | None = Field(None, description="Task result summary")
     error_message: str | None = Field(None, description="Error message if failed")
@@ -172,14 +170,17 @@ class SubTaskInfo(APIBaseModel):
 
     @classmethod
     def from_entity(cls, entity: SubTaskEntity) -> "SubTaskInfo":
-        """Create SubTaskInfo from SubTaskEntity"""
+        """Create SubTaskInfo from SubTaskEntity.
+
+        Progress stays null unless TaskService.to_main_task_info overlays a
+        live in-memory value.
+        """
         return cls(
             id=entity.id,
             sub_task_id=entity.sub_task_id,
             main_task_id=entity.main_task_id,
             type=entity.type,
             status=entity.status,
-            progress=entity.progress,
             parameters=parse_sub_task_parameters(entity.type, entity.parameters),
             result=parse_sub_task_result(entity.type, entity.result),
             error_message=entity.error_message,

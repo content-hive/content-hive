@@ -190,7 +190,7 @@ async def get_parser_task(
 
         return APIResponse(
             status=ResponseStatus.SUCCESS,
-            data=MainTaskInfo.from_entity(task, include_sub_tasks=True),
+            data=task_service.to_main_task_info(task, include_sub_tasks=True),
         )
     except DetailedHTTPException:
         raise
