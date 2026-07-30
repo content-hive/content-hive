@@ -323,12 +323,15 @@ CONFIG_SCHEMA = ConfigSchema
 ```python
 async def my_download(data: dict):
     media = data["media"]
-    # 自定义下载逻辑（处理签名 URL、登录态等）
-    return {"path": "/tmp/file.mp4", "mime": "video/mp4"}
+    on_progress = data.get("on_progress")  # 可选 ProgressCallback（0-100）
+    # 自定义下载逻辑（处理签名 URL、登录态等）；有进度时调用 on_progress(pct)
+    return {"media_path": "/tmp/file.mp4"}
 
 # 在 async_setup_entry 中注册
 context.register_service(DOMAIN, "download", my_download)
 ```
+
+类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`。
 
 ---
 

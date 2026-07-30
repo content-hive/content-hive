@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 # Re-export enums from enumerates so plugins only need to import from here
 from contenthive.models.enumerates import MediaType, ParserResultStatus
 
+# Re-export download progress callback for plugin download services
+from contenthive.utils.download_progress import ProgressCallback as ProgressCallback
+
 
 class PluginConfigSchema(BaseModel):
     """Base class for plugin configuration schemas.

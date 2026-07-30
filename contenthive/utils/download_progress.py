@@ -1,17 +1,16 @@
 """
 Download progress helpers for the core media pipeline.
 
-Not part of the plugin contract — plugins should only consume an optional
-`on_progress` callable passed in download service data, and implement any
-byte aggregation locally.
+Plugins should import `ProgressCallback` from contenthive.plugins.contracts
+(re-exported from here), not from this module directly.
 """
 
 import inspect
 from collections.abc import Awaitable, Callable
 
-# Percent callback used by callers (task service / plugins).
+# Percent callback used by the download pipeline and exposed to plugins via contracts.
 ProgressCallback = Callable[[int], Awaitable[None] | None]
-# Per-file byte callback used inside download helpers.
+# Per-file byte callback used inside download helpers (core-only).
 ByteProgressCallback = Callable[[int, int | None], Awaitable[None] | None]
 
 

@@ -324,13 +324,14 @@ Plugins can register named services that other components (including the core do
 # Register a custom download service in async_setup_entry
 async def my_download(data: dict):
     media = data["media"]
-    # custom download logic
-    return {"path": "/tmp/file.mp4", "mime": "video/mp4"}
+    on_progress = data.get("on_progress")  # optional ProgressCallback (0-100)
+    # custom download logic; call on_progress(pct) when useful
+    return {"media_path": "/tmp/file.mp4"}
 
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.).
+The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.). Type `on_progress` via `ProgressCallback` from `contenthive.plugins.contracts`.
 
 ---
 
