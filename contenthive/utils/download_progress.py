@@ -5,11 +5,8 @@ Plugins should import `ProgressCallback` from contenthive.plugins.contracts
 (re-exported from here), not from this module directly.
 """
 
-import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
-
-from contenthive.logger import logger
 
 # Percent callback used by the download pipeline and exposed to plugins via contracts.
 ProgressCallback = Callable[[int], Awaitable[None] | None]
@@ -18,31 +15,22 @@ ByteProgressCallback = Callable[[int, int | None], Awaitable[None] | None]
 
 
 async def invoke_progress(callback: ProgressCallback | None, pct: int) -> None:
-    """Invoke a sync or async percent progress callback; never fail the download on report errors."""
+    """Invoke a sync or async percent progress callback."""
     if callback is None:
         return
-    try:
-        result = callback(pct)
-        if inspect.isawaitable(result):
-            await result
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.debug("Progress callback failed", exc_info=True)
+    result = callback(pct)
+    if inspect.isawaitable(result):
+        await result
 
 
 async def invoke_byte_progress(callback: ByteProgressCallback | None, downloaded: int, total: int | None) -> None:
-    """Invoke a sync or async byte progress callback; never fail the download on report errors."""
+    """Invoke a sync or async byte progress callback."""
     if callback is None:
         return
-    try:
-        result = callback(downloaded, total)
-        if inspect.isawaitable(result):
-            await result
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.debug("Byte progress callback failed", exc_info=True)
+    result = callback(downloaded, total)
+    if inspect.isawaitable(result):
+        await result
+
 
 class ByteProgressAggregator:
     """
