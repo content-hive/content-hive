@@ -556,10 +556,11 @@ class TaskService:
         Returns:
             True if updated successfully
         """
-        if status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED):
-            self.clear_live_progress(id)
         with TaskDAO() as dao:
-            return dao.update_sub_task_status(id, status, error_message, commit=True)
+            updated = dao.update_sub_task_status(id, status, error_message, commit=True)
+        if updated and status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED):
+            self.clear_live_progress(id)
+        return updated
 
     def update_sub_task_result(self, id: int, result: SubTaskResult) -> bool:
         """

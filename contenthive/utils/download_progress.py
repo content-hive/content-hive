@@ -36,7 +36,8 @@ class ByteProgressAggregator:
     """
     Merge parallel file downloads into a single 0-100 percent via byte weighting.
 
-    Formula: sum(downloaded) / sum(known totals) * 100.
+    Formula: sum(downloaded of known-total slots) / sum(known totals) * 100.
+    Slots without a known Content-Length are excluded from both sums.
     When no Content-Length is known yet, no percent is emitted (stays at 0).
     """
 
@@ -59,9 +60,9 @@ class ByteProgressAggregator:
         total_sum = 0
         has_known_total = False
         for downloaded, total in self._slots.values():
-            downloaded_sum += downloaded
             if total is not None and total > 0:
                 has_known_total = True
+                downloaded_sum += downloaded
                 total_sum += total
 
         if not has_known_total or total_sum <= 0:

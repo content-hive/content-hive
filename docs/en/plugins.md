@@ -321,17 +321,26 @@ The `PluginContext` object is passed to all lifecycle hooks.
 Plugins can register named services that other components (including the core download pipeline) can call.
 
 ```python
+import inspect
+
+from contenthive.plugins.contracts import ProgressCallback
+
 # Register a custom download service in async_setup_entry
 async def my_download(data: dict):
     media = data["media"]
-    on_progress = data.get("on_progress")  # optional ProgressCallback (0-100)
-    # custom download logic; call on_progress(pct) when useful
+    on_progress: ProgressCallback | None = data.get("on_progress")
+    # custom download logic (signed URLs, session cookies, etc.)
+    # when you have a percent (0-100):
+    if on_progress is not None:
+        result = on_progress(pct)
+        if inspect.isawaitable(result):
+            await result
     return {"media_path": "/tmp/file.mp4"}
 
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.). Type `on_progress` via `ProgressCallback` from `contenthive.plugins.contracts`.
+The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.). Optional progress reporting uses `on_progress`: a `ProgressCallback` imported from `contenthive.plugins.contracts` (may be sync or async; guard for `None` and `await` when needed).
 
 ---
 
