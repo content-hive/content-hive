@@ -66,6 +66,8 @@ curl -s -X GET "$BASE_URL/v1/task/parser/TASK_ID" \
   -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
+响应中的 `sub_tasks` 含下载类子任务（`MEDIA_DOWNLOAD` / `AUTHOR_PROFILE_DOWNLOAD`）。在 `status` 为 `running` 时，`progress`（0–100）为服务进程内的实时下载进度，需客户端轮询；进程重启后中间进度会清空。完成后以 `status` 为准（`completed` 时进度视为 100）。
+
 4) 健康检查：
 
 ```bash

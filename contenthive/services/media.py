@@ -22,6 +22,13 @@ from contenthive.models.enumerates import AuthorProfileAsset, MediaStatus
 from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.settings.store import get_settings
+from contenthive.utils.download_progress import (
+    ByteProgressAggregator,
+    ByteProgressCallback,
+    ProgressCallback,
+    invoke_byte_progress,
+    invoke_progress,
+)
 from contenthive.utils.path_safety import is_path_within_base, sanitize_path_component
 
 
@@ -98,6 +105,7 @@ class MediaService:
         media: ParserMediaInfo,
         media_index: int = 0,
         plugin_domain: str | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> DownloadedMediaInfo | None:
         """
         Download a single media file, using a plugin download service when available
@@ -112,6 +120,7 @@ class MediaService:
             plugin_domain: Plugin domain to use for download (from ParserResult.parser).
                            If the plugin has registered a "download" service it will be used;
                            otherwise falls back to the built-in downloader.
+            on_progress: Optional 0-100 percent callback (media+cover byte-weighted).
 
         Returns:
             DownloadedMediaInfo on success, or None if the download fails (whether via
@@ -128,6 +137,7 @@ class MediaService:
                     "download",
                     {
                         "media": media.model_dump(mode="json"),
+                        "on_progress": on_progress,
                     },
                 )
                 media_path, cover_path = self._move_plugin_download_result(
@@ -146,6 +156,7 @@ class MediaService:
                     media_urls=media_urls,
                     media_index=media_index,
                     cover_urls=cover_urls,
+                    on_progress=on_progress,
                 )
         except Exception:
             logger.exception(f"Failed to download media for content {content_id}: {media.url}")
@@ -206,6 +217,7 @@ class MediaService:
         author_uid: str,
         asset: AuthorProfileAsset,
         url: str,
+        on_progress: ProgressCallback | None = None,
     ) -> str | None:
         """
         Download a single author profile asset (avatar or banner).
@@ -218,18 +230,28 @@ class MediaService:
             author_uid: Author uid (used as the directory name)
             asset: Avatar or banner
             url: Remote asset URL
+            on_progress: Optional 0-100 percent callback
 
         Returns:
             /media-relative web path, or None if download failed.
         """
         save_dir = self._prepare_author_directory(platform, author_uid)
+        aggregator = ByteProgressAggregator(on_progress)
         headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             try:
-                result = await self._download_file(session, [url], save_dir, None, asset.value)
+                result = await self._download_file(
+                    session,
+                    [url],
+                    save_dir,
+                    None,
+                    asset.value,
+                    on_byte_progress=aggregator.track(asset.value),
+                )
             except Exception:
                 logger.exception(f"Failed to download author {asset.value} for {platform}/{author_uid}")
                 return None
+        await invoke_progress(on_progress, 100)
         return self._get_relative_media_path(result)
 
     def _move_plugin_download_result(
@@ -272,19 +294,41 @@ class MediaService:
         media_urls: list[str],
         media_index: int,
         cover_urls: list[str],
+        on_progress: ProgressCallback | None = None,
     ) -> tuple[Path, Path | None]:
         """
         Download media and optional cover concurrently into save_dir.
         Each accepts a list of URLs; fallback order is handled inside _download_file.
 
+        Progress is byte-weighted across media and cover when Content-Length is known.
+
         Returns:
             Tuple of (media_path, cover_path)
         """
+        aggregator = ByteProgressAggregator(on_progress)
         headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-            tasks = [self._download_file(session, media_urls, save_dir, media_index, "media")]
+            tasks = [
+                self._download_file(
+                    session,
+                    media_urls,
+                    save_dir,
+                    media_index,
+                    "media",
+                    on_byte_progress=aggregator.track("media"),
+                )
+            ]
             if cover_urls:
-                tasks.append(self._download_file(session, cover_urls, save_dir, media_index, "cover"))
+                tasks.append(
+                    self._download_file(
+                        session,
+                        cover_urls,
+                        save_dir,
+                        media_index,
+                        "cover",
+                        on_byte_progress=aggregator.track("cover"),
+                    )
+                )
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
         media_result = results[0]
@@ -296,6 +340,7 @@ class MediaService:
             logger.warning(f"Cover download failed, skipping: {cover_result}")
             cover_result = None
 
+        await invoke_progress(on_progress, 100)
         return media_result, cover_result
 
     async def _download_file(
@@ -305,6 +350,7 @@ class MediaService:
         save_dir: Path,
         index: int | None,
         file_type: str = "media",
+        on_byte_progress: ByteProgressCallback | None = None,
     ) -> Path:
         """
         Download a file with fallback URL support and per-URL retry logic.
@@ -320,6 +366,7 @@ class MediaService:
             index: File index used in the filename. Pass None to omit the numeric
                 prefix (used for author profile assets that are not part of a media list).
             file_type: File type used in the filename, e.g. "media" or "cover"
+            on_byte_progress: Optional callback with (downloaded_bytes, total_or_none)
 
         Returns:
             Path to the saved file
@@ -347,11 +394,17 @@ class MediaService:
                         filename = f"{prefix}{file_type}_{url_hash}{ext}"
                         filepath = save_dir / filename
 
+                        total_size = response.content_length
+                        downloaded = len(first_chunk)
+                        await invoke_byte_progress(on_byte_progress, downloaded, total_size)
+
                         # Write first chunk then stream the rest to disk
                         async with aiofiles.open(filepath, "wb") as f:
                             await f.write(first_chunk)
                             async for chunk in response.content.iter_chunked(65536):
                                 await f.write(chunk)
+                                downloaded += len(chunk)
+                                await invoke_byte_progress(on_byte_progress, downloaded, total_size)
 
                         logger.debug(f"Downloaded {file_type} from {url} -> {filepath}")
                         return filepath

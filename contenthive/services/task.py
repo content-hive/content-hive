@@ -81,7 +81,37 @@ class TaskService:
 
     def __init__(self):
         """Initialize the TaskService."""
-        pass
+        # In-memory download progress for RUNNING sub tasks (SubTask.id → 0..100).
+        # Not persisted; cleared on terminal status or process restart.
+        self._live_progress: dict[int, int] = {}
+
+    def set_live_progress(self, sub_task_id: int, progress: int) -> None:
+        """Update in-memory progress for a RUNNING sub task (monotonic, 0-100)."""
+        pct = max(0, min(100, int(progress)))
+        previous = self._live_progress.get(sub_task_id, -1)
+        if pct <= previous:
+            return
+        self._live_progress[sub_task_id] = pct
+
+    def clear_live_progress(self, sub_task_id: int) -> None:
+        """Remove in-memory progress for a sub task."""
+        self._live_progress.pop(sub_task_id, None)
+
+    def resolve_sub_task_progress(self, entity: SubTaskEntity) -> int:
+        """Resolve API progress from status and in-memory live values."""
+        if entity.status == TaskStatus.COMPLETED:
+            return 100
+        if entity.status == TaskStatus.RUNNING:
+            return self._live_progress.get(entity.id, entity.progress)
+        return entity.progress
+
+    def to_main_task_info(self, entity: MainTaskEntity, include_sub_tasks: bool = False) -> MainTaskInfo:
+        """Build MainTaskInfo, overlaying live download progress onto sub tasks."""
+        return MainTaskInfo.from_entity(
+            entity,
+            include_sub_tasks=include_sub_tasks,
+            resolve_progress=self.resolve_sub_task_progress if include_sub_tasks else None,
+        )
 
     def _generate_task_id(self) -> str:
         """Generate a unique task ID."""
@@ -128,7 +158,7 @@ class TaskService:
             if running_primary.user_id == user_id:
                 # Same user - return existing task directly
                 logger.debug(f"Returning existing PRIMARY task {running_primary.id} to user {user_id} (URL: {url})")
-                return MainTaskInfo.from_entity(running_primary)
+                return self.to_main_task_info(running_primary)
             else:
                 # Different user - create LINKED task
                 logger.debug(
@@ -160,7 +190,7 @@ class TaskService:
                 task_queue.enqueue(task_entity.id, priority=0)
 
         if task_entity:
-            return MainTaskInfo.from_entity(task_entity)
+            return self.to_main_task_info(task_entity)
         return None
 
     async def create_main_task(
@@ -321,7 +351,7 @@ class TaskService:
                 limit=limit,
                 offset=offset,
             )
-            return [MainTaskInfo.from_entity(task) for task in tasks]
+            return [self.to_main_task_info(task) for task in tasks]
 
     def list_main_tasks_by_user(
         self,
@@ -365,7 +395,7 @@ class TaskService:
                     include_sub_tasks=include_sub_tasks,
                 )
 
-            items = [MainTaskInfo.from_entity(task, include_sub_tasks=include_sub_tasks) for task in tasks]
+            items = [self.to_main_task_info(task, include_sub_tasks=include_sub_tasks) for task in tasks]
             total_pages = (total + page_size - 1) // page_size  # Ceiling division
 
             return PaginatedResponse(
@@ -441,7 +471,7 @@ class TaskService:
             next_cursor = _encode_cursor(last.id, sort_value_map.get(sort_by, last.created_at))
 
         return CursorPaginatedResponse(
-            items=[MainTaskInfo.from_entity(task, include_sub_tasks=include_sub_tasks) for task in tasks],
+            items=[self.to_main_task_info(task, include_sub_tasks=include_sub_tasks) for task in tasks],
             next_cursor=next_cursor,
         )
 
@@ -528,6 +558,8 @@ class TaskService:
         Returns:
             True if updated successfully
         """
+        if status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED):
+            self.clear_live_progress(id)
         with TaskDAO() as dao:
             return dao.update_sub_task_status(id, status, error_message, commit=True)
 
@@ -894,6 +926,7 @@ class TaskService:
                 author_uid=params.author_uid,
                 asset=asset,
                 url=params.url,
+                on_progress=lambda pct, sid=sub_task.id: self.set_live_progress(sid, pct),
             )
 
             if path is None:
@@ -1147,6 +1180,7 @@ class TaskService:
                 media=params.media,
                 media_index=params.media_index,
                 plugin_domain=params.plugin_domain,
+                on_progress=lambda pct, sid=sub_task.id: self.set_live_progress(sid, pct),
             )
 
             if downloaded is None:
