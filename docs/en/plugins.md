@@ -332,6 +332,7 @@ async def my_download(data: dict):
     # custom download logic (signed URLs, session cookies, etc.)
     # on_progress reflects main media progress (0-100); cover may download
     # in parallel but should not be counted
+    pct = 100  # TODO: compute 0–100 from main media downloaded/total
     if on_progress is not None:
         result = on_progress(pct)
         if inspect.isawaitable(result):

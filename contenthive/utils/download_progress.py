@@ -36,9 +36,10 @@ def bind_percent_progress(on_progress: ProgressCallback | None) -> ByteProgressC
     """
     Bind a percent callback to a single-file byte progress callback.
 
-    Emits 0-100 from downloaded/total when Content-Length is known.
+    Emits 0-99 from downloaded/total when Content-Length is known.
     No emit when total is unknown. Updates are monotonic so a retry that
     restarts from byte 0 does not yank the UI back to 0%.
+    100 is reserved for the caller's final invoke_progress after success.
     """
     if on_progress is None:
         return None
@@ -49,7 +50,7 @@ def bind_percent_progress(on_progress: ProgressCallback | None) -> ByteProgressC
         nonlocal last_pct
         if total is None or total <= 0:
             return
-        pct = min(100, int(downloaded * 100 / total))
+        pct = min(99, int(downloaded * 100 / total))
         if pct <= last_pct:
             return
         last_pct = pct

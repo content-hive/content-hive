@@ -331,6 +331,7 @@ async def my_download(data: dict):
     # 自定义下载逻辑（处理签名 URL、登录态等）
     # on_progress 反映主媒体文件进度（0-100）；封面可并行下载但不计入
     # 有进度时：先判断非 None；若返回 awaitable 则 await
+    pct = 100  # TODO: 按主媒体 downloaded/total 计算 0–100
     if on_progress is not None:
         result = on_progress(pct)
         if inspect.isawaitable(result):

@@ -300,8 +300,12 @@ class MediaService:
         Download media and optional cover concurrently into save_dir.
         Each accepts a list of URLs; fallback order is handled inside _download_file.
 
-        Progress reflects the main media file only when Content-Length is known;
-        cover is downloaded in parallel but not included in progress.
+        Progress:
+        - Intermediate updates are media-only and emitted only when Content-Length
+          is known (0–99 via bind_percent_progress). Cover is downloaded in
+          parallel but not included.
+        - A final on_progress(100) is always emitted after downloads succeed,
+          even when Content-Length was unknown.
 
         Returns:
             Tuple of (media_path, cover_path)
