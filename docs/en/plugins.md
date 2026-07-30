@@ -330,7 +330,8 @@ async def my_download(data: dict):
     media = data["media"]
     on_progress: ProgressCallback | None = data.get("on_progress")
     # custom download logic (signed URLs, session cookies, etc.)
-    # when you have a percent (0-100):
+    # on_progress reflects main media progress (0-100); cover may download
+    # in parallel but should not be counted
     if on_progress is not None:
         result = on_progress(pct)
         if inspect.isawaitable(result):
@@ -340,7 +341,7 @@ async def my_download(data: dict):
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.). Optional progress reporting uses `on_progress`: a `ProgressCallback` imported from `contenthive.plugins.contracts` (may be sync or async; guard for `None` and `await` when needed).
+The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.). Optional progress reporting uses `on_progress`: a `ProgressCallback` imported from `contenthive.plugins.contracts` (may be sync or async; guard for `None` and `await` when needed). Report main-media percent only; treat task `status` as the source of truth for completion.
 
 ---
 

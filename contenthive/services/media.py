@@ -23,9 +23,9 @@ from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.settings.store import get_settings
 from contenthive.utils.download_progress import (
-    ByteProgressAggregator,
     ByteProgressCallback,
     ProgressCallback,
+    bind_percent_progress,
     invoke_byte_progress,
     invoke_progress,
 )
@@ -120,7 +120,8 @@ class MediaService:
             plugin_domain: Plugin domain to use for download (from ParserResult.parser).
                            If the plugin has registered a "download" service it will be used;
                            otherwise falls back to the built-in downloader.
-            on_progress: Optional 0-100 percent callback (media+cover byte-weighted).
+            on_progress: Optional 0-100 percent callback for the main media file
+                (cover is downloaded in parallel but not included).
 
         Returns:
             DownloadedMediaInfo on success, or None if the download fails (whether via
@@ -236,7 +237,6 @@ class MediaService:
             /media-relative web path, or None if download failed.
         """
         save_dir = self._prepare_author_directory(platform, author_uid)
-        aggregator = ByteProgressAggregator(on_progress)
         headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             try:
@@ -246,7 +246,7 @@ class MediaService:
                     save_dir,
                     None,
                     asset.value,
-                    on_byte_progress=aggregator.track(asset.value),
+                    on_byte_progress=bind_percent_progress(on_progress),
                 )
             except Exception:
                 logger.exception(f"Failed to download author {asset.value} for {platform}/{author_uid}")
@@ -300,12 +300,12 @@ class MediaService:
         Download media and optional cover concurrently into save_dir.
         Each accepts a list of URLs; fallback order is handled inside _download_file.
 
-        Progress is byte-weighted across media and cover when Content-Length is known.
+        Progress reflects the main media file only when Content-Length is known;
+        cover is downloaded in parallel but not included in progress.
 
         Returns:
             Tuple of (media_path, cover_path)
         """
-        aggregator = ByteProgressAggregator(on_progress)
         headers = {"User-Agent": get_settings().download.user_agent}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             tasks = [
@@ -315,7 +315,7 @@ class MediaService:
                     save_dir,
                     media_index,
                     "media",
-                    on_byte_progress=aggregator.track("media"),
+                    on_byte_progress=bind_percent_progress(on_progress),
                 )
             ]
             if cover_urls:
@@ -326,7 +326,6 @@ class MediaService:
                         save_dir,
                         media_index,
                         "cover",
-                        on_byte_progress=aggregator.track("cover"),
                     )
                 )
             results = await asyncio.gather(*tasks, return_exceptions=True)

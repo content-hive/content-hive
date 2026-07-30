@@ -329,7 +329,8 @@ async def my_download(data: dict):
     media = data["media"]
     on_progress: ProgressCallback | None = data.get("on_progress")
     # 自定义下载逻辑（处理签名 URL、登录态等）
-    # 有进度（0-100）时：先判断非 None；若返回 awaitable 则 await
+    # on_progress 反映主媒体文件进度（0-100）；封面可并行下载但不计入
+    # 有进度时：先判断非 None；若返回 awaitable 则 await
     if on_progress is not None:
         result = on_progress(pct)
         if inspect.isawaitable(result):
@@ -340,7 +341,7 @@ async def my_download(data: dict):
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。
+类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主媒体文件的字节比例；子任务是否结束以任务 `status` 为准。
 
 ---
 
