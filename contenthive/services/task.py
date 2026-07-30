@@ -97,21 +97,19 @@ class TaskService:
         """Remove in-memory progress for a sub task."""
         self._live_progress.pop(sub_task_id, None)
 
-    def resolve_sub_task_progress(self, entity: SubTaskEntity) -> int:
-        """Resolve API progress from status and in-memory live values."""
-        if entity.status == TaskStatus.COMPLETED:
-            return 100
-        if entity.status == TaskStatus.RUNNING:
-            return self._live_progress.get(entity.id, entity.progress)
-        return entity.progress
+    def resolve_sub_task_progress(self, entity: SubTaskEntity) -> int | None:
+        """Return in-memory live progress when present; otherwise None."""
+        return self._live_progress.get(entity.id)
 
     def to_main_task_info(self, entity: MainTaskEntity, include_sub_tasks: bool = False) -> MainTaskInfo:
         """Build MainTaskInfo, overlaying live download progress onto sub tasks."""
-        return MainTaskInfo.from_entity(
-            entity,
-            include_sub_tasks=include_sub_tasks,
-            resolve_progress=self.resolve_sub_task_progress if include_sub_tasks else None,
-        )
+        info = MainTaskInfo.from_entity(entity, include_sub_tasks=include_sub_tasks)
+        if include_sub_tasks and entity.sub_tasks:
+            for st_info, st_entity in zip(info.sub_tasks, entity.sub_tasks, strict=True):
+                live = self.resolve_sub_task_progress(st_entity)
+                if live is not None:
+                    st_info.progress = live
+        return info
 
     def _generate_task_id(self) -> str:
         """Generate a unique task ID."""
@@ -562,20 +560,6 @@ class TaskService:
             self.clear_live_progress(id)
         with TaskDAO() as dao:
             return dao.update_sub_task_status(id, status, error_message, commit=True)
-
-    def update_sub_task_progress(self, id: int, progress: int) -> bool:
-        """
-        Update sub task progress.
-
-        Args:
-            id: Database ID of the sub task
-            progress: Progress percentage (0-100)
-
-        Returns:
-            True if updated successfully
-        """
-        with TaskDAO() as dao:
-            return dao.update_sub_task_progress(id, progress, commit=True)
 
     def update_sub_task_result(self, id: int, result: SubTaskResult) -> bool:
         """

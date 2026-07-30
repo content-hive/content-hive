@@ -66,7 +66,7 @@ curl -s -X GET "$BASE_URL/v1/task/parser/TASK_ID" \
   -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
-The response includes `sub_tasks`. For download sub tasks (`MEDIA_DOWNLOAD` / `AUTHOR_PROFILE_DOWNLOAD`), when `status` is `running`, `progress` (0–100) is a live in-process value — poll the endpoint to observe updates. Mid-download progress is cleared on process restart. After completion, treat `status` as authoritative (`completed` implies 100%).
+The response includes `sub_tasks`. For download sub tasks (`MEDIA_DOWNLOAD` / `AUTHOR_PROFILE_DOWNLOAD`), `progress` (0–100) is returned only while a live in-process download progress value exists (not persisted); otherwise it is `null`. Poll the endpoint to observe updates. Mid-download progress is cleared on process restart or when the sub task ends.
 
 4) Health check:
 

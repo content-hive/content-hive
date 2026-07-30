@@ -568,7 +568,6 @@ class TaskDAO:
                 status=status,
                 parameters=parameters,
                 depends_on_id=depends_on_id,
-                progress=0,
             )
             session.add(sub_task)
             session.flush()
@@ -685,8 +684,6 @@ class TaskDAO:
 
             if status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED]:
                 sub_task.completed_at = datetime.now(UTC)
-                if status == TaskStatus.COMPLETED:
-                    sub_task.progress = 100
 
             if error_message:
                 sub_task.error_message = error_message
@@ -699,39 +696,6 @@ class TaskDAO:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to update sub task {id} status")
-            raise
-
-    def update_sub_task_progress(self, id: int, progress: int, commit: bool = True) -> bool:
-        """
-        Update sub task progress.
-
-        Args:
-            id: Database ID of the sub task
-            progress: Progress percentage (0-100)
-            commit: Whether to commit immediately (default: True)
-
-        Returns:
-            True if updated successfully
-        """
-        session = self._get_session()
-        try:
-            stmt = select(SubTask).where(SubTask.id == id)
-            sub_task = session.execute(stmt).scalar_one_or_none()
-            if not sub_task:
-                logger.warning(f"Sub task {id} not found")
-                return False
-
-            # Clamp progress between 0 and 100
-            sub_task.progress = max(0, min(100, progress))
-
-            if commit:
-                session.commit()
-
-            return True
-        except Exception:
-            if commit:
-                session.rollback()
-            logger.exception(f"Failed to update sub task {id} progress")
             raise
 
     def update_sub_task_result(self, id: int, result: dict, commit: bool = True) -> bool:

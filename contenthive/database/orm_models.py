@@ -396,8 +396,6 @@ class SubTask(Base, TimestampMixin):
         SQLEnum(TaskStatus), nullable=False, index=True
     )  # pending, running, completed, failed
 
-    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 to 100
-
     parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)

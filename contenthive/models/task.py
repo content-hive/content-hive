@@ -2,7 +2,6 @@
 Models for task-related operations.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -99,7 +98,6 @@ class SubTaskEntity:
     main_task_id: int
     type: TaskType
     status: TaskStatus
-    progress: int = field(default=0)
     parameters: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = field(default=None)
     error_message: str | None = field(default=None)
@@ -127,7 +125,6 @@ class SubTaskEntity:
             main_task_id=orm.main_task_id,
             type=orm.type,
             status=orm.status,
-            progress=orm.progress,
             parameters=orm.parameters,
             result=orm.result,
             error_message=orm.error_message,
@@ -161,7 +158,7 @@ class SubTaskInfo(APIBaseModel):
     main_task_id: int = Field(..., description="Parent main task ID")
     type: TaskType = Field(..., description="Task type")
     status: TaskStatus = Field(..., description="Task status")
-    progress: int = Field(..., description="Progress percentage (0-100)")
+    progress: int | None = Field(None, description="Live download progress 0-100, or null")
     parameters: SubTaskParameters | None = Field(None, description="Task parameters")
     result: SubTaskResult | None = Field(None, description="Task result summary")
     error_message: str | None = Field(None, description="Error message if failed")
@@ -172,12 +169,11 @@ class SubTaskInfo(APIBaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
 
     @classmethod
-    def from_entity(cls, entity: SubTaskEntity, progress: int | None = None) -> "SubTaskInfo":
+    def from_entity(cls, entity: SubTaskEntity) -> "SubTaskInfo":
         """Create SubTaskInfo from SubTaskEntity.
 
-        Args:
-            entity: Sub task entity
-            progress: Optional override for live/in-memory progress (0-100)
+        Progress stays null unless TaskService.to_main_task_info overlays a
+        live in-memory value.
         """
         return cls(
             id=entity.id,
@@ -185,7 +181,6 @@ class SubTaskInfo(APIBaseModel):
             main_task_id=entity.main_task_id,
             type=entity.type,
             status=entity.status,
-            progress=entity.progress if progress is None else progress,
             parameters=parse_sub_task_parameters(entity.type, entity.parameters),
             result=parse_sub_task_result(entity.type, entity.result),
             error_message=entity.error_message,
@@ -219,28 +214,11 @@ class MainTaskInfo(APIBaseModel):
     sub_tasks: list[SubTaskInfo] = Field(default_factory=list, description="List of sub tasks")
 
     @classmethod
-    def from_entity(
-        cls,
-        entity: MainTaskEntity,
-        include_sub_tasks: bool = False,
-        resolve_progress: Callable[[SubTaskEntity], int] | None = None,
-    ) -> "MainTaskInfo":
-        """Create MainTaskInfo from MainTaskEntity.
-
-        Args:
-            entity: Main task entity
-            include_sub_tasks: Whether to include nested sub tasks
-            resolve_progress: Optional callable(SubTaskEntity) -> int for live progress
-        """
+    def from_entity(cls, entity: MainTaskEntity, include_sub_tasks: bool = False) -> "MainTaskInfo":
+        """Create MainTaskInfo from MainTaskEntity"""
         sub_tasks = []
         if include_sub_tasks and entity.sub_tasks:
-            sub_tasks = [
-                SubTaskInfo.from_entity(
-                    st,
-                    progress=resolve_progress(st) if resolve_progress is not None else None,
-                )
-                for st in entity.sub_tasks
-            ]
+            sub_tasks = [SubTaskInfo.from_entity(st) for st in entity.sub_tasks]
 
         return cls(
             id=entity.id,
