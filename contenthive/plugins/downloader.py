@@ -4,13 +4,13 @@ Plugin downloader for fetching and installing plugins from GitHub repositories.
 Required repository structure:
 
     <repo-root>/
-    ├── plugins-manifest.json   # required — lists all available plugins
-    └── <plugin-path>/          # one directory per plugin (path defined in manifest)
+    ├── registry.json           # required — lists all available plugins
+    └── <plugin-path>/          # one directory per plugin (path defined in registry)
         ├── __init__.py
-        ├── manifest.json       # written by the downloader from plugins-manifest.json
+        ├── manifest.json       # source of truth; copied on install
         └── ...
 
-plugins-manifest.json format:
+registry.json format:
 
     {
       "plugins": [
@@ -19,13 +19,13 @@ plugins-manifest.json format:
           "name": "My Parser",
           "version": "1.2.0",
           "path": "plugins/my_parser",
-          "enabled": true,
+          "release_notes": "…",
           "requirements": ["aiohttp"]
         }
       ]
     }
 
-Repositories that do not contain a plugins-manifest.json at their root are not
+Repositories that do not contain a registry.json at their root are not
 supported and will raise an exception during download.
 """
 
@@ -184,7 +184,7 @@ class GitHubPluginDownloader:
         """
         Download and install plugins from a GitHub repository.
 
-        The repository must contain a ``plugins-manifest.json`` at its root
+        The repository must contain a ``registry.json`` at its root
         (see module docstring for the required format). Raises an exception if
         the file is missing.
 
@@ -194,7 +194,7 @@ class GitHubPluginDownloader:
             ref: Git reference — branch name, tag, or full commit SHA.
             ref_type: One of "branch", "tag", or "commit".
             selected_plugins: Domains to install. ``None`` installs all plugins
-                              with ``"enabled": true`` in plugins-manifest.json.
+                              listed in registry.json.
             force_reinstall: Re-install even if the plugin directory already exists.
 
         Returns:
@@ -204,7 +204,7 @@ class GitHubPluginDownloader:
         Raises:
             ValueError: If ``repo_url`` or ``ref`` fail validation.
             Exception: If the archive cannot be downloaded or
-                       plugins-manifest.json is not found in the repository.
+                       registry.json is not found in the repository.
         """
         results = {}
 
@@ -236,12 +236,12 @@ class GitHubPluginDownloader:
 
                 repo_root = root_dirs[0]
 
-                multi_manifest = repo_root / "plugins-manifest.json"
-                if not multi_manifest.exists():
-                    raise Exception("plugins-manifest.json not found in repository")
+                registry_path = repo_root / "registry.json"
+                if not registry_path.exists():
+                    raise Exception("registry.json not found in repository")
 
                 results = await self._install_from_manifest(
-                    repo_root, multi_manifest, selected_plugins, force_reinstall
+                    repo_root, registry_path, selected_plugins, force_reinstall
                 )
 
         except Exception as e:
@@ -256,23 +256,23 @@ class GitHubPluginDownloader:
         selected_plugins: list[str] | None,
         force_reinstall: bool,
     ) -> dict[str, bool]:
-        """Install plugins from plugins-manifest.json"""
+        """Install plugins from registry.json"""
         results = {}
 
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            logger.warning(f"Plugins manifest not found: {manifest_path}")
+            logger.warning(f"Plugin registry not found: {manifest_path}")
             return results
         except json.JSONDecodeError as e:
-            logger.warning(f"Invalid JSON in plugins manifest {manifest_path}: {e}")
+            logger.warning(f"Invalid JSON in plugin registry {manifest_path}: {e}")
             return results
 
         if not isinstance(manifest, dict):
-            logger.warning("Invalid plugins manifest format: expected dict at root")
+            logger.warning("Invalid plugin registry format: expected dict at root")
             return results
 
-        logger.debug(f"Found {len(manifest.get('plugins', []))} plugins in manifest")
+        logger.debug(f"Found {len(manifest.get('plugins', []))} plugins in registry")
 
         for plugin_info in manifest.get("plugins", []):
             domain = plugin_info.get("domain")
@@ -292,21 +292,16 @@ class GitHubPluginDownloader:
                 logger.debug(f"Plugin {domain} not in selected list, skipping...")
                 continue
 
-            # Skip if disabled (unless explicitly selected)
-            if not plugin_info.get("enabled", True) and not selected_plugins:
-                logger.debug(f"Plugin {domain} is disabled, skipping...")
-                continue
-
             # Install plugin
             plugin_rel_path = plugin_info.get("path")
             if not plugin_rel_path:
-                logger.warning(f"Plugin {domain} missing 'path' in manifest, skipping...")
+                logger.warning(f"Plugin {domain} missing 'path' in registry, skipping...")
                 results[domain] = False
                 continue
 
             plugin_rel_path = Path(plugin_rel_path)
             if plugin_rel_path.is_absolute():
-                logger.warning(f"Plugin {domain} has absolute path in manifest, skipping...")
+                logger.warning(f"Plugin {domain} has absolute path in registry, skipping...")
                 results[domain] = False
                 continue
 
@@ -425,7 +420,7 @@ class GitHubPluginDownloader:
         Args:
             source_dir: Source directory containing plugin files
             domain: Plugin domain/ID (must be pre-validated)
-            plugin_info: Plugin entry from plugins-manifest.json
+            plugin_info: Plugin entry from registry.json (used only if source has no manifest)
             force_reinstall: If True, overwrite existing plugin
 
         Returns:
@@ -456,12 +451,18 @@ class GitHubPluginDownloader:
                 logger.warning(f"Plugin {domain} already exists, overwriting...")
                 shutil.rmtree(target_dir)
 
-            # Copy plugin files
+            # Copy plugin files (includes source manifest.json when present)
             shutil.copytree(source_dir, target_dir)
 
-            # Write manifest.json derived from the central plugins-manifest entry
             manifest_path = target_dir / "manifest.json"
-            manifest_path.write_text(json.dumps(plugin_info, ensure_ascii=False, indent=4), encoding="utf-8")
+            source_manifest = source_dir / "manifest.json"
+            if source_manifest.exists():
+                # Source manifest is the source of truth; already copied by copytree
+                logger.debug(f"Using source manifest for plugin: {domain}")
+            else:
+                # Fallback: write from registry entry without index-only fields
+                local_manifest = {k: v for k, v in plugin_info.items() if k not in ("path", "enabled")}
+                manifest_path.write_text(json.dumps(local_manifest, ensure_ascii=False, indent=4), encoding="utf-8")
 
             logger.debug(f"Plugin installed to: {target_dir}")
             return True
@@ -508,16 +509,16 @@ class GitHubPluginDownloader:
         ref: str = "main",
     ) -> dict | None:
         """
-        Fetch plugins-manifest.json from the remote repository without downloading the full archive.
+        Fetch registry.json from the remote repository without downloading the full archive.
 
-        Uses the raw.githubusercontent.com endpoint to retrieve only the manifest file.
+        Uses the raw.githubusercontent.com endpoint to retrieve only the registry file.
 
         Args:
             repo_url: GitHub repository URL
             ref: Git reference (branch name, tag, or commit SHA)
 
         Returns:
-            Parsed manifest dict, or None if fetch or validation failed
+            Parsed registry dict, or None if fetch or validation failed
         """
         try:
             self._validate_ref(ref)
@@ -525,31 +526,31 @@ class GitHubPluginDownloader:
             owner, repo = self._parse_github_url(repo_url)
             url = (
                 f"https://raw.githubusercontent.com/{quote(owner, safe='')}/"
-                f"{quote(repo, safe='')}/{quote(ref, safe='/')}/plugins-manifest.json"
+                f"{quote(repo, safe='')}/{quote(ref, safe='/')}/registry.json"
             )
 
-            logger.debug(f"Fetching remote manifest from {url}")
+            logger.debug(f"Fetching remote registry from {url}")
 
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session, session.get(url) as response:
                 if response.status == 404:
-                    logger.warning(f"plugins-manifest.json not found in remote repository ({url})")
+                    logger.warning(f"registry.json not found in remote repository ({url})")
                     return None
                 if response.status != 200:
-                    logger.warning(f"Failed to fetch remote manifest: HTTP {response.status}")
+                    logger.warning(f"Failed to fetch remote registry: HTTP {response.status}")
                     return None
                 text = await response.text()
 
             manifest = json.loads(text)
             if not isinstance(manifest, dict) or "plugins" not in manifest:
-                logger.warning("Remote manifest has unexpected format")
+                logger.warning("Remote registry has unexpected format")
                 return None
 
             return manifest
 
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse remote manifest JSON: {e}")
+            logger.warning(f"Failed to parse remote registry JSON: {e}")
             return None
         except Exception as e:
-            logger.warning(f"Failed to fetch remote manifest: {e}")
+            logger.warning(f"Failed to fetch remote registry: {e}")
             return None

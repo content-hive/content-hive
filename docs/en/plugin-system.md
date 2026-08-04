@@ -178,7 +178,7 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | `async_delete(domain)` | Unloads all entries → removes from registry → deletes the plugin directory from disk |
 | `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup + setup_entry |
 | `async_activate(domain)` | First-time activation of a newly installed plugin: discover → setup → setup_entry |
-| `async_check_updates(repo_url, ref)` | Fetches only the remote `plugins-manifest.json`, performs semantic version comparison, caches results |
+| `async_check_updates(repo_url, ref)` | Fetches only the remote `registry.json`, compares versions, caches update offers (including `release_notes`) |
 | `register_service(domain, service, callback)` | Registers a named service callable |
 | `call_service(domain, service, data)` | Calls a registered service |
 
@@ -197,7 +197,7 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 
 `GitHubPluginDownloader` safely downloads, extracts, and installs plugins from a GitHub repository.
 
-**Remote repository format**: the repository root must contain a `plugins-manifest.json` that describes all available plugins and their paths.
+**Remote repository format**: the repository root must contain a `registry.json` that describes all available plugins and their paths.
 
 **Key methods**:
 
@@ -213,7 +213,7 @@ async download_plugins(
 
 ```python
 async fetch_remote_manifest(repo_url: str, ref: str = "main") -> dict | None
-# fetches only plugins-manifest.json, does not download the full package
+# fetches only registry.json, does not download the full package
 ```
 
 **Supported URL formats**: bare domain, HTTPS, and `.git` suffix are all accepted.
@@ -354,7 +354,7 @@ POST /v1/plugins/update
       ├── GitHubPluginDownloader.download_plugins()
       │   ├── Download GitHub zip archive
       │   ├── Safely extract (Zip Slip protection)
-      │   └── Overwrite plugin directories per plugins-manifest.json
+      │   └── Install plugin dirs per registry.json (copy source manifest.json)
       │
       ├── Existing plugin → manager.async_reload(domain)
       │   ├── async_unload_entry
@@ -374,7 +374,7 @@ POST /v1/plugins/update
 3. **Home Assistant-style architecture** — `async_forward_entry_setup` / `async_unload_platforms` pattern decouples plugins from platforms for easy horizontal extension
 4. **Secure remote distribution** — multi-layer protection: domain validation, ref sanitization, Zip Slip prevention, and path boundary checks
 5. **Zero-downtime hot reload** — fully clears the module cache (including all submodule entries in `sys.modules`) before re-importing
-6. **Lightweight version checks** — at startup, only the remote `plugins-manifest.json` (a few KB) is fetched; no full package download
+6. **Lightweight version checks** — at startup, only the remote `registry.json` (a few KB) is fetched; no full package download
 7. **Atomic config writes** — `tempfile` + `rename` + thread lock prevents config corruption from interrupted writes
 8. **Type-driven config schema** — `CONFIG_SCHEMA` drives config read, write, validation, and API exposure; no extra boilerplate needed in plugins
 9. **Stable interface contract** — plugins depend only on `contenthive.plugins.*`; core refactors do not break existing plugins
