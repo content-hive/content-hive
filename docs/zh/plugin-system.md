@@ -176,7 +176,7 @@ PluginEntryData {
 | `async_delete(domain)` | 卸载所有条目 → 从注册表移除 → 删除磁盘目录 |
 | `async_reload(domain)` | 卸载 → 清除 `sys.modules` 缓存 → 重置为 INSTALLED → 重新 setup + setup_entry |
 | `async_activate(domain)` | 首次激活新安装插件：discover → setup → setup_entry |
-| `async_check_updates(repo_url, ref)` | 仅拉取远端 `plugins-manifest.json`，进行语义版本比较，缓存结果 |
+| `async_check_updates(repo_url, ref)` | 仅拉取远端 `registry.json`，比较版本并缓存更新信息（含 `release_notes`） |
 | `register_service(domain, service, callback)` | 注册命名服务 |
 | `call_service(domain, service, data)` | 调用已注册的服务 |
 
@@ -195,7 +195,7 @@ PluginEntryData {
 
 `GitHubPluginDownloader` 从 GitHub 仓库安全地下载、解压并安装插件。
 
-**远端仓库格式**：仓库根目录需包含 `plugins-manifest.json`，描述所有可用插件及其路径。
+**远端仓库格式**：仓库根目录需包含 `registry.json`，描述所有可用插件及其路径。
 
 **主要方法**：
 
@@ -211,7 +211,7 @@ async download_plugins(
 
 ```python
 async fetch_remote_manifest(repo_url: str, ref: str = "main") -> dict | None
-# 仅拉取 plugins-manifest.json，不下载完整包
+# 仅拉取 registry.json，不下载完整包
 ```
 
 **支持的 URL 格式**：裸域名、HTTPS、`.git` 后缀均可。
@@ -352,7 +352,7 @@ POST /v1/plugins/update
       ├── GitHubPluginDownloader.download_plugins()
       │   ├── 下载 GitHub zip 包
       │   ├── 安全解压（Zip Slip 防护）
-      │   └── 按 plugins-manifest.json 覆盖安装
+      │   └── 按 registry.json 安装插件目录（拷贝源目录 manifest.json）
       │
       ├── 已有插件 → manager.async_reload(domain)
       │   ├── async_unload_entry
@@ -372,7 +372,7 @@ POST /v1/plugins/update
 3. **Home Assistant 风格** — `async_forward_entry_setup` / `async_unload_platforms` 模式让插件与平台高度解耦，易于横向扩展
 4. **安全的远程分发** — Domain 校验、Ref 验证、Zip Slip 防护多层保障
 5. **无停机热更新** — 完整清除模块缓存（包括 `sys.modules` 中的所有子模块）后重新加载
-6. **轻量版本检查** — 启动时仅拉取远端 `plugins-manifest.json`（几 KB），对启动时间影响极小
+6. **轻量版本检查** — 启动时仅拉取远端 `registry.json`（几 KB），对启动时间影响极小
 7. **原子配置写入** — 临时文件 + rename + 线程锁，防止写入中断导致配置损坏
 8. **类型化配置 Schema** — `CONFIG_SCHEMA` 驱动配置读取、写入、类型校验和 API 暴露，插件无需额外代码
 9. **稳定接口契约** — 插件只依赖 `contenthive.plugins.*`，核心内部重构不影响已有插件

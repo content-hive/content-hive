@@ -26,7 +26,7 @@ On first start, default values are written to `/config/settings.yaml`.
 plugins:
   repo_url: https://github.com/content-hive/plugins.git
   repo_ref_type: branch   # branch | tag | commit
-  repo_ref: main
+  repo_ref: release
 
 auth:
   access_token_expire_minutes: 60
@@ -43,7 +43,7 @@ download:
 |---------|---------|-------------|
 | `plugins.repo_url` | `https://github.com/content-hive/plugins.git` | Plugin distribution repository. Verify repository trust before changing |
 | `plugins.repo_ref_type` | `branch` | Repository ref type: `branch`, `tag`, or `commit` |
-| `plugins.repo_ref` | `main` | Repository ref value |
+| `plugins.repo_ref` | `release` | Repository ref value. `release` = Stable (default), `main` = Beta |
 | `auth.access_token_expire_minutes` | `60` | Access token validity in minutes |
 | `auth.refresh_token_expire_days` | `30` | Refresh token validity in days |
 | `download.max_retries` | `3` | Maximum retries for media download failures |

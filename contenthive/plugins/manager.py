@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,14 @@ from contenthive.plugins.config import (
 from contenthive.plugins.contracts import PluginConfigSchema
 from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.registry import PluginRecord, PluginState
+
+
+@dataclass(frozen=True)
+class PluginUpdateOffer:
+    """Remote offer: update for an installed plugin, or install for a registry-only plugin."""
+
+    latest_version: str
+    release_notes: str | None = None
 
 
 def is_plugin_update_available(latest_version: str | None, current_version: str) -> bool:
@@ -96,8 +105,8 @@ class PluginManager:
         # Platform registry (domain -> platform -> entities)
         self._platforms: dict[str, dict[str, list[Any]]] = {}
 
-        # Update check cache: domain -> latest version string if update available, else None
-        self._available_updates: dict[str, str | None] = {}
+        # Update check cache: domain -> offer if update available, else None
+        self._available_updates: dict[str, PluginUpdateOffer | None] = {}
         self._last_update_check: datetime | None = None
 
     async def async_discover(self):
@@ -281,31 +290,34 @@ class PluginManager:
         else:
             return callback(data)
 
-    async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, str | None]:
+    async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, PluginUpdateOffer | None]:
         """
-        Check for available plugin updates by comparing local versions against the remote manifest.
+        Check for available plugin updates by comparing local versions against the remote registry.
 
-        Fetches plugins-manifest.json from the remote repository and compares each plugin's
-        version with the locally installed version. Results are cached on the manager.
+        Fetches registry.json from the remote repository. For each remote plugin:
+        - If not installed locally, records an install offer.
+        - If installed, compares versions and records an update offer when newer.
+        Results are cached on the manager.
 
         Args:
             repo_url: GitHub repository URL
             ref: Git reference (branch name, tag, or commit SHA)
 
         Returns:
-            Dict mapping domain to the latest remote version string if an update is available,
-            or None if already up to date or the plugin is not found in the remote manifest.
+            Dict mapping domain to a PluginUpdateOffer when an update is available
+            or the plugin is present only in the remote registry (not yet installed).
+            ``None`` means the local install is already up to date.
 
         Raises:
-            Exception: If the remote manifest could not be fetched
+            Exception: If the remote registry could not be fetched
         """
         downloader = GitHubPluginDownloader(self.plugins_dir)
         remote_manifest = await downloader.fetch_remote_manifest(repo_url, ref)
 
         if remote_manifest is None:
-            raise Exception("Failed to fetch remote plugins manifest")
+            raise Exception("Failed to fetch remote plugins registry")
 
-        results: dict[str, str | None] = {}
+        results: dict[str, PluginUpdateOffer | None] = {}
 
         for plugin_info in remote_manifest.get("plugins", []):
             domain = plugin_info.get("domain")
@@ -314,8 +326,16 @@ class PluginManager:
             if not domain or not remote_version_str:
                 continue
 
+            release_notes = plugin_info.get("release_notes")
+            if not isinstance(release_notes, str) or not release_notes.strip():
+                release_notes = None
+
+            offer = PluginUpdateOffer(latest_version=remote_version_str, release_notes=release_notes)
+
             local_record = self.plugins.get(domain)
             if not local_record:
+                # Registry-only plugin: surface as an install offer for startup/UI
+                results[domain] = offer
                 continue
 
             try:
@@ -328,7 +348,7 @@ class PluginManager:
                     remote_version_str,
                 )
                 update_available = False
-            results[domain] = remote_version_str if update_available else None
+            results[domain] = offer if update_available else None
 
         # Cache results
         self._available_updates = results
