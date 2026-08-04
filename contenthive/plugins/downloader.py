@@ -420,7 +420,8 @@ class GitHubPluginDownloader:
         Args:
             source_dir: Source directory containing plugin files
             domain: Plugin domain/ID (must be pre-validated)
-            plugin_info: Plugin entry from registry.json (used only if source has no manifest)
+            plugin_info: Plugin entry from registry.json (used when source has no
+                valid manifest, or source manifest domain does not match *domain*)
             force_reinstall: If True, overwrite existing plugin
 
         Returns:
@@ -456,10 +457,27 @@ class GitHubPluginDownloader:
 
             manifest_path = target_dir / "manifest.json"
             source_manifest = source_dir / "manifest.json"
+            use_source_manifest = False
             if source_manifest.exists():
-                # Source manifest is the source of truth; already copied by copytree
-                logger.debug(f"Using source manifest for plugin: {domain}")
-            else:
+                try:
+                    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict) and data.get("domain") == domain:
+                        use_source_manifest = True
+                        logger.debug(f"Using source manifest for plugin: {domain}")
+                    else:
+                        logger.warning(
+                            "Source manifest domain mismatch for %s (got %r); regenerating from registry",
+                            domain,
+                            data.get("domain") if isinstance(data, dict) else type(data).__name__,
+                        )
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.warning(
+                        "Source manifest invalid for %s (%s); regenerating from registry",
+                        domain,
+                        e,
+                    )
+
+            if not use_source_manifest:
                 # Fallback: write from registry entry without index-only fields
                 local_manifest = {k: v for k, v in plugin_info.items() if k not in ("path", "enabled")}
                 manifest_path.write_text(json.dumps(local_manifest, ensure_ascii=False, indent=4), encoding="utf-8")

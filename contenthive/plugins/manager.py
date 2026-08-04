@@ -29,7 +29,7 @@ from contenthive.plugins.registry import PluginRecord, PluginState
 
 @dataclass(frozen=True)
 class PluginUpdateOffer:
-    """Remote update offer for an installed plugin."""
+    """Remote offer: update for an installed plugin, or install for a registry-only plugin."""
 
     latest_version: str
     release_notes: str | None = None
@@ -294,16 +294,19 @@ class PluginManager:
         """
         Check for available plugin updates by comparing local versions against the remote registry.
 
-        Fetches registry.json from the remote repository and compares each plugin's
-        version with the locally installed version. Results are cached on the manager.
+        Fetches registry.json from the remote repository. For each remote plugin:
+        - If not installed locally, records an install offer.
+        - If installed, compares versions and records an update offer when newer.
+        Results are cached on the manager.
 
         Args:
             repo_url: GitHub repository URL
             ref: Git reference (branch name, tag, or commit SHA)
 
         Returns:
-            Dict mapping domain to a PluginUpdateOffer if an update is available,
-            or None if already up to date or the plugin is not found in the remote registry.
+            Dict mapping domain to a PluginUpdateOffer when an update is available
+            or the plugin is present only in the remote registry (not yet installed).
+            ``None`` means the local install is already up to date.
 
         Raises:
             Exception: If the remote registry could not be fetched
@@ -323,13 +326,17 @@ class PluginManager:
             if not domain or not remote_version_str:
                 continue
 
-            local_record = self.plugins.get(domain)
-            if not local_record:
-                continue
-
             release_notes = plugin_info.get("release_notes")
             if not isinstance(release_notes, str) or not release_notes.strip():
                 release_notes = None
+
+            offer = PluginUpdateOffer(latest_version=remote_version_str, release_notes=release_notes)
+
+            local_record = self.plugins.get(domain)
+            if not local_record:
+                # Registry-only plugin: surface as an install offer for startup/UI
+                results[domain] = offer
+                continue
 
             try:
                 update_available = is_plugin_update_available(remote_version_str, local_record.version)
@@ -341,11 +348,7 @@ class PluginManager:
                     remote_version_str,
                 )
                 update_available = False
-            results[domain] = (
-                PluginUpdateOffer(latest_version=remote_version_str, release_notes=release_notes)
-                if update_available
-                else None
-            )
+            results[domain] = offer if update_available else None
 
         # Cache results
         self._available_updates = results
