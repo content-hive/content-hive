@@ -177,6 +177,7 @@ PluginEntryData {
 | `async_reload(domain)` | 卸载 → 清除 `sys.modules` 缓存 → 重置为 INSTALLED → 重新 setup + setup_entry |
 | `async_activate(domain)` | 首次激活新安装插件：discover → setup → setup_entry |
 | `async_check_updates(repo_url, ref)` | 仅拉取远端 `registry.json`，比较版本并缓存更新信息（含 `release_notes`） |
+| `has_installed_plugin_updates()` | 已安装插件是否有版本落后。health 的 `plugin_updates_available` 只反映此项；未安装插件走 `/v1/plugins/available` |
 | `register_service(domain, service, callback)` | 注册命名服务 |
 | `call_service(domain, service, data)` | 调用已注册的服务 |
 

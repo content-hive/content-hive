@@ -278,6 +278,19 @@ class PluginManager:
         """Check if a service is registered for the given domain."""
         return service in self.services.get(domain, {})
 
+    def has_installed_plugin_updates(self) -> bool:
+        """Return True if any locally installed plugin has a newer remote version.
+
+        Registry-only install offers in ``_available_updates`` are ignored.
+
+        Returns:
+            True if at least one installed plugin has a cached update offer
+            (remote version strictly greater than the local version).
+            False if every installed plugin is up to date, even when the cache
+            still holds install offers for plugins that are not installed locally.
+        """
+        return any(offer is not None and domain in self.plugins for domain, offer in self._available_updates.items())
+
     async def call_service(self, domain: str, service: str, data: dict[str, Any]):
         """Call a registered service (HA-style)"""
         if domain not in self.services or service not in self.services[domain]:
