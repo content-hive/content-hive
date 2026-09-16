@@ -179,6 +179,7 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup + setup_entry |
 | `async_activate(domain)` | First-time activation of a newly installed plugin: discover → setup → setup_entry |
 | `async_check_updates(repo_url, ref)` | Fetches only the remote `registry.json`, compares versions, caches update offers (including `release_notes`) |
+| `has_installed_plugin_updates()` | Whether any installed plugin is behind the remote version. Health `plugin_updates_available` reflects only this; uninstalled plugins are listed via `/v1/plugins/available` |
 | `register_service(domain, service, callback)` | Registers a named service callable |
 | `call_service(domain, service, data)` | Calls a registered service |
 
