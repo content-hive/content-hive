@@ -488,7 +488,7 @@ class MediaService:
                 await invoke_download_state(
                     on_download_state,
                     DownloadRetryInfo(
-                        attempt=max_attempts,
+                        attempt=attempt,
                         max_attempts=max_attempts,
                         url_index=url_index,
                         url_count=url_count,
