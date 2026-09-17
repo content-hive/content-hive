@@ -18,15 +18,18 @@ import magic
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.models.content import DownloadedMediaInfo
-from contenthive.models.enumerates import AuthorProfileAsset, MediaStatus
+from contenthive.models.download import DownloadRetryInfo
+from contenthive.models.enumerates import AuthorProfileAsset, DownloadRetryPhase, MediaStatus
 from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.settings.store import get_settings
-from contenthive.utils.download_progress import (
-    ByteProgressCallback,
+from contenthive.utils.live_download import (
+    BoundPercentProgress,
+    DownloadStateCallback,
     ProgressCallback,
     bind_percent_progress,
     invoke_byte_progress,
+    invoke_download_state,
     invoke_progress,
 )
 from contenthive.utils.path_safety import is_path_within_base, sanitize_path_component
@@ -106,6 +109,7 @@ class MediaService:
         media_index: int = 0,
         plugin_domain: str | None = None,
         on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
     ) -> DownloadedMediaInfo | None:
         """
         Download a single media file, using a plugin download service when available
@@ -122,6 +126,7 @@ class MediaService:
                            otherwise falls back to the built-in downloader.
             on_progress: Optional 0-100 percent callback for the main media file
                 (cover is downloaded in parallel but not included).
+            on_download_state: Optional live retry/phase callback (built-in downloader only).
 
         Returns:
             DownloadedMediaInfo on success, or None if the download fails (whether via
@@ -158,6 +163,7 @@ class MediaService:
                     media_index=media_index,
                     cover_urls=cover_urls,
                     on_progress=on_progress,
+                    on_download_state=on_download_state,
                 )
         except Exception:
             logger.exception(f"Failed to download media for content {content_id}: {media.url}")
@@ -219,6 +225,7 @@ class MediaService:
         asset: AuthorProfileAsset,
         url: str,
         on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
     ) -> str | None:
         """
         Download a single author profile asset (avatar or banner).
@@ -232,12 +239,14 @@ class MediaService:
             asset: Avatar or banner
             url: Remote asset URL
             on_progress: Optional 0-100 percent callback
+            on_download_state: Optional live retry/phase callback
 
         Returns:
             /media-relative web path, or None if download failed.
         """
         save_dir = self._prepare_author_directory(platform, author_uid)
         headers = {"User-Agent": get_settings().download.user_agent}
+        bound = bind_percent_progress(on_progress)
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             try:
                 result = await self._download_file(
@@ -246,7 +255,9 @@ class MediaService:
                     save_dir,
                     None,
                     asset.value,
-                    on_byte_progress=bind_percent_progress(on_progress),
+                    on_byte_progress=bound,
+                    on_progress=on_progress,
+                    on_download_state=on_download_state,
                 )
             except Exception:
                 logger.exception(f"Failed to download author {asset.value} for {platform}/{author_uid}")
@@ -295,6 +306,7 @@ class MediaService:
         media_index: int,
         cover_urls: list[str],
         on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
     ) -> tuple[Path, Path | None]:
         """
         Download media and optional cover concurrently into save_dir.
@@ -302,15 +314,18 @@ class MediaService:
 
         Progress:
         - Intermediate updates are media-only and emitted only when Content-Length
-          is known (0–99 via bind_percent_progress). Cover is downloaded in
+          is known (0-99 via bind_percent_progress). Cover is downloaded in
           parallel but not included.
+        - Per-attempt progress may drop after reset_attempt on retry / fallback.
         - A final on_progress(100) is always emitted after downloads succeed,
           even when Content-Length was unknown.
+        - on_download_state reports retry phase for the main media file only.
 
         Returns:
             Tuple of (media_path, cover_path)
         """
         headers = {"User-Agent": get_settings().download.user_agent}
+        bound = bind_percent_progress(on_progress)
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             tasks = [
                 self._download_file(
@@ -319,7 +334,9 @@ class MediaService:
                     save_dir,
                     media_index,
                     "media",
-                    on_byte_progress=bind_percent_progress(on_progress),
+                    on_byte_progress=bound,
+                    on_progress=on_progress,
+                    on_download_state=on_download_state,
                 )
             ]
             if cover_urls:
@@ -353,7 +370,9 @@ class MediaService:
         save_dir: Path,
         index: int | None,
         file_type: str = "media",
-        on_byte_progress: ByteProgressCallback | None = None,
+        on_byte_progress: BoundPercentProgress | None = None,
+        on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
     ) -> Path:
         """
         Download a file with fallback URL support and per-URL retry logic.
@@ -369,17 +388,38 @@ class MediaService:
             index: File index used in the filename. Pass None to omit the numeric
                 prefix (used for author profile assets that are not part of a media list).
             file_type: File type used in the filename, e.g. "media" or "cover"
-            on_byte_progress: Optional callback with (downloaded_bytes, total_or_none)
+            on_byte_progress: Optional bound percent progress (supports reset_attempt)
+            on_progress: Optional percent callback (used to emit 0 on attempt reset)
+            on_download_state: Optional live retry/phase callback
 
         Returns:
             Path to the saved file
         """
         last_error: Exception = Exception("No URLs provided")
         download_max_retries = get_settings().download.max_retries
+        max_attempts = download_max_retries + 1
+        url_count = len(urls)
 
-        for url_attempt, url in enumerate(urls):
+        for url_index, url in enumerate(urls):
             url_last_error: Exception = Exception("Unknown error")
-            for retry in range(download_max_retries + 1):
+            for retry in range(max_attempts):
+                attempt = retry + 1
+                if attempt > 1 or url_index > 0:
+                    if on_byte_progress is not None:
+                        on_byte_progress.reset_attempt()
+                    await invoke_progress(on_progress, 0)
+
+                await invoke_download_state(
+                    on_download_state,
+                    DownloadRetryInfo(
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        url_index=url_index,
+                        url_count=url_count,
+                        phase=DownloadRetryPhase.DOWNLOADING,
+                    ),
+                )
+
                 try:
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
                         response.raise_for_status()
@@ -423,17 +463,37 @@ class MediaService:
                 if retry < download_max_retries:
                     wait = 2**retry
                     logger.warning(
-                        f"Download attempt {retry + 1}/{download_max_retries + 1} "
+                        f"Download attempt {attempt}/{max_attempts} "
                         f"failed for {url}, retrying in {wait}s: {url_last_error}"
+                    )
+                    await invoke_download_state(
+                        on_download_state,
+                        DownloadRetryInfo(
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            url_index=url_index,
+                            url_count=url_count,
+                            phase=DownloadRetryPhase.RETRYING,
+                        ),
                     )
                     await asyncio.sleep(wait)
 
             # This URL exhausted all retries (or got 4xx); try next fallback
             last_error = url_last_error
-            if url_attempt < len(urls) - 1:
+            if url_index < url_count - 1:
                 logger.warning(
-                    f"{file_type} URL {url_attempt + 1}/{len(urls)} failed ({url}), "
-                    f"trying fallback: {urls[url_attempt + 1]}"
+                    f"{file_type} URL {url_index + 1}/{url_count} failed ({url}), "
+                    f"trying fallback: {urls[url_index + 1]}"
+                )
+                await invoke_download_state(
+                    on_download_state,
+                    DownloadRetryInfo(
+                        attempt=max_attempts,
+                        max_attempts=max_attempts,
+                        url_index=url_index,
+                        url_count=url_count,
+                        phase=DownloadRetryPhase.SWITCHING_URL,
+                    ),
                 )
 
         raise last_error

@@ -342,7 +342,7 @@ async def my_download(data: dict):
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主媒体文件的字节比例；子任务是否结束以任务 `status` 为准。
+类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主媒体文件的字节比例；子任务是否结束以任务 `status` 为准。任务详情里的 `retry` live 态（`phase` / `attempt` 等）仅由内置下载器上报；插件 `download` 服务不会收到对应回调，`retry` 保持为 `null`。
 
 ---
 

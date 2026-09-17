@@ -35,6 +35,14 @@ class AuthorProfileAsset(StrEnum):
     BANNER = "banner"
 
 
+class DownloadRetryPhase(StrEnum):
+    """Live phase for an in-flight built-in download (not persisted)."""
+
+    DOWNLOADING = "downloading"
+    RETRYING = "retrying"
+    SWITCHING_URL = "switching_url"
+
+
 class TaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"

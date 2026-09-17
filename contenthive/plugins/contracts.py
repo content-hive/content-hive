@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from contenthive.models.enumerates import MediaType, ParserResultStatus
 
 # Re-export download progress callback for plugin download services
-from contenthive.utils.download_progress import ProgressCallback as ProgressCallback
+from contenthive.utils.live_download import ProgressCallback as ProgressCallback
 
 
 class PluginConfigSchema(BaseModel):
