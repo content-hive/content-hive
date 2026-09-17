@@ -10,6 +10,7 @@ from pydantic import Field
 
 from contenthive.database.orm_models import MainTask, SubTask
 from contenthive.models.api import APIBaseModel
+from contenthive.models.download import DownloadRetryInfo
 from contenthive.models.enumerates import TaskRole, TaskStatus, TaskType
 from contenthive.models.task_parameters import (
     MainTaskParameters,
@@ -158,7 +159,14 @@ class SubTaskInfo(APIBaseModel):
     main_task_id: int = Field(..., description="Parent main task ID")
     type: TaskType = Field(..., description="Task type")
     status: TaskStatus = Field(..., description="Task status")
-    progress: int | None = Field(None, description="Live download progress 0-100, or null")
+    progress: int | None = Field(
+        None,
+        description="Live per-attempt download progress 0-100 (may drop on retry), or null",
+    )
+    retry: DownloadRetryInfo | None = Field(
+        None,
+        description="Live download retry state for built-in downloader, or null",
+    )
     parameters: SubTaskParameters | None = Field(None, description="Task parameters")
     result: SubTaskResult | None = Field(None, description="Task result summary")
     error_message: str | None = Field(None, description="Error message if failed")
@@ -172,8 +180,8 @@ class SubTaskInfo(APIBaseModel):
     def from_entity(cls, entity: SubTaskEntity) -> "SubTaskInfo":
         """Create SubTaskInfo from SubTaskEntity.
 
-        Progress stays null unless TaskService.to_main_task_info overlays a
-        live in-memory value.
+        Progress and retry stay null unless TaskService.to_main_task_info overlays
+        live in-memory values.
         """
         return cls(
             id=entity.id,

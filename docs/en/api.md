@@ -66,7 +66,12 @@ curl -s -X GET "$BASE_URL/v1/task/parser/TASK_ID" \
   -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
-The response includes `sub_tasks`. For download sub tasks (`MEDIA_DOWNLOAD` / `AUTHOR_PROFILE_DOWNLOAD`), `progress` (0–100) is returned only while a live in-process download progress value exists (not persisted; reflects the main media file byte progress, cover excluded); otherwise it is `null`. Poll the endpoint to observe updates. Mid-download progress is cleared on process restart or when the sub task ends. Treat `status` as the source of truth for completion.
+The response includes `sub_tasks`. For download sub tasks (`MEDIA_DOWNLOAD` / `AUTHOR_PROFILE_DOWNLOAD`), while a download is in flight the server may return:
+
+- `progress` (0–100, not persisted): **per-attempt** main-media byte progress (cover excluded). It may drop to a lower value when the built-in downloader retries or switches to a fallback URL; without `Content-Length`, intermediate values may be `null`.
+- `retry` (object or `null`, not persisted): reported only by the **built-in** downloader. Fields: `attempt`, `max_attempts`, `url_index`, `url_count`, `phase` (`downloading` / `retrying` / `switching_url`). When a plugin `download` service is used, `retry` stays `null`.
+
+Poll the endpoint to observe updates. Live fields are cleared on process restart or when the sub task ends. Treat `status` as the source of truth for completion.
 
 4) Health check:
 

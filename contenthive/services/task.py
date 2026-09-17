@@ -19,6 +19,7 @@ from contenthive.models.content import (
     PaginatedResponse,
     PaginationInfo,
 )
+from contenthive.models.download import DownloadRetryInfo
 from contenthive.models.enumerates import (
     AuthorProfileAsset,
     MediaStatus,
@@ -55,6 +56,7 @@ from contenthive.services.media import media_service
 from contenthive.services.metadata import metadata_service
 from contenthive.services.task_queue import task_queue
 from contenthive.utils.content import resolve_content_id
+from contenthive.utils.live_download import LiveDownloadTracker
 
 
 def _encode_cursor(id: int, value: datetime | int) -> str:
@@ -81,34 +83,33 @@ class TaskService:
 
     def __init__(self):
         """Initialize the TaskService."""
-        # In-memory download progress for RUNNING sub tasks (SubTask.id → 0..100).
-        # Not persisted; cleared on terminal status or process restart.
-        self._live_progress: dict[int, int] = {}
+        # In-memory download progress / retry for RUNNING sub tasks.
+        self._live_download = LiveDownloadTracker()
 
     def set_live_progress(self, sub_task_id: int, progress: int) -> None:
-        """Update in-memory progress for a RUNNING sub task (monotonic, 0-100)."""
-        pct = max(0, min(100, int(progress)))
-        previous = self._live_progress.get(sub_task_id, -1)
-        if pct <= previous:
-            return
-        self._live_progress[sub_task_id] = pct
+        """Update in-memory per-attempt progress for a RUNNING sub task (0-100)."""
+        self._live_download.set_progress(sub_task_id, progress)
 
-    def clear_live_progress(self, sub_task_id: int) -> None:
-        """Remove in-memory progress for a sub task."""
-        self._live_progress.pop(sub_task_id, None)
+    def set_live_download_retry(self, sub_task_id: int, retry: DownloadRetryInfo) -> None:
+        """Update in-memory retry/phase overlay for a RUNNING sub task."""
+        self._live_download.set_retry(sub_task_id, retry)
 
-    def resolve_sub_task_progress(self, entity: SubTaskEntity) -> int | None:
-        """Return in-memory live progress when present; otherwise None."""
-        return self._live_progress.get(entity.id)
+    def clear_live_download(self, sub_task_id: int) -> None:
+        """Remove in-memory download state for a sub task."""
+        self._live_download.clear(sub_task_id)
 
     def to_main_task_info(self, entity: MainTaskEntity, include_sub_tasks: bool = False) -> MainTaskInfo:
-        """Build MainTaskInfo, overlaying live download progress onto sub tasks."""
+        """Build MainTaskInfo, overlaying live download progress/retry onto sub tasks."""
         info = MainTaskInfo.from_entity(entity, include_sub_tasks=include_sub_tasks)
         if include_sub_tasks and entity.sub_tasks:
             for st_info, st_entity in zip(info.sub_tasks, entity.sub_tasks, strict=True):
-                live = self.resolve_sub_task_progress(st_entity)
-                if live is not None:
-                    st_info.progress = live
+                live = self._live_download.get(st_entity.id)
+                if live is None:
+                    continue
+                if live.progress is not None:
+                    st_info.progress = live.progress
+                if live.retry is not None:
+                    st_info.retry = live.retry
         return info
 
     def _generate_task_id(self) -> str:
@@ -559,7 +560,7 @@ class TaskService:
         with TaskDAO() as dao:
             updated = dao.update_sub_task_status(id, status, error_message, commit=True)
         if updated and status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED):
-            self.clear_live_progress(id)
+            self.clear_live_download(id)
         return updated
 
     def update_sub_task_result(self, id: int, result: SubTaskResult) -> bool:
@@ -912,6 +913,7 @@ class TaskService:
                 asset=asset,
                 url=params.url,
                 on_progress=lambda pct, sid=sub_task.id: self.set_live_progress(sid, pct),
+                on_download_state=lambda state, sid=sub_task.id: self.set_live_download_retry(sid, state),
             )
 
             if path is None:
@@ -1166,6 +1168,7 @@ class TaskService:
                 media_index=params.media_index,
                 plugin_domain=params.plugin_domain,
                 on_progress=lambda pct, sid=sub_task.id: self.set_live_progress(sid, pct),
+                on_download_state=lambda state, sid=sub_task.id: self.set_live_download_retry(sid, state),
             )
 
             if downloaded is None:
