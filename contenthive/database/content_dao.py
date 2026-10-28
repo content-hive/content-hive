@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Integer, cast, exists, func, or_, select
+from sqlalchemy import Integer, cast, delete, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from contenthive.database.database import get_engine, get_session_local
@@ -398,8 +398,9 @@ class ContentDAO:
 
         Same URL: update parse metadata; keep status, local paths, and dimensions.
         New URL: insert a pending row.
-        Missing URL: hard-delete the row (UserMedia cascades) and return paths for
-        post-commit filesystem cleanup.
+        Missing URL: delete UserMedia rows, hard-delete the media row, and return
+        paths for post-commit filesystem cleanup. Cover source changes clear
+        cover_path so the download step will refresh the cover.
         """
         session = self._get_session()
         existing_rows = session.execute(select(Media).where(Media.parse_result_id == parse_result_id)).scalars().all()
@@ -407,6 +408,7 @@ class ContentDAO:
 
         media_ids: list[int] = []
         seen_urls: set[str] = set()
+        orphan_paths: list[str] = []
 
         for order, media in enumerate(medias):
             url = str(media.url)
@@ -418,6 +420,11 @@ class ContentDAO:
 
             existing = by_url.get(url)
             if existing is not None:
+                existing_cover_fallbacks = list(existing.cover_fallbacks or [])
+                if existing.cover != cover or existing_cover_fallbacks != cover_fallbacks:
+                    if existing.cover_path:
+                        orphan_paths.append(existing.cover_path)
+                    existing.cover_path = None
                 existing.order = order
                 existing.type = media_type
                 existing.title = media.title
@@ -439,10 +446,12 @@ class ContentDAO:
 
         session.flush()
 
-        orphan_paths: list[str] = []
-        for url, row in by_url.items():
-            if url in seen_urls:
-                continue
+        orphan_rows = [row for url, row in by_url.items() if url not in seen_urls]
+        orphan_ids = [row.id for row in orphan_rows]
+        if orphan_ids:
+            session.execute(delete(UserMedia).where(UserMedia.media_id.in_(orphan_ids)))
+            session.flush()
+        for row in orphan_rows:
             if row.media_path:
                 orphan_paths.append(row.media_path)
             if row.cover_path:
@@ -527,6 +536,9 @@ class ContentDAO:
                 existing_result.parser = result.parser
                 existing_result.state = result.state
                 existing_result.author_id = author_id
+                # Always bump so other users' incremental sync sees media-only
+                # changes (deleted rows do not update surviving media timestamps).
+                existing_result.updated_at = datetime.now(UTC)
                 # Restore if soft-deleted
                 if existing_result.deleted_at is not None:
                     existing_result.deleted_at = None
@@ -1375,6 +1387,13 @@ class ContentDAO:
                 )
 
                 # Media is owned by this parse result (one-to-many); hard delete its rows.
+                # SQLite bulk delete does not run ORM cascades; clear UserMedia first.
+                media_ids = (
+                    session.execute(select(Media.id).where(Media.parse_result_id == parse_result_id)).scalars().all()
+                )
+                if media_ids:
+                    session.execute(delete(UserMedia).where(UserMedia.media_id.in_(media_ids)))
+                    session.flush()
                 deleted_media = session.query(Media).filter(Media.parse_result_id == parse_result_id).delete()
                 if deleted_media:
                     logger.debug(f"Hard deleted {deleted_media} media records for parse result {parse_result_id}")
