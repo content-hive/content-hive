@@ -197,7 +197,24 @@ class TagDAO:
                 raise ValueError(f"Tag '{normalized}' already exists")
             # Keep the tombstone so incremental sync can still report the deletion.
             # Rename it to free (user_id, name) without physically deleting the row.
-            conflict.name = f"__deleted__:{conflict.id}"
+            # Pick a name unused by this user and different from the requested name
+            # (users may have created tags that look like a generated tombstone name).
+            base = f"__deleted__:{conflict.id}"
+            candidate, suffix = base, 0
+            while (
+                candidate == normalized
+                or session.execute(
+                    select(Tag.id).where(
+                        Tag.user_id == user_id,
+                        Tag.name == candidate,
+                        Tag.id != conflict.id,
+                    )
+                ).first()
+                is not None
+            ):
+                suffix += 1
+                candidate = f"{base}:{suffix}"
+            conflict.name = candidate
             conflict.updated_at = datetime.now(UTC)
             session.flush()
 
