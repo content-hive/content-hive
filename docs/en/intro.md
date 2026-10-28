@@ -41,7 +41,7 @@ Plugins can be listed, installed from a remote repository, enabled/disabled, con
 | Database | SQLite (synchronous SQLAlchemy engine) |
 | Migrations | Alembic |
 | Data validation | Pydantic / pydantic-settings |
-| Authentication | python-jose (JWT) + pwdlib (Argon2) |
+| Authentication | PyJWT (JWT) + pwdlib (Argon2) |
 | HTTP client | aiohttp |
 | Package manager | uv |
 | Runtime | Python 3.13 |
