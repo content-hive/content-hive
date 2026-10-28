@@ -41,7 +41,7 @@ Content Hive 是一个自托管服务，用于从社交媒体平台解析内容�
 | 数据库 | SQLite（同步 SQLAlchemy 引擎）|
 | 数据库迁移 | Alembic |
 | 数据校验 | Pydantic / pydantic-settings |
-| 认证 | python-jose（JWT）+ pwdlib（Argon2）|
+| 认证 | PyJWT（JWT）+ pwdlib（Argon2）|
 | HTTP 客户端 | aiohttp |
 | 包管理 | uv |
 | 运行时 | Python 3.13 |

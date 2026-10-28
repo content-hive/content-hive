@@ -2,7 +2,7 @@ import secrets
 import string
 from datetime import UTC, datetime, timedelta
 
-from jose import JWTError, jwt
+import jwt
 from pwdlib import PasswordHash
 
 from contenthive.config import settings
@@ -156,7 +156,7 @@ class SecretManager:
         try:
             payload = jwt.decode(token, secret_key, algorithms=algorithms)
             return payload
-        except JWTError as e:
+        except jwt.PyJWTError as e:
             raise ValueError("Invalid token") from e
 
 
