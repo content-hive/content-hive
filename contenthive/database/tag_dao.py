@@ -195,8 +195,10 @@ class TagDAO:
         if conflict:
             if conflict.deleted_at is None:
                 raise ValueError(f"Tag '{normalized}' already exists")
-            # Free the unique name held by a soft-deleted row
-            session.delete(conflict)
+            # Keep the tombstone so incremental sync can still report the deletion.
+            # Rename it to free (user_id, name) without physically deleting the row.
+            conflict.name = f"__deleted__:{conflict.id}"
+            conflict.updated_at = datetime.now(UTC)
             session.flush()
 
         tag.name = normalized

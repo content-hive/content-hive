@@ -1,9 +1,10 @@
 # from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, event, pool
 
 from alembic import context
 from contenthive.config import settings
+from contenthive.database.database import enable_sqlite_foreign_keys
 from contenthive.database.orm_models import Base
 
 # this is the Alembic Config object, which provides
@@ -64,6 +65,7 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    event.listen(connectable, "connect", enable_sqlite_foreign_keys)
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)

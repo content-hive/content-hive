@@ -107,14 +107,14 @@ async def create_tag(
             detail=ErrorDetail(code="TAG_INVALID_NAME", message=message),
         ) from e
     except Exception as e:
-        return APIResponse(
-            status=ResponseStatus.ERROR,
-            error=ErrorDetail(
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(
                 code="TAG_CREATE_ERROR",
                 message="Failed to create tag",
                 details={"error": str(e)},
             ),
-        )
+        ) from e
 
 
 @router_v1.put("/assignments", response_model=APIResponse[list[TagInfo]])

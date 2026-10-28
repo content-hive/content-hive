@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from alembic.config import Config
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from alembic import command
@@ -12,6 +12,16 @@ from contenthive.config import settings
 # SQLAlchemy engine and session factory
 _engine = None
 _SessionLocal = None
+
+
+def enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    """Enable SQLite foreign keys on each new DBAPI connection.
+
+    SQLite disables FK enforcement per connection unless this PRAGMA is set.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 def get_engine():
@@ -23,6 +33,7 @@ def get_engine():
             connect_args={"check_same_thread": False},
             echo=False,
         )
+        event.listen(_engine, "connect", enable_sqlite_foreign_keys)
     return _engine
 
 
