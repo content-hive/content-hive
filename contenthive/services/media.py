@@ -9,7 +9,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import ClassVar
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import aiofiles
 import aiohttp
@@ -18,10 +18,20 @@ import magic
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.models.content import DownloadedMediaInfo
-from contenthive.models.enumerates import MediaStatus
+from contenthive.models.download import DownloadRetryInfo
+from contenthive.models.enumerates import AuthorProfileAsset, DownloadRetryPhase, MediaStatus
 from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
 from contenthive.settings.store import get_settings
+from contenthive.utils.live_download import (
+    BoundPercentProgress,
+    DownloadStateCallback,
+    ProgressCallback,
+    bind_percent_progress,
+    invoke_byte_progress,
+    invoke_download_state,
+    invoke_progress,
+)
 from contenthive.utils.path_safety import is_path_within_base, sanitize_path_component
 
 
@@ -98,6 +108,8 @@ class MediaService:
         media: ParserMediaInfo,
         media_index: int = 0,
         plugin_domain: str | None = None,
+        on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
     ) -> DownloadedMediaInfo | None:
         """
         Download a single media file, using a plugin download service when available
@@ -112,6 +124,9 @@ class MediaService:
             plugin_domain: Plugin domain to use for download (from ParserResult.parser).
                            If the plugin has registered a "download" service it will be used;
                            otherwise falls back to the built-in downloader.
+            on_progress: Optional 0-100 percent callback for the main media file
+                (cover is downloaded in parallel but not included).
+            on_download_state: Optional live retry/phase callback (built-in downloader only).
 
         Returns:
             DownloadedMediaInfo on success, or None if the download fails (whether via
@@ -128,6 +143,7 @@ class MediaService:
                     "download",
                     {
                         "media": media.model_dump(mode="json"),
+                        "on_progress": on_progress,
                     },
                 )
                 media_path, cover_path = self._move_plugin_download_result(
@@ -146,6 +162,8 @@ class MediaService:
                     media_urls=media_urls,
                     media_index=media_index,
                     cover_urls=cover_urls,
+                    on_progress=on_progress,
+                    on_download_state=on_download_state,
                 )
         except Exception:
             logger.exception(f"Failed to download media for content {content_id}: {media.url}")
@@ -200,61 +218,52 @@ class MediaService:
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
 
-    async def download_author_profile(
+    async def download_author_profile_asset(
         self,
         platform: str,
         author_uid: str,
-        avatar_url: str | None,
-        banner_url: str | None,
-    ) -> tuple[str | None, str | None]:
+        asset: AuthorProfileAsset,
+        url: str,
+        on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
+    ) -> str | None:
         """
-        Download an author's avatar and/or banner into the author directory.
+        Download a single author profile asset (avatar or banner).
 
-        Files are stored directly under {media_dir}/{platform}/{author_uid}/ and named
-        avatar_{url_hash}{ext} / banner_{url_hash}{ext}. Always uses the built-in
-        downloader (plugin download services are scoped to content media).
+        Files are stored under {media_dir}/{platform}/{author_uid}/ and named
+        {asset}_{url_hash}{ext}. Always uses the built-in downloader.
 
         Args:
             platform: Platform code
             author_uid: Author uid (used as the directory name)
-            avatar_url: Remote avatar URL, or None to skip
-            banner_url: Remote banner URL, or None to skip
+            asset: Avatar or banner
+            url: Remote asset URL
+            on_progress: Optional 0-100 percent callback
+            on_download_state: Optional live retry/phase callback
 
         Returns:
-            Tuple of (avatar_path, banner_path) as /media-relative web paths. Each
-            element is None when its URL is absent or its download failed.
+            /media-relative web path, or None if download failed.
         """
-        if not avatar_url and not banner_url:
-            return None, None
-
         save_dir = self._prepare_author_directory(platform, author_uid)
-
         headers = {"User-Agent": get_settings().download.user_agent}
+        bound = bind_percent_progress(on_progress)
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-            pending: list[tuple[str, str]] = []
-            if avatar_url:
-                pending.append(("avatar", avatar_url))
-            if banner_url:
-                pending.append(("banner", banner_url))
-
-            results = await asyncio.gather(
-                *[self._download_file(session, [url], save_dir, None, file_type) for file_type, url in pending],
-                return_exceptions=True,
-            )
-
-        avatar_path: str | None = None
-        banner_path: str | None = None
-        for (file_type, _), result in zip(pending, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.warning(f"Failed to download author {file_type} for {platform}/{author_uid}: {result}")
-                continue
-            relative_path = self._get_relative_media_path(result)
-            if file_type == "avatar":
-                avatar_path = relative_path
-            else:
-                banner_path = relative_path
-
-        return avatar_path, banner_path
+            try:
+                result = await self._download_file(
+                    session,
+                    [url],
+                    save_dir,
+                    None,
+                    asset.value,
+                    on_byte_progress=bound,
+                    on_progress=on_progress,
+                    on_download_state=on_download_state,
+                )
+            except Exception:
+                logger.exception(f"Failed to download author {asset.value} for {platform}/{author_uid}")
+                return None
+        await invoke_progress(on_progress, 100)
+        return self._get_relative_media_path(result)
 
     def _move_plugin_download_result(
         self,
@@ -296,19 +305,50 @@ class MediaService:
         media_urls: list[str],
         media_index: int,
         cover_urls: list[str],
+        on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
     ) -> tuple[Path, Path | None]:
         """
         Download media and optional cover concurrently into save_dir.
         Each accepts a list of URLs; fallback order is handled inside _download_file.
 
+        Progress:
+        - Intermediate updates are media-only and emitted only when Content-Length
+          is known (0-99 via bind_percent_progress). Cover is downloaded in
+          parallel but not included.
+        - Per-attempt progress may drop after reset_attempt on retry / fallback.
+        - A final on_progress(100) is always emitted after downloads succeed,
+          even when Content-Length was unknown.
+        - on_download_state reports retry phase for the main media file only.
+
         Returns:
             Tuple of (media_path, cover_path)
         """
         headers = {"User-Agent": get_settings().download.user_agent}
+        bound = bind_percent_progress(on_progress)
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-            tasks = [self._download_file(session, media_urls, save_dir, media_index, "media")]
+            tasks = [
+                self._download_file(
+                    session,
+                    media_urls,
+                    save_dir,
+                    media_index,
+                    "media",
+                    on_byte_progress=bound,
+                    on_progress=on_progress,
+                    on_download_state=on_download_state,
+                )
+            ]
             if cover_urls:
-                tasks.append(self._download_file(session, cover_urls, save_dir, media_index, "cover"))
+                tasks.append(
+                    self._download_file(
+                        session,
+                        cover_urls,
+                        save_dir,
+                        media_index,
+                        "cover",
+                    )
+                )
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
         media_result = results[0]
@@ -320,6 +360,7 @@ class MediaService:
             logger.warning(f"Cover download failed, skipping: {cover_result}")
             cover_result = None
 
+        await invoke_progress(on_progress, 100)
         return media_result, cover_result
 
     async def _download_file(
@@ -329,6 +370,9 @@ class MediaService:
         save_dir: Path,
         index: int | None,
         file_type: str = "media",
+        on_byte_progress: BoundPercentProgress | None = None,
+        on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
     ) -> Path:
         """
         Download a file with fallback URL support and per-URL retry logic.
@@ -344,16 +388,38 @@ class MediaService:
             index: File index used in the filename. Pass None to omit the numeric
                 prefix (used for author profile assets that are not part of a media list).
             file_type: File type used in the filename, e.g. "media" or "cover"
+            on_byte_progress: Optional bound percent progress (supports reset_attempt)
+            on_progress: Optional percent callback (used to emit 0 on attempt reset)
+            on_download_state: Optional live retry/phase callback
 
         Returns:
             Path to the saved file
         """
         last_error: Exception = Exception("No URLs provided")
         download_max_retries = get_settings().download.max_retries
+        max_attempts = download_max_retries + 1
+        url_count = len(urls)
 
-        for url_attempt, url in enumerate(urls):
+        for url_index, url in enumerate(urls):
             url_last_error: Exception = Exception("Unknown error")
-            for retry in range(download_max_retries + 1):
+            for retry in range(max_attempts):
+                attempt = retry + 1
+                if attempt > 1 or url_index > 0:
+                    if on_byte_progress is not None:
+                        on_byte_progress.reset_attempt()
+                    await invoke_progress(on_progress, 0)
+
+                await invoke_download_state(
+                    on_download_state,
+                    DownloadRetryInfo(
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        url_index=url_index,
+                        url_count=url_count,
+                        phase=DownloadRetryPhase.DOWNLOADING,
+                    ),
+                )
+
                 try:
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
                         response.raise_for_status()
@@ -371,11 +437,17 @@ class MediaService:
                         filename = f"{prefix}{file_type}_{url_hash}{ext}"
                         filepath = save_dir / filename
 
+                        total_size = response.content_length
+                        downloaded = len(first_chunk)
+                        await invoke_byte_progress(on_byte_progress, downloaded, total_size)
+
                         # Write first chunk then stream the rest to disk
                         async with aiofiles.open(filepath, "wb") as f:
                             await f.write(first_chunk)
                             async for chunk in response.content.iter_chunked(65536):
                                 await f.write(chunk)
+                                downloaded += len(chunk)
+                                await invoke_byte_progress(on_byte_progress, downloaded, total_size)
 
                         logger.debug(f"Downloaded {file_type} from {url} -> {filepath}")
                         return filepath
@@ -391,17 +463,37 @@ class MediaService:
                 if retry < download_max_retries:
                     wait = 2**retry
                     logger.warning(
-                        f"Download attempt {retry + 1}/{download_max_retries + 1} "
+                        f"Download attempt {attempt}/{max_attempts} "
                         f"failed for {url}, retrying in {wait}s: {url_last_error}"
+                    )
+                    await invoke_download_state(
+                        on_download_state,
+                        DownloadRetryInfo(
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            url_index=url_index,
+                            url_count=url_count,
+                            phase=DownloadRetryPhase.RETRYING,
+                        ),
                     )
                     await asyncio.sleep(wait)
 
             # This URL exhausted all retries (or got 4xx); try next fallback
             last_error = url_last_error
-            if url_attempt < len(urls) - 1:
+            if url_index < url_count - 1:
                 logger.warning(
-                    f"{file_type} URL {url_attempt + 1}/{len(urls)} failed ({url}), "
-                    f"trying fallback: {urls[url_attempt + 1]}"
+                    f"{file_type} URL {url_index + 1}/{url_count} failed ({url}), "
+                    f"trying fallback: {urls[url_index + 1]}"
+                )
+                await invoke_download_state(
+                    on_download_state,
+                    DownloadRetryInfo(
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        url_index=url_index,
+                        url_count=url_count,
+                        phase=DownloadRetryPhase.SWITCHING_URL,
+                    ),
                 )
 
         raise last_error
@@ -520,6 +612,9 @@ class MediaService:
         """
         Resolve a /media-relative web path to an absolute path under media_dir.
 
+        Path components are URL-decoded to match `_get_relative_media_path`, which
+        stores quoted segments (e.g. spaces as %20).
+
         Args:
             relative_path: Web path beginning with /media/
 
@@ -529,7 +624,9 @@ class MediaService:
         if not relative_path.startswith("/media/"):
             return None
         try:
-            abs_path = self.media_dir / relative_path[len("/media/") :]
+            encoded = relative_path[len("/media/") :]
+            parts = [unquote(part) for part in encoded.split("/") if part != ""]
+            abs_path = self.media_dir.joinpath(*parts)
             resolved_path = abs_path.resolve()
             if not self._is_within_media_root(resolved_path):
                 return None
@@ -551,6 +648,29 @@ class MediaService:
             return False
         resolved_path = self._resolve_media_path(relative_path)
         return resolved_path is not None and resolved_path.is_file()
+
+    def delete_media_file(self, relative_path: str | None) -> bool:
+        """
+        Best-effort delete of a single /media-relative file on disk.
+
+        Args:
+            relative_path: A web path beginning with /media/, or None
+
+        Returns:
+            True if a file was deleted, False if missing, invalid, or deletion failed.
+        """
+        if not relative_path:
+            return False
+        try:
+            resolved_path = self._resolve_media_path(relative_path)
+            if resolved_path is None or not resolved_path.is_file():
+                return False
+            resolved_path.unlink()
+            logger.debug(f"Deleted media file: {resolved_path}")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to delete media file {relative_path}: {e}")
+            return False
 
     def delete_content_directory(self, platform: str, author_uid: str, content_id: str) -> bool:
         """

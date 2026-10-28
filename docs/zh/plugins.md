@@ -321,14 +321,28 @@ CONFIG_SCHEMA = ConfigSchema
 插件可以注册命名服务，供核心流程调用。最常用的是 `download` 服务——核心媒体下载管道会优先调用插件的 `download` 服务，只有在未注册时才回退到内置 HTTP 下载器。
 
 ```python
+import inspect
+
+from contenthive.plugins.contracts import ProgressCallback
+
 async def my_download(data: dict):
     media = data["media"]
+    on_progress: ProgressCallback | None = data.get("on_progress")
     # 自定义下载逻辑（处理签名 URL、登录态等）
-    return {"path": "/tmp/file.mp4", "mime": "video/mp4"}
+    # on_progress 反映主媒体文件进度（0-100）；封面可并行下载但不计入
+    # 有进度时：先判断非 None；若返回 awaitable 则 await
+    pct = 100  # TODO: 按主媒体 downloaded/total 计算 0–100
+    if on_progress is not None:
+        result = on_progress(pct)
+        if inspect.isawaitable(result):
+            await result
+    return {"media_path": "/tmp/file.mp4"}
 
 # 在 async_setup_entry 中注册
 context.register_service(DOMAIN, "download", my_download)
 ```
+
+类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主媒体文件的字节比例；子任务是否结束以任务 `status` 为准。任务详情里的 `retry` live 态（`phase` / `attempt` 等）仅由内置下载器上报；插件 `download` 服务不会收到对应回调，`retry` 保持为 `null`。
 
 ---
 

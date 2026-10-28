@@ -44,8 +44,16 @@ async def load_plugins_on_startup():
             ref=get_settings().plugins.repo_ref,
         )
         installed_domains = set(plugin_manager.plugins)
-        new_plugins = {d: v for d, v in check_results.items() if d not in installed_domains and v}
-        available_updates = {d: v for d, v in check_results.items() if d in installed_domains and v}
+        new_plugins = {
+            d: offer.latest_version
+            for d, offer in check_results.items()
+            if d not in installed_domains and offer is not None
+        }
+        available_updates = {
+            d: offer.latest_version
+            for d, offer in check_results.items()
+            if d in installed_domains and offer is not None
+        }
 
         if new_plugins:
             logger.info("New plugins available: " + ", ".join(f"{d} ({v})" for d, v in new_plugins.items()))
@@ -57,7 +65,7 @@ async def load_plugins_on_startup():
         if not new_plugins and not available_updates:
             logger.debug("All plugins are up to date")
     except Exception:
-        logger.warning("Failed to check for plugin updates from remote manifest")
+        logger.warning("Failed to check for plugin updates from remote registry")
 
     # Setup and enable plugins
     plugins_config = load_plugins_config()

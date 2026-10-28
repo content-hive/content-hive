@@ -120,14 +120,14 @@ class PluginService:
         )
 
     async def check_updates(self) -> CheckUpdatesResponse:
-        """Fetch the remote plugins-manifest.json and compare versions.
+        """Fetch the remote registry.json and compare versions.
 
         Performs a lightweight fetch (no full download) against the configured
         GitHub repository. Results are cached on the PluginManager instance.
 
         Returns:
-            CheckUpdatesResponse with per-plugin current/latest version and
-            update_available flag, plus the UTC timestamp of the check.
+            CheckUpdatesResponse with per-plugin current/latest version,
+            update_available flag, optional release_notes, plus the UTC timestamp.
         """
         plugin_manager = _get_plugin_manager()
 
@@ -139,7 +139,8 @@ class PluginService:
 
         plugins_info: dict[str, PluginUpdateInfo] = {}
         for domain, record in plugin_manager.plugins.items():
-            latest = update_results.get(domain)
+            offer = update_results.get(domain)
+            latest = offer.latest_version if offer else None
             try:
                 update_available = is_plugin_update_available(latest, record.version)
             except InvalidVersion:
@@ -154,6 +155,7 @@ class PluginService:
                 current_version=record.version,
                 latest_version=latest,
                 update_available=update_available,
+                release_notes=offer.release_notes if offer and update_available else None,
             )
 
         return CheckUpdatesResponse(
@@ -169,7 +171,7 @@ class PluginService:
 
         Args:
             domains: Plugin domains to update. An empty list updates all enabled
-                     plugins listed in the remote plugins-manifest.json.
+                     plugins listed in the remote registry.json.
 
         Returns:
             UpdatePluginsResponse with lists of successfully updated and failed domains.
@@ -219,7 +221,7 @@ class PluginService:
         return UpdatePluginsResponse(updated=updated, failed=failed)
 
     async def list_available(self) -> AvailablePluginsResponse:
-        """Fetch remote plugins-manifest.json and merge with local installation state.
+        """Fetch remote registry.json and merge with local installation state.
 
         Returns all plugins known to the remote repository, annotated with
         whether each is installed locally and what version is installed.
@@ -227,10 +229,10 @@ class PluginService:
         Returns:
             AvailablePluginsResponse with a list of AvailablePluginInfo entries,
             each carrying domain, name, version, description, author, disclaimer,
-            installed flag, and installed_version (None if not installed locally).
+            release_notes, installed flag, and installed_version (None if not installed).
 
         Raises:
-            RuntimeError: If the remote manifest cannot be fetched.
+            RuntimeError: If the remote registry cannot be fetched.
         """
         plugin_manager = get_plugin_manager()
 
@@ -241,7 +243,7 @@ class PluginService:
             ref=app_settings.plugins.repo_ref,
         )
         if remote_manifest is None:
-            raise RuntimeError("Failed to fetch remote plugins manifest")
+            raise RuntimeError("Failed to fetch remote plugins registry")
 
         installed = plugin_manager.plugins if plugin_manager else {}
 
@@ -252,6 +254,9 @@ class PluginService:
             if not domain or not version:
                 continue
             local = installed.get(domain)
+            release_notes = plugin.get("release_notes")
+            if not isinstance(release_notes, str) or not release_notes.strip():
+                release_notes = None
             result.append(
                 AvailablePluginInfo(
                     domain=domain,
@@ -260,6 +265,7 @@ class PluginService:
                     description=plugin.get("description"),
                     author=plugin.get("author"),
                     disclaimer=plugin.get("disclaimer"),
+                    release_notes=release_notes,
                     installed=local is not None,
                     installed_version=local.version if local else None,
                 )
@@ -285,7 +291,11 @@ class PluginService:
                     version=record.version,
                     name=record.name,
                     error=record.error if record.state == PluginState.FAILED else None,
-                    update_available=plugin_manager._available_updates.get(domain),
+                    update_available=(
+                        offer.latest_version
+                        if (offer := plugin_manager._available_updates.get(domain)) is not None
+                        else None
+                    ),
                     description=record.description,
                     author=record.author,
                 )

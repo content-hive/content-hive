@@ -16,7 +16,7 @@ When the same URL is submitted by multiple users simultaneously, Content Hive av
 - **PRIMARY** — the first submission; executes parse and download
 - **LINKED** — subsequent submissions of the same URL while PRIMARY is running; waits for PRIMARY and shares its result
 
-The task model also includes **REUSED** as a task type for cache-reuse workflows, but the online dedup path primarily relies on PRIMARY/LINKED.
+Each new submission still re-parses when no PRIMARY is running, so updated remote content can be picked up. Concurrent submissions of the same URL share one in-flight execution.
 
 ### Async Task Queue
 Tasks are executed concurrently with configurable limits and priority scheduling (FIFO within the same priority level). Tasks can be cancelled before execution starts.

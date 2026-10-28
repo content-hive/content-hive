@@ -65,8 +65,8 @@ class TaskDAO:
             url: Target URL for the task
             parameters: Task parameters as JSON
             status: Task status (default: PENDING)
-            role: Task role (primary, linked, reused)
-            primary_task_id: ID of primary task if this is linked/reused
+            role: Task role (primary, linked)
+            primary_task_id: ID of primary task if this is linked
             parse_result_id: Associated parse result ID
             commit: Whether to commit immediately (default: True)
 
@@ -98,64 +98,6 @@ class TaskDAO:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to create main task {task_id}")
-            raise
-
-    def create_reused_main_task(
-        self,
-        task_id: str,
-        user_id: int,
-        task_type: TaskType,
-        url: str,
-        parameters: dict,
-        parse_result_id: int,
-        commit: bool = True,
-    ) -> int:
-        """
-        Create a REUSED main task that's already completed.
-        This task instantly returns historical results without execution.
-
-        Args:
-            task_id: Unique task identifier
-            user_id: User ID who created the task
-            task_type: Type of the task
-            url: Target URL for the task
-            parameters: Task parameters as JSON
-            parse_result_id: Associated parse result ID
-            commit: Whether to commit immediately (default: True)
-
-        Returns:
-            Created task's database ID
-        """
-        session = self._get_session()
-        try:
-            now = datetime.now(UTC)
-
-            main_task = MainTask(
-                task_id=task_id,
-                user_id=user_id,
-                type=task_type,
-                status=TaskStatus.COMPLETED,
-                role=TaskRole.REUSED,
-                url=url,
-                parameters=parameters,
-                primary_task_id=None,
-                parse_result_id=parse_result_id,
-                started_at=now,
-                completed_at=now,
-                result={"parse_result_id": parse_result_id, "reused": True},
-            )
-            session.add(main_task)
-            session.flush()
-            task_db_id = main_task.id
-
-            if commit:
-                session.commit()
-
-            return task_db_id
-        except Exception:
-            if commit:
-                session.rollback()
-            logger.exception(f"Failed to create REUSED main task {task_id}")
             raise
 
     def get_main_task_by_id(self, id: int, include_sub_tasks: bool = False) -> MainTaskEntity | None:
@@ -433,7 +375,10 @@ class TaskDAO:
             }
             sort_field = sort_field_map.get(sort_by, MainTask.created_at)
 
-            stmt = stmt.order_by(sort_field.asc()) if order.lower() == "asc" else stmt.order_by(sort_field.desc())
+            if order.lower() == "asc":
+                stmt = stmt.order_by(sort_field.asc(), MainTask.id.asc())
+            else:
+                stmt = stmt.order_by(sort_field.desc(), MainTask.id.desc())
 
             stmt = stmt.limit(limit).offset(offset)
 
@@ -623,7 +568,6 @@ class TaskDAO:
                 status=status,
                 parameters=parameters,
                 depends_on_id=depends_on_id,
-                progress=0,
             )
             session.add(sub_task)
             session.flush()
@@ -740,8 +684,6 @@ class TaskDAO:
 
             if status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED]:
                 sub_task.completed_at = datetime.now(UTC)
-                if status == TaskStatus.COMPLETED:
-                    sub_task.progress = 100
 
             if error_message:
                 sub_task.error_message = error_message
@@ -754,39 +696,6 @@ class TaskDAO:
             if commit:
                 session.rollback()
             logger.exception(f"Failed to update sub task {id} status")
-            raise
-
-    def update_sub_task_progress(self, id: int, progress: int, commit: bool = True) -> bool:
-        """
-        Update sub task progress.
-
-        Args:
-            id: Database ID of the sub task
-            progress: Progress percentage (0-100)
-            commit: Whether to commit immediately (default: True)
-
-        Returns:
-            True if updated successfully
-        """
-        session = self._get_session()
-        try:
-            stmt = select(SubTask).where(SubTask.id == id)
-            sub_task = session.execute(stmt).scalar_one_or_none()
-            if not sub_task:
-                logger.warning(f"Sub task {id} not found")
-                return False
-
-            # Clamp progress between 0 and 100
-            sub_task.progress = max(0, min(100, progress))
-
-            if commit:
-                session.commit()
-
-            return True
-        except Exception:
-            if commit:
-                session.rollback()
-            logger.exception(f"Failed to update sub task {id} progress")
             raise
 
     def update_sub_task_result(self, id: int, result: dict, commit: bool = True) -> bool:
@@ -855,7 +764,7 @@ class TaskDAO:
             if status is not None:
                 stmt = stmt.where(SubTask.status == status)
 
-            stmt = stmt.order_by(SubTask.created_at.desc()).limit(limit).offset(offset)
+            stmt = stmt.order_by(SubTask.created_at.desc(), SubTask.id.desc()).limit(limit).offset(offset)
 
             result = session.execute(stmt).scalars().all()
             return [SubTaskEntity.from_orm(task) for task in result]

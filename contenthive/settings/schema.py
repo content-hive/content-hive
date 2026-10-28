@@ -24,9 +24,9 @@ class PluginSettings(APIBaseModel):
         description="Repository ref type: branch, tag, or commit",
     )
     repo_ref: str = Field(
-        default="main",
+        default="release",
         title="Ref Value",
-        description="Repository ref value (branch name, tag, or commit SHA)",
+        description="Repository ref value (branch name, tag, or commit SHA). Use release for Stable, main for Beta.",
     )
 
 

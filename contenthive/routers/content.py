@@ -14,6 +14,7 @@ from contenthive.models.content import (
     PaginatedResponse,
     PlatformInfo,
     SyncResponse,
+    SyncURLParserResult,
     URLParserResult,
 )
 from contenthive.models.enumerates import OperationType, ResponseStatus
@@ -29,6 +30,8 @@ async def list_contents(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     platform_id: int | None = Query(None, description="Filter by platform ID"),
     author_id: int | None = Query(None, description="Filter by author ID"),
+    tag_id: int | None = Query(None, description="Only include contents with this tag ID"),
+    exclude_tag_id: int | None = Query(None, description="Exclude contents with this tag ID"),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: str = Query(
@@ -43,6 +46,8 @@ async def list_contents(
             user_id=current_user.id,
             platform_id=platform_id,
             author_id=author_id,
+            tag_id=tag_id,
+            exclude_tag_id=exclude_tag_id,
             page=page,
             page_size=page_size,
             sort_by=sort_by,
@@ -92,6 +97,8 @@ async def list_platforms(
 async def list_authors(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     platform_id: int | None = Query(None, description="Filter by platform ID"),
+    tag_id: int | None = Query(None, description="Only include authors with this tag ID"),
+    exclude_tag_id: int | None = Query(None, description="Exclude authors with this tag ID"),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: str = Query("id", pattern="^(id|name|created_at|updated_at)$", description="Sort field"),
@@ -101,6 +108,8 @@ async def list_authors(
         authors = await content_service.list_authors(
             user_id=current_user.id,
             platform_id=platform_id,
+            tag_id=tag_id,
+            exclude_tag_id=exclude_tag_id,
             page=page,
             page_size=page_size,
             sort_by=sort_by,
@@ -225,7 +234,7 @@ async def delete_content(
         )
 
 
-@router_v1.get("/sync", response_model=APIResponse[SyncResponse[URLParserResult]])
+@router_v1.get("/sync", response_model=APIResponse[SyncResponse[SyncURLParserResult]])
 async def increment_sync(
     current_user: Annotated[UserModel, Depends(get_current_active_user)],
     last_sync_at: datetime | None = Query(
@@ -234,7 +243,7 @@ async def increment_sync(
     ),
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page (1-100)"),
-) -> APIResponse[SyncResponse[URLParserResult]]:
+) -> APIResponse[SyncResponse[SyncURLParserResult]]:
     try:
         result = await content_service.increment_sync(
             user_id=current_user.id,

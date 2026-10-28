@@ -72,6 +72,9 @@ class PluginUpdateInfo(APIBaseModel):
     current_version: str = Field(..., description="Currently installed version")
     latest_version: str | None = Field(None, description="Latest available version, null if fetch failed")
     update_available: bool = Field(..., description="Whether a newer version is available")
+    release_notes: str | None = Field(
+        None, description="Release notes for the latest remote version when an update is available"
+    )
 
 
 class PluginListResponse(APIBaseModel):
@@ -114,6 +117,7 @@ class AvailablePluginInfo(APIBaseModel):
     description: str | None = Field(None, description="Plugin description")
     author: list[str] | None = Field(None, description="Plugin author")
     disclaimer: str | None = Field(None, description="Risk disclaimer to display before installation")
+    release_notes: str | None = Field(None, description="Release notes for the remote version")
     installed: bool = Field(..., description="Whether the plugin is currently installed")
     installed_version: str | None = Field(None, description="Installed version, if installed")
 

@@ -22,6 +22,7 @@ from contenthive.models.enumerates import (
     MediaStatus,
     MediaType,
     ParserResultStatus,
+    TagEffect,
     TaskRole,
     TaskStatus,
     TaskType,
@@ -84,6 +85,7 @@ class User(Base, TimestampMixin):
     parse_results: Mapped[list["ParseResult"]] = relationship(
         "ParseResult", secondary="user_parse_results", back_populates="users"
     )
+    tags: Mapped[list["Tag"]] = relationship("Tag", back_populates="user", cascade="all, delete-orphan")
     tasks: Mapped[list["MainTask"]] = relationship("MainTask", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -220,6 +222,53 @@ class ParseResult(Base, TimestampMixin):
     tasks: Mapped[list["MainTask"]] = relationship("MainTask", back_populates="parse_result")
 
 
+class Tag(Base, TimestampMixin):
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_user_tag_name"),)
+
+    user: Mapped["User"] = relationship("User", back_populates="tags")
+    effects: Mapped[list["UserTagEffect"]] = relationship(
+        "UserTagEffect", back_populates="tag", cascade="all, delete-orphan"
+    )
+
+
+class UserTagEffect(Base, TimestampMixin):
+    """Per-user display effects for a vocabulary tag (one row per effect; no rows means none)."""
+
+    __tablename__ = "user_tag_effects"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    tag_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("tags.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    effect: Mapped[TagEffect] = mapped_column(
+        SQLEnum(TagEffect, values_callable=lambda obj: [e.value for e in obj]),
+        primary_key=True,
+        nullable=False,
+    )
+
+    tag: Mapped["Tag"] = relationship("Tag", back_populates="effects")
+
+
 class UserPlatform(Base, TimestampMixin):
     __tablename__ = "user_platforms"
 
@@ -252,6 +301,8 @@ class UserAuthor(Base, TimestampMixin):
         primary_key=True,
         nullable=False,
     )
+    # Per-user tag IDs referencing the tags table (JSON list of ints).
+    tags: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
 
 class UserParseResult(Base, TimestampMixin):
@@ -269,9 +320,27 @@ class UserParseResult(Base, TimestampMixin):
         primary_key=True,
         nullable=False,
     )
+    # Per-user tag IDs referencing the tags table (JSON list of ints).
+    tags: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
-    # Extension fields can be added here if needed, such as flags or notes
-    # related to the user's interaction with the parse result.
+
+class UserMedia(Base, TimestampMixin):
+    __tablename__ = "user_media"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    media_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("media.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    # Per-user tag IDs referencing the tags table (JSON list of ints).
+    tags: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
 
 
 class MainTask(Base, TimestampMixin):
@@ -287,7 +356,7 @@ class MainTask(Base, TimestampMixin):
     status: Mapped[TaskStatus] = mapped_column(
         SQLEnum(TaskStatus), nullable=False, index=True
     )  # pending, running, canceled, completed, failed, waiting_for_primary
-    role: Mapped[TaskRole | None] = mapped_column(SQLEnum(TaskRole), nullable=True)  # primary, linked, reused
+    role: Mapped[TaskRole | None] = mapped_column(SQLEnum(TaskRole), nullable=True)  # primary, linked
 
     url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
@@ -326,8 +395,6 @@ class SubTask(Base, TimestampMixin):
     status: Mapped[TaskStatus] = mapped_column(
         SQLEnum(TaskStatus), nullable=False, index=True
     )  # pending, running, completed, failed
-
-    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 to 100
 
     parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
 

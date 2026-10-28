@@ -26,7 +26,7 @@
 plugins:
   repo_url: https://github.com/content-hive/plugins.git
   repo_ref_type: branch   # branch | tag | commit
-  repo_ref: main
+  repo_ref: release
 
 auth:
   access_token_expire_minutes: 60
@@ -43,7 +43,7 @@ download:
 |--------|--------|------|
 | `plugins.repo_url` | `https://github.com/content-hive/plugins.git` | 插件分发仓库地址。修改前请确认仓库可信度 |
 | `plugins.repo_ref_type` | `branch` | 仓库 ref 类型：`branch`、`tag` 或 `commit` |
-| `plugins.repo_ref` | `main` | 仓库 ref 值 |
+| `plugins.repo_ref` | `release` | 仓库 ref 值。`release` = Stable（默认），`main` = Beta |
 | `auth.access_token_expire_minutes` | `60` | Access token 有效期（分钟）|
 | `auth.refresh_token_expire_days` | `30` | Refresh token 有效期（天）|
 | `download.max_retries` | `3` | 媒体下载失败最大重试次数 |

@@ -15,18 +15,48 @@ from contenthive.database.task_dao import TaskDAO
 from contenthive.logger import logger
 from contenthive.models.content import (
     DownloadedMediaInfo,
+    MediaEntity,
     PaginatedResponse,
     PaginationInfo,
 )
-from contenthive.models.enumerates import MediaStatus, TaskRole, TaskStatus, TaskType
+from contenthive.models.download import DownloadRetryInfo
+from contenthive.models.enumerates import (
+    AuthorProfileAsset,
+    MediaStatus,
+    SubTaskResultStatus,
+    TaskRole,
+    TaskStatus,
+    TaskType,
+)
 from contenthive.models.system import CursorPaginatedResponse
 from contenthive.models.task import MainTaskEntity, MainTaskInfo, SubTaskEntity
+from contenthive.models.task_parameters import (
+    AuthorProfileDownloadSubParameters,
+    MainTaskParameters,
+    MediaDownloadSubParameters,
+    ParseContentMainParameters,
+    ParseContentSubParameters,
+    SubTaskParameters,
+    parse_main_task_parameters,
+    parse_sub_task_parameters,
+)
+from contenthive.models.task_result import (
+    AuthorProfileDownloadSubResult,
+    ContentAnalysisSubResult,
+    MainTaskResult,
+    MediaDownloadSubResult,
+    ParseContentMainResult,
+    ParseContentSubResult,
+    SubTaskResult,
+    parse_main_task_result,
+)
 from contenthive.plugins.contracts import ParserMediaInfo, ParserResult
 from contenthive.services.content import content_service
 from contenthive.services.media import media_service
 from contenthive.services.metadata import metadata_service
 from contenthive.services.task_queue import task_queue
 from contenthive.utils.content import resolve_content_id
+from contenthive.utils.live_download import LiveDownloadTracker
 
 
 def _encode_cursor(id: int, value: datetime | int) -> str:
@@ -53,7 +83,34 @@ class TaskService:
 
     def __init__(self):
         """Initialize the TaskService."""
-        pass
+        # In-memory download progress / retry for RUNNING sub tasks.
+        self._live_download = LiveDownloadTracker()
+
+    def set_live_progress(self, sub_task_id: int, progress: int) -> None:
+        """Update in-memory per-attempt progress for a RUNNING sub task (0-100)."""
+        self._live_download.set_progress(sub_task_id, progress)
+
+    def set_live_download_retry(self, sub_task_id: int, retry: DownloadRetryInfo) -> None:
+        """Update in-memory retry/phase overlay for a RUNNING sub task."""
+        self._live_download.set_retry(sub_task_id, retry)
+
+    def clear_live_download(self, sub_task_id: int) -> None:
+        """Remove in-memory download state for a sub task."""
+        self._live_download.clear(sub_task_id)
+
+    def to_main_task_info(self, entity: MainTaskEntity, include_sub_tasks: bool = False) -> MainTaskInfo:
+        """Build MainTaskInfo, overlaying live download progress/retry onto sub tasks."""
+        info = MainTaskInfo.from_entity(entity, include_sub_tasks=include_sub_tasks)
+        if include_sub_tasks and entity.sub_tasks:
+            for st_info, st_entity in zip(info.sub_tasks, entity.sub_tasks, strict=True):
+                live = self._live_download.get(st_entity.id)
+                if live is None:
+                    continue
+                if live.progress is not None:
+                    st_info.progress = live.progress
+                if live.retry is not None:
+                    st_info.retry = live.retry
+        return info
 
     def _generate_task_id(self) -> str:
         """Generate a unique task ID."""
@@ -89,7 +146,7 @@ class TaskService:
         Returns:
             Created MainTaskInfo object or None
         """
-        parameters = {"url": url, "plugin_id": plugin_id}
+        parameters = ParseContentMainParameters(url=url, plugin_id=plugin_id)
 
         # Check if there's a running PRIMARY task for this URL
         with TaskDAO() as task_dao:
@@ -100,7 +157,7 @@ class TaskService:
             if running_primary.user_id == user_id:
                 # Same user - return existing task directly
                 logger.debug(f"Returning existing PRIMARY task {running_primary.id} to user {user_id} (URL: {url})")
-                return MainTaskInfo.from_entity(running_primary)
+                return self.to_main_task_info(running_primary)
             else:
                 # Different user - create LINKED task
                 logger.debug(
@@ -132,7 +189,7 @@ class TaskService:
                 task_queue.enqueue(task_entity.id, priority=0)
 
         if task_entity:
-            return MainTaskInfo.from_entity(task_entity)
+            return self.to_main_task_info(task_entity)
         return None
 
     async def create_main_task(
@@ -140,7 +197,7 @@ class TaskService:
         user_id: int,
         task_type: TaskType,
         url: str,
-        parameters: dict,
+        parameters: MainTaskParameters,
         role: TaskRole | None = None,
         primary_task_id: int | None = None,
         parse_result_id: int | None = None,
@@ -152,9 +209,9 @@ class TaskService:
             user_id: User ID who creates the task
             task_type: Type of the task
             url: Target URL for the task
-            parameters: Task parameters
-            role: Task role (primary, linked, reused)
-            primary_task_id: ID of primary task if this is linked/reused
+            parameters: Typed task parameters
+            role: Task role (primary, linked)
+            primary_task_id: ID of primary task if this is linked
             parse_result_id: Associated parse result ID
 
         Returns:
@@ -162,6 +219,7 @@ class TaskService:
         """
         try:
             task_id = self._generate_task_id()
+            payload = parameters.model_dump(mode="json")
 
             with TaskDAO() as dao:
                 id = dao.create_main_task(
@@ -169,7 +227,7 @@ class TaskService:
                     user_id=user_id,
                     task_type=task_type,
                     url=url,
-                    parameters=parameters,
+                    parameters=payload,
                     status=TaskStatus.PENDING,
                     role=role,
                     primary_task_id=primary_task_id,
@@ -229,19 +287,19 @@ class TaskService:
         with TaskDAO() as dao:
             return dao.update_main_task_status(id, status, error_message, commit=True)
 
-    def update_main_task_result(self, id: int, result: dict) -> bool:
+    def update_main_task_result(self, id: int, result: MainTaskResult) -> bool:
         """
         Update main task result.
 
         Args:
             id: Database ID of the task
-            result: Task result
+            result: Typed task result
 
         Returns:
             True if updated successfully
         """
         with TaskDAO() as dao:
-            return dao.update_main_task_result(id, result, commit=True)
+            return dao.update_main_task_result(id, result.model_dump(mode="json"), commit=True)
 
     def update_main_task_parse_result_id(self, id: int, parse_result_id: int) -> bool:
         """
@@ -292,7 +350,7 @@ class TaskService:
                 limit=limit,
                 offset=offset,
             )
-            return [MainTaskInfo.from_entity(task) for task in tasks]
+            return [self.to_main_task_info(task) for task in tasks]
 
     def list_main_tasks_by_user(
         self,
@@ -336,7 +394,7 @@ class TaskService:
                     include_sub_tasks=include_sub_tasks,
                 )
 
-            items = [MainTaskInfo.from_entity(task, include_sub_tasks=include_sub_tasks) for task in tasks]
+            items = [self.to_main_task_info(task, include_sub_tasks=include_sub_tasks) for task in tasks]
             total_pages = (total + page_size - 1) // page_size  # Ceiling division
 
             return PaginatedResponse(
@@ -412,7 +470,7 @@ class TaskService:
             next_cursor = _encode_cursor(last.id, sort_value_map.get(sort_by, last.created_at))
 
         return CursorPaginatedResponse(
-            items=[MainTaskInfo.from_entity(task, include_sub_tasks=include_sub_tasks) for task in tasks],
+            items=[self.to_main_task_info(task, include_sub_tasks=include_sub_tasks) for task in tasks],
             next_cursor=next_cursor,
         )
 
@@ -422,7 +480,7 @@ class TaskService:
         self,
         main_task_id: int,
         task_type: TaskType,
-        parameters: dict,
+        parameters: SubTaskParameters,
         depends_on_id: int | None = None,
     ) -> SubTaskEntity | None:
         """
@@ -431,7 +489,7 @@ class TaskService:
         Args:
             main_task_id: Parent main task ID
             task_type: Type of the sub task
-            parameters: Task parameters
+            parameters: Typed task parameters
             depends_on_id: ID of sub task this depends on
 
         Returns:
@@ -439,13 +497,14 @@ class TaskService:
         """
         try:
             sub_task_id = self._generate_sub_task_id()
+            payload = parameters.model_dump(mode="json")
 
             with TaskDAO() as dao:
                 sub_task_db_id = dao.create_sub_task(
                     sub_task_id=sub_task_id,
                     main_task_id=main_task_id,
                     task_type=task_type,
-                    parameters=parameters,
+                    parameters=payload,
                     status=TaskStatus.PENDING,
                     depends_on_id=depends_on_id,
                     commit=True,
@@ -499,39 +558,28 @@ class TaskService:
             True if updated successfully
         """
         with TaskDAO() as dao:
-            return dao.update_sub_task_status(id, status, error_message, commit=True)
+            updated = dao.update_sub_task_status(id, status, error_message, commit=True)
+        if updated and status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED):
+            self.clear_live_download(id)
+        return updated
 
-    def update_sub_task_progress(self, id: int, progress: int) -> bool:
-        """
-        Update sub task progress.
-
-        Args:
-            id: Database ID of the sub task
-            progress: Progress percentage (0-100)
-
-        Returns:
-            True if updated successfully
-        """
-        with TaskDAO() as dao:
-            return dao.update_sub_task_progress(id, progress, commit=True)
-
-    def update_sub_task_result(self, id: int, result: dict) -> bool:
+    def update_sub_task_result(self, id: int, result: SubTaskResult) -> bool:
         """
         Update sub task result.
 
         Args:
             id: Database ID of the sub task
-            result: Task result
+            result: Typed task result
 
         Returns:
             True if updated successfully
         """
         with TaskDAO() as dao:
-            return dao.update_sub_task_result(id, result, commit=True)
+            return dao.update_sub_task_result(id, result.model_dump(mode="json"), commit=True)
 
     # Task Execution Methods
 
-    async def execute_main_task(self, id: int) -> dict[str, Any]:
+    async def execute_main_task(self, id: int) -> ParseContentMainResult | dict[str, Any]:
         """
         Execute a main task based on its type.
 
@@ -564,16 +612,15 @@ class TaskService:
 
             # Route to specific task handler
             if task.type == TaskType.PARSE_CONTENT:
-                result = await self._execute_parse_content_task(task)
+                result, parse_result_id = await self._execute_parse_content_task(task)
             else:
                 raise ValueError(f"Unknown task type: {task.type}")
 
             # Update task result and status
             self.update_main_task_result(id, result)
             self.update_main_task_status(id, TaskStatus.COMPLETED)
-            result_id = result.get("parse_result_id")
-            if result_id:
-                self.update_main_task_parse_result_id(id, result_id)
+            if parse_result_id:
+                self.update_main_task_parse_result_id(id, parse_result_id)
 
             logger.info(f"Main task {task.task_id} (ID: {id}) completed successfully")
             return result
@@ -584,7 +631,7 @@ class TaskService:
             self.update_main_task_status(id, TaskStatus.FAILED, error_message=error_msg)
             raise
 
-    async def _execute_parse_content_task(self, task: MainTaskEntity) -> dict[str, Any]:
+    async def _execute_parse_content_task(self, task: MainTaskEntity) -> tuple[ParseContentMainResult, int | None]:
         """
         Execute a parse content task.
 
@@ -596,16 +643,15 @@ class TaskService:
         Execution flow:
         1. Create and execute parse sub task → get ParserResult
         2. Save parse result to database → get parse_result_id
-        3. Create download sub tasks for each media (if any)
-        4. Execute all download sub tasks in parallel
-        5. Save all download results to database
-        6. Return comprehensive task statistics
+        3. Create download sub tasks for each media (skip decided at execution)
+        4. Execute all download sub tasks in parallel (each persists its own media row)
+        5. Sync content sidecar and return task statistics
 
         Args:
             task: MainTaskEntity object
 
         Returns:
-            Task result with parse_result_id, media statistics, and sub task details
+            Tuple of (task result summary, parse_result_id for the column)
         """
         logger.info(f"[{task.task_id}] Starting parse content task")
 
@@ -616,17 +662,17 @@ class TaskService:
 
         try:
             # ========== Phase 1: Parameter Validation ==========
-            url = task.parameters.get("url")
-            plugin_id = task.parameters.get("plugin_id")
-
-            if not url:
+            main_params = parse_main_task_parameters(task.type, task.parameters)
+            if main_params is None or not main_params.url:
                 raise ValueError("URL parameter is required")
+            url = main_params.url
+            plugin_id = main_params.plugin_id
 
             # ========== Phase 2: Parse Content ==========
             parse_subtask = self.create_sub_task(
                 main_task_id=task.id,
                 task_type=TaskType.PARSE_CONTENT,
-                parameters={"url": url, "plugin_id": plugin_id},
+                parameters=ParseContentSubParameters(url=url, plugin_id=plugin_id),
             )
 
             if not parse_subtask:
@@ -659,70 +705,98 @@ class TaskService:
 
             try:
                 with ContentDAO() as content_dao:
-                    parse_result_id = content_dao.save_parse_result(parse_result, user_id=task.user_id)
+                    parse_result_id, orphan_media_paths = content_dao.save_parse_result(
+                        parse_result, user_id=task.user_id
+                    )
             except Exception as e:
                 logger.exception(f"[{task.task_id}] Failed to save parse result")
                 raise ValueError(f"Failed to save parse result to database: {e}") from e
+
+            for relative_path in orphan_media_paths:
+                media_service.delete_media_file(relative_path)
 
             metadata_service.sync_content_sidecar(parse_result_id, task.user_id)
             if parse_result.author:
                 metadata_service.sync_author_sidecar(platform_code, author_uid)
 
-            # ========== Phase 3.5: Download Author Avatar / Banner (separate subtask) ==========
+            # ========== Phase 3.5: Download Author Avatar / Banner (one subtask each) ==========
             if parse_result.author:
-                author_profile_subtask = self.create_sub_task(
-                    main_task_id=task.id,
-                    task_type=TaskType.AUTHOR_PROFILE_DOWNLOAD,
-                    parameters={
-                        "platform": platform_code,
-                        "author_uid": author_uid,
-                        "avatar_url": str(parse_result.author.avatar) if parse_result.author.avatar else None,
-                        "banner_url": str(parse_result.author.banner) if parse_result.author.banner else None,
-                        "prev_avatar_url": author_profile_state.avatar if author_profile_state else None,
-                        "prev_banner_url": author_profile_state.banner if author_profile_state else None,
-                        "prev_avatar_path": author_profile_state.avatar_path if author_profile_state else None,
-                        "prev_banner_path": author_profile_state.banner_path if author_profile_state else None,
-                    },
-                    depends_on_id=parse_subtask.id,
-                )
-                if author_profile_subtask:
-                    # Best-effort: a profile download failure must not fail the parse task.
-                    try:
-                        await self._execute_author_profile_download_sub_task(author_profile_subtask)
-                    except Exception:
-                        logger.exception(f"[{task.task_id}] Author profile download subtask failed")
+                profile_subtasks: list[SubTaskEntity] = []
+                avatar_url = str(parse_result.author.avatar) if parse_result.author.avatar else None
+                banner_url = str(parse_result.author.banner) if parse_result.author.banner else None
+                for asset, url, prev_url, prev_path in (
+                    (
+                        AuthorProfileAsset.AVATAR,
+                        avatar_url,
+                        author_profile_state.avatar if author_profile_state else None,
+                        author_profile_state.avatar_path if author_profile_state else None,
+                    ),
+                    (
+                        AuthorProfileAsset.BANNER,
+                        banner_url,
+                        author_profile_state.banner if author_profile_state else None,
+                        author_profile_state.banner_path if author_profile_state else None,
+                    ),
+                ):
+                    if not url:
+                        continue
+                    subtask = self.create_sub_task(
+                        main_task_id=task.id,
+                        task_type=TaskType.AUTHOR_PROFILE_DOWNLOAD,
+                        parameters=AuthorProfileDownloadSubParameters(
+                            asset=asset,
+                            platform=platform_code,
+                            author_uid=author_uid,
+                            url=url,
+                            prev_url=prev_url,
+                            prev_path=prev_path,
+                        ),
+                        depends_on_id=parse_subtask.id,
+                    )
+                    if subtask:
+                        profile_subtasks.append(subtask)
+
+                if profile_subtasks:
+                    # Best-effort: profile download failures must not fail the parse task.
+                    results = await asyncio.gather(
+                        *[self._execute_author_profile_download_sub_task(st) for st in profile_subtasks],
+                        return_exceptions=True,
+                    )
+                    for subtask, outcome in zip(profile_subtasks, results, strict=True):
+                        if isinstance(outcome, BaseException):
+                            logger.error(
+                                f"[{task.task_id}] Author profile download subtask {subtask.sub_task_id} failed",
+                                exc_info=(type(outcome), outcome, outcome.__traceback__),
+                            )
                     metadata_service.sync_author_sidecar(platform_code, author_uid)
 
             # ========== Phase 4: Handle Media Downloads ==========
             if not parse_result.media or media_count == 0:
                 logger.warning(f"[{task.task_id}] No media found in parse result, skipping download phase")
                 return self._build_task_result(
-                    task_id=task.task_id,
                     parse_result_id=parse_result_id,
-                    parse_subtask=parse_subtask,
                     media_count=0,
-                    download_subtasks=[],
-                    success_downloads=[],
-                    failed_downloads=[],
-                    saved_media_count=0,
-                    saved_media_ids=[],
+                    success_count=0,
+                    saved_count=0,
+                    failed_count=0,
                 )
 
-            # Create download sub tasks
+            # Create a download sub task for every media item; skip is decided at execution.
             content_id = resolve_content_id(parse_result.pid, str(parse_result.url))
 
             for idx, media in enumerate(parse_result.media):
                 download_subtask = self.create_sub_task(
                     main_task_id=task.id,
                     task_type=TaskType.MEDIA_DOWNLOAD,
-                    parameters={
-                        "platform": platform_code,
-                        "author": author_uid,
-                        "content_id": content_id,
-                        "plugin_domain": parse_result.parser,
-                        "media_index": idx,
-                        "media": media.model_dump(mode="json"),
-                    },
+                    parameters=MediaDownloadSubParameters(
+                        platform=platform_code,
+                        author=author_uid,
+                        content_id=content_id,
+                        parse_result_id=parse_result_id,
+                        plugin_domain=parse_result.parser,
+                        media_index=idx,
+                        media=media,
+                    ),
                     depends_on_id=parse_subtask.id,
                 )
 
@@ -731,19 +805,14 @@ class TaskService:
                 else:
                     logger.warning(f"[{task.task_id}] Failed to create download sub task for media {idx}")
 
-            # Execute downloads with concurrency control
             if not download_subtasks:
                 logger.warning(f"[{task.task_id}] No download sub tasks created")
                 return self._build_task_result(
-                    task_id=task.task_id,
                     parse_result_id=parse_result_id,
-                    parse_subtask=parse_subtask,
                     media_count=media_count,
-                    download_subtasks=[],
-                    success_downloads=[],
-                    failed_downloads=[],
-                    saved_media_count=0,
-                    saved_media_ids=[],
+                    success_count=0,
+                    saved_count=0,
+                    failed_count=0,
                 )
 
             logger.info(f"[{task.task_id}] Executing {len(download_subtasks)}/{media_count} downloads")
@@ -761,51 +830,33 @@ class TaskService:
             )
 
             # ========== Phase 5: Process Download Results ==========
-            success_downloads, failed_downloads = self._categorize_download_results(
+            success_count, saved_count, failed_count = self._categorize_download_results(
                 task_id=task.task_id,
                 download_results=download_results,
                 download_subtasks=download_subtasks,
             )
 
             logger.info(
-                f"[{task.task_id}] Download phase completed:"
-                f" {len(success_downloads)} succeeded, {len(failed_downloads)} failed"
+                f"[{task.task_id}] Download phase completed: "
+                f"{success_count} new, {saved_count} on disk, {failed_count} failed"
             )
 
-            # ========== Phase 6: Save Downloaded Media ==========
-            saved_media_ids = []
-            saved_media_count = 0
-
-            try:
-                if download_results:
-                    with ContentDAO() as content_dao:
-                        saved_media_ids = content_dao.save_downloaded_medias(
-                            download_results, parse_result_id, commit=True
-                        )
-                        saved_media_count = len(saved_media_ids)
-            except Exception:
-                logger.exception(f"[{task.task_id}] Failed to save media records")
-                # Don't raise here - parse result is already saved, partial success
-
+            # ========== Phase 6: Sync sidecar (media rows already saved in executors) ==========
             metadata_service.sync_content_sidecar(parse_result_id, task.user_id)
 
             # ========== Phase 7: Build and Return Result ==========
             result = self._build_task_result(
-                task_id=task.task_id,
                 parse_result_id=parse_result_id,
-                parse_subtask=parse_subtask,
                 media_count=media_count,
-                download_subtasks=download_subtasks,
-                success_downloads=success_downloads,
-                failed_downloads=failed_downloads,
-                saved_media_count=saved_media_count,
-                saved_media_ids=saved_media_ids,
+                success_count=success_count,
+                saved_count=saved_count,
+                failed_count=failed_count,
             )
 
             logger.info(
                 f"[{task.task_id}] Parse content task completed: parse_result_id={parse_result_id}, "
-                f"media={media_count}, downloaded={len(success_downloads)}, "
-                f"failed={len(failed_downloads)}, saved={saved_media_count}"
+                f"media={media_count}, success_count={success_count}, "
+                f"saved={saved_count}, failed={failed_count}"
             )
 
             return result
@@ -819,209 +870,184 @@ class TaskService:
             )
             raise
 
-    async def _execute_author_profile_download_sub_task(self, sub_task: SubTaskEntity) -> dict[str, Any]:
+    async def _execute_author_profile_download_sub_task(
+        self, sub_task: SubTaskEntity
+    ) -> AuthorProfileDownloadSubResult:
         """
-        Execute an author profile (avatar/banner) download sub task.
+        Execute an author profile asset download sub task (avatar or banner).
 
         Re-downloads only when the remote URL changed or the local file is missing,
-        then persists the resulting /media paths and updates the sub task status.
+        then persists the resulting /media path and updates the sub task status.
 
         Args:
             sub_task: SubTaskEntity object
 
         Returns:
-            Dict describing the outcome (status, avatar_path, banner_path).
+            Typed outcome for this single asset.
         """
-        params = sub_task.parameters
-        platform_code = params.get("platform")
-        author_uid = params.get("author_uid")
-        avatar_url = params.get("avatar_url")
-        banner_url = params.get("banner_url")
-        prev_avatar_url = params.get("prev_avatar_url")
-        prev_banner_url = params.get("prev_banner_url")
-        prev_avatar_path = params.get("prev_avatar_path")
-        prev_banner_path = params.get("prev_banner_path")
+        params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
 
         try:
-            if not platform_code or not author_uid:
-                raise ValueError("platform and author_uid parameters are required")
+            if not isinstance(params, AuthorProfileDownloadSubParameters):
+                raise ValueError("platform, author_uid, and asset parameters are required")
 
+            asset = params.asset
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
-            avatar_changed = prev_avatar_url != avatar_url
-            avatar_missing = not media_service.media_file_exists(prev_avatar_path)
-            need_avatar = bool(avatar_url) and (avatar_changed or avatar_missing)
-
-            banner_changed = prev_banner_url != banner_url
-            banner_missing = not media_service.media_file_exists(prev_banner_path)
-            need_banner = bool(banner_url) and (banner_changed or banner_missing)
-
-            if not need_avatar and not need_banner:
-                logger.debug(f"[{sub_task.sub_task_id}] Author profile assets unchanged, skipping download")
+            url_changed = params.prev_url != params.url
+            file_missing = not media_service.media_file_exists(params.prev_path)
+            if not url_changed and not file_missing:
+                logger.debug(f"[{sub_task.sub_task_id}] Author {asset} unchanged, skipping download")
+                result = AuthorProfileDownloadSubResult(
+                    status=SubTaskResultStatus.SKIPPED,
+                    asset=asset,
+                    path=params.prev_path,
+                )
                 self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
-                self.update_sub_task_result(sub_task.id, {"status": "skipped"})
-                return {"status": "skipped"}
+                self.update_sub_task_result(sub_task.id, result)
+                return result
 
-            avatar_path, banner_path = await media_service.download_author_profile(
-                platform=platform_code,
-                author_uid=author_uid,
-                avatar_url=avatar_url if need_avatar else None,
-                banner_url=banner_url if need_banner else None,
+            path = await media_service.download_author_profile_asset(
+                platform=params.platform,
+                author_uid=params.author_uid,
+                asset=asset,
+                url=params.url,
+                on_progress=lambda pct, sid=sub_task.id: self.set_live_progress(sid, pct),
+                on_download_state=lambda state, sid=sub_task.id: self.set_live_download_retry(sid, state),
             )
 
-            if avatar_path is not None or banner_path is not None:
-                with ContentDAO() as content_dao:
-                    current_state = content_dao.get_author_profile_state(platform_code, author_uid)
-                    author_id = current_state.id if current_state else None
-                    if author_id is None:
-                        logger.warning(
-                            f"[{sub_task.sub_task_id}] Author not found after save, cannot persist profile paths"
-                        )
-                    else:
-                        content_dao.update_author_profile_paths(
-                            author_id=author_id,
-                            avatar_path=avatar_path,
-                            banner_path=banner_path,
-                        )
+            if path is None:
+                error_message = f"Author {asset} download failed"
+                result = AuthorProfileDownloadSubResult(
+                    status=SubTaskResultStatus.FAILED,
+                    asset=asset,
+                )
+                self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_message)
+                self.update_sub_task_result(sub_task.id, result)
+                return result
 
-            avatar_failed = need_avatar and avatar_path is None
-            banner_failed = need_banner and banner_path is None
-            requested_count = int(need_avatar) + int(need_banner)
-            failed_count = int(avatar_failed) + int(banner_failed)
+            with ContentDAO() as content_dao:
+                current_state = content_dao.get_author_profile_state(params.platform, params.author_uid)
+                author_id = current_state.id if current_state else None
+                if author_id is None:
+                    logger.warning(f"[{sub_task.sub_task_id}] Author not found after save, cannot persist {asset} path")
+                elif asset == AuthorProfileAsset.AVATAR:
+                    content_dao.update_author_profile_paths(author_id=author_id, avatar_path=path)
+                else:
+                    content_dao.update_author_profile_paths(author_id=author_id, banner_path=path)
 
-            if failed_count == requested_count:
-                outcome_status = "failed"
-                sub_task_status = TaskStatus.FAILED
-            elif failed_count > 0:
-                outcome_status = "partial_success"
-                sub_task_status = TaskStatus.COMPLETED
-            else:
-                outcome_status = "success"
-                sub_task_status = TaskStatus.COMPLETED
-
-            self.update_sub_task_status(sub_task.id, sub_task_status)
-            result_data = {
-                "status": outcome_status,
-                "avatar_path": avatar_path,
-                "banner_path": banner_path,
-            }
-            if avatar_failed:
-                result_data["avatar_error"] = "Download failed"
-            if banner_failed:
-                result_data["banner_error"] = "Download failed"
-            self.update_sub_task_result(sub_task.id, result_data)
-            logger.info(
-                f"[{sub_task.sub_task_id}] Author profile download {outcome_status}: "
-                f"avatar={'yes' if avatar_path else 'no'}, banner={'yes' if banner_path else 'no'}"
+            result = AuthorProfileDownloadSubResult(
+                status=SubTaskResultStatus.SUCCESS,
+                asset=asset,
+                path=path,
             )
-            return result_data
+            self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+            self.update_sub_task_result(sub_task.id, result)
+            logger.info(f"[{sub_task.sub_task_id}] Author {asset} download success: {path}")
+            return result
 
         except Exception as e:
             error_msg = str(e)
             logger.exception(f"Author profile download sub task {sub_task.sub_task_id} failed")
+            asset = params.asset if isinstance(params, AuthorProfileDownloadSubParameters) else None
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
-            self.update_sub_task_result(sub_task.id, {"status": "failed", "error": error_msg})
+            self.update_sub_task_result(
+                sub_task.id,
+                AuthorProfileDownloadSubResult(status=SubTaskResultStatus.FAILED, asset=asset),
+            )
             raise
+
+    @staticmethod
+    def _should_skip_media_download(existing: MediaEntity, media: ParserMediaInfo) -> bool:
+        """
+        Whether a MEDIA_DOWNLOAD sub task can skip the actual download.
+
+        Evaluated at sub task execution time. Requires COMPLETED status and a
+        present main media file. If the parse result still advertises a cover
+        (or cover fallbacks), the local cover file must also exist — otherwise a
+        missing cover would never be retried.
+        """
+        if existing.status != MediaStatus.COMPLETED:
+            return False
+        if not media_service.media_file_exists(existing.media_path):
+            return False
+        expects_cover = bool(media.cover) or bool(media.cover_fallbacks)
+        return (not expects_cover) or media_service.media_file_exists(existing.cover_path)
 
     def _categorize_download_results(
         self,
         task_id: str,
-        download_results: list[DownloadedMediaInfo],
+        download_results: list[MediaDownloadSubResult],
         download_subtasks: list[SubTaskEntity],
-    ) -> tuple[list[DownloadedMediaInfo], list[dict[str, Any]]]:
+    ) -> tuple[int, int, int]:
         """
-        Categorize download results into successful and failed downloads.
+        Categorize download sub task results.
 
         Args:
             task_id: Main task ID for logging
-            download_results: List of download results
+            download_results: List of media download sub task results
             download_subtasks: List of download sub tasks
 
         Returns:
-            Tuple of (success_downloads, failed_downloads)
+            Tuple of (success_count, saved_count, failed_count) where
+            success_count is this-run SUCCESS count and saved_count is
+            SUCCESS + SKIPPED (present on disk after this run).
         """
-        success_downloads: list[DownloadedMediaInfo] = []
-        failed_downloads: list[dict[str, Any]] = []
+        success_count = 0
+        saved_count = 0
+        failed_count = 0
 
         for idx, result in enumerate(download_results):
             subtask_id = download_subtasks[idx].sub_task_id if idx < len(download_subtasks) else None
 
-            if result.status == MediaStatus.COMPLETED:
-                success_downloads.append(result)
-            elif result.status == MediaStatus.FAILED:
-                logger.warning(
-                    f"[{task_id}] Download [{idx + 1}/{len(download_results)}] failed: {subtask_id} - {result.url}"
-                )
-                failed_downloads.append(
-                    {
-                        "index": idx,
-                        "subtask_id": subtask_id,
-                        "media_url": str(result.url),
-                        "error": "Download failed",
-                    }
-                )
+            if result.status == SubTaskResultStatus.SUCCESS:
+                success_count += 1
+                saved_count += 1
+            elif result.status == SubTaskResultStatus.SKIPPED:
+                saved_count += 1
+                logger.debug(f"[{task_id}] Download [{idx + 1}/{len(download_results)}] skipped: {subtask_id}")
+            elif result.status == SubTaskResultStatus.FAILED:
+                failed_count += 1
+                logger.warning(f"[{task_id}] Download [{idx + 1}/{len(download_results)}] failed: {subtask_id}")
             else:
+                failed_count += 1
                 logger.warning(
-                    f"[{task_id}] Download [{idx + 1}/{len(download_results)}] unexpected status: {result.status}"
-                )
-                failed_downloads.append(
-                    {
-                        "index": idx,
-                        "subtask_id": subtask_id,
-                        "media_url": str(result.url),
-                        "error": f"Unexpected status: {result.status}",
-                    }
+                    f"[{task_id}] Download [{idx + 1}/{len(download_results)}] unexpected status: "
+                    f"{subtask_id} - {result.status}"
                 )
 
-        return success_downloads, failed_downloads
+        return success_count, saved_count, failed_count
 
     def _build_task_result(
         self,
-        task_id: str,
         parse_result_id: int | None,
-        parse_subtask: SubTaskEntity | None,
         media_count: int,
-        download_subtasks: list[SubTaskEntity],
-        success_downloads: list[DownloadedMediaInfo],
-        failed_downloads: list[dict[str, Any]],
-        saved_media_count: int = 0,
-        saved_media_ids: list[int] | None = None,
-    ) -> dict[str, Any]:
+        success_count: int,
+        saved_count: int,
+        failed_count: int,
+    ) -> tuple[ParseContentMainResult, int | None]:
         """
-        Build comprehensive task result dictionary.
+        Build comprehensive task result model.
 
         Args:
-            task_id: Main task ID
-            parse_result_id: Saved parse result ID
-            parse_subtask: Parse sub task entity
+            parse_result_id: Saved parse result ID (returned separately for the column)
             media_count: Total media count from parse result
-            download_subtasks: List of download sub tasks
-            success_downloads: List of successfully downloaded media
-            failed_downloads: List of failed download details
-            saved_media_count: Number of media records saved to database
-            saved_media_ids: List of saved media IDs
+            success_count: Newly downloaded in this run (sub task SUCCESS)
+            saved_count: On disk after this run (SUCCESS + SKIPPED)
+            failed_count: Number of failed downloads
 
         Returns:
-            Task result dictionary
+            Tuple of (task result summary, parse_result_id)
         """
-        return {
-            "parse_result_id": parse_result_id,
-            "media_count": media_count,
-            "downloaded_count": len(success_downloads),
-            "saved_count": saved_media_count,
-            "saved_media_ids": saved_media_ids if saved_media_ids else [],
-            "failed_count": len(failed_downloads),
-            "failed_details": failed_downloads[:10] if failed_downloads else [],  # Limit to first 10 failures
-            "subtasks": {
-                "total": (1 if parse_subtask else 0) + len(download_subtasks),
-                "parse_subtask_id": parse_subtask.id if parse_subtask else None,
-                "download_subtask_ids": [st.id for st in download_subtasks],
-                "download_count": len(download_subtasks),
-                "completed": len(success_downloads),
-                "failed": len(failed_downloads),
-            },
-            "success": parse_result_id is not None and len(failed_downloads) < media_count,
-        }
+        return (
+            ParseContentMainResult(
+                media_count=media_count,
+                success_count=success_count,
+                saved_count=saved_count,
+                failed_count=failed_count,
+            ),
+            parse_result_id,
+        )
 
     async def _execute_parse_content_sub_task(self, sub_task: SubTaskEntity) -> ParserResult:
         """
@@ -1035,11 +1061,8 @@ class TaskService:
             ParserResult object containing parsed content metadata and media list
         """
         try:
-            # Extract parameters
-            url = sub_task.parameters.get("url")
-            plugin_id = sub_task.parameters.get("plugin_id")
-
-            if not url:
+            params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
+            if not isinstance(params, ParseContentSubParameters) or not params.url:
                 raise ValueError("URL parameter is required")
 
             # Get main task to get user_id
@@ -1051,27 +1074,29 @@ class TaskService:
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
             # Parse content
-            parse_result = await content_service.parser_content(url=url, plugin_id=plugin_id)
+            parse_result = await content_service.parser_content(url=params.url, plugin_id=params.plugin_id)
 
             if not parse_result:
-                raise ValueError(f"Failed to parse content from URL: {url}")
+                raise ValueError(f"Failed to parse content from URL: {params.url}")
 
             # Update sub task status to COMPLETED
             self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
 
             # Save sub task result
-            result_data = {
-                "status": "success",
-                "platform": parse_result.platform.code if parse_result.platform else None,
-                "author": parse_result.author.username if parse_result.author else None,
-                "content_id": resolve_content_id(
-                    parse_result.pid,
-                    str(parse_result.url),
+            self.update_sub_task_result(
+                sub_task.id,
+                ParseContentSubResult(
+                    status=SubTaskResultStatus.SUCCESS,
+                    platform=parse_result.platform.code if parse_result.platform else None,
+                    author=parse_result.author.username if parse_result.author else None,
+                    content_id=resolve_content_id(
+                        parse_result.pid,
+                        str(parse_result.url),
+                    ),
+                    media_count=len(parse_result.media) if parse_result.media else 0,
+                    url=str(parse_result.url) if parse_result.url else None,
                 ),
-                "media_count": len(parse_result.media) if parse_result.media else 0,
-                "url": str(parse_result.url) if parse_result.url else None,
-            }
-            self.update_sub_task_result(sub_task.id, result_data)
+            )
             return parse_result
 
         except Exception as e:
@@ -1080,111 +1105,157 @@ class TaskService:
 
             # Update sub task status to FAILED
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
-            self.update_sub_task_result(sub_task.id, {"status": "failed", "error": error_msg})
+            self.update_sub_task_result(
+                sub_task.id,
+                ParseContentSubResult(status=SubTaskResultStatus.FAILED),
+            )
 
             # Re-raise exception to propagate to main task
             raise
 
-    async def _execute_media_download_sub_task(self, sub_task: SubTaskEntity) -> DownloadedMediaInfo:
+    async def _execute_media_download_sub_task(self, sub_task: SubTaskEntity) -> MediaDownloadSubResult:
         """
         Execute a media download sub task.
-        Downloads a single media file and updates the database.
+
+        Skips when the media is already COMPLETED with local files present.
+        Otherwise downloads, persists the media row, and updates the sub task.
 
         Args:
             sub_task: SubTaskEntity object
 
         Returns:
-            DownloadedMediaInfo with status indicating success or failure
+            MediaDownloadSubResult for this media item
         """
-        # Extract parameters
-        platform = sub_task.parameters.get("platform")
-        author = sub_task.parameters.get("author")
-        content_id = sub_task.parameters.get("content_id")
-        plugin_domain = sub_task.parameters.get("plugin_domain")
-        media_index = sub_task.parameters.get("media_index", 0)
-        media_data = sub_task.parameters.get("media", {})
+        params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
+        if not isinstance(params, MediaDownloadSubParameters):
+            error_msg = "Invalid MEDIA_DOWNLOAD parameters"
+            logger.error(f"[{sub_task.sub_task_id}] {error_msg}: {sub_task.parameters!r}")
+            self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
+            result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+            self.update_sub_task_result(sub_task.id, result)
+            return result
 
         try:
-            # Validate required parameters
-            if not platform or not author or not content_id:
-                raise ValueError("platform, author, and content_id parameters are required")
-
-            media = ParserMediaInfo.model_validate(media_data)
-
-            # Get main task to get user_id
             main_task = self.get_main_task(sub_task.main_task_id)
             if not main_task:
                 raise ValueError(f"Main task {sub_task.main_task_id} not found")
 
-            # Update sub task status to RUNNING
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
-            # Download media — MediaService decides whether to use plugin or built-in downloader
-            result = await media_service.download_media(
-                platform=platform,
-                author=author,
-                content_id=content_id,
-                media=media,
-                media_index=media_index,
-                plugin_domain=plugin_domain,
-            )
+            media_url = str(params.media.url)
+            existing: MediaEntity | None = None
+            try:
+                with ContentDAO() as content_dao:
+                    existing = content_dao.get_media_by_parse_result_url(params.parse_result_id, media_url)
+            except Exception:
+                logger.exception(f"[{sub_task.sub_task_id}] Failed to load existing media for download skip check")
 
-            # Update sub task status to COMPLETED
-            self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
-            self.update_sub_task_result(
-                sub_task.id,
-                {
-                    "status": "success",
-                    "media_path": result.media_path if result else None,
-                },
-            )
-
-            # If download_single_media returns None, treat as failure
-            if result is None:
-                logger.warning(f"Media download sub task {sub_task.sub_task_id} returned None")
-                return DownloadedMediaInfo(
-                    status=MediaStatus.FAILED,
-                    url=media.url,
-                    type=media.type,
-                    title=media.title,
-                    cover=media.cover,
-                    url_fallbacks=media.url_fallbacks or [],
-                    cover_fallbacks=media.cover_fallbacks or [],
-                    duration=media.duration,
-                    width=media.width,
-                    height=media.height,
-                    media_path=None,
-                    cover_path=None,
+            if existing is not None and self._should_skip_media_download(existing, params.media):
+                logger.debug(f"[{sub_task.sub_task_id}] Skipping download: already completed with local file")
+                result = MediaDownloadSubResult(
+                    status=SubTaskResultStatus.SKIPPED,
+                    media_path=existing.media_path,
                 )
+                self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+                self.update_sub_task_result(sub_task.id, result)
+                return result
 
+            downloaded = await media_service.download_media(
+                platform=params.platform,
+                author=params.author,
+                content_id=params.content_id,
+                media=params.media,
+                media_index=params.media_index,
+                plugin_domain=params.plugin_domain,
+                on_progress=lambda pct, sid=sub_task.id: self.set_live_progress(sid, pct),
+                on_download_state=lambda state, sid=sub_task.id: self.set_live_download_retry(sid, state),
+            )
+
+            if downloaded is None:
+                logger.warning(f"Media download sub task {sub_task.sub_task_id} returned None")
+                try:
+                    with ContentDAO() as content_dao:
+                        content_dao.save_downloaded_media(
+                            DownloadedMediaInfo(
+                                status=MediaStatus.FAILED,
+                                url=params.media.url,
+                                type=params.media.type,
+                                title=params.media.title,
+                                cover=params.media.cover,
+                                url_fallbacks=params.media.url_fallbacks or [],
+                                cover_fallbacks=params.media.cover_fallbacks or [],
+                                duration=params.media.duration,
+                                width=params.media.width,
+                                height=params.media.height,
+                                media_path=None,
+                                cover_path=None,
+                            ),
+                            params.parse_result_id,
+                            order=params.media_index,
+                            commit=True,
+                        )
+                except Exception:
+                    logger.exception(f"[{sub_task.sub_task_id}] Failed to persist FAILED media status")
+                result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+                self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message="Download returned None")
+                self.update_sub_task_result(sub_task.id, result)
+                return result
+
+            try:
+                with ContentDAO() as content_dao:
+                    content_dao.save_downloaded_media(
+                        downloaded,
+                        params.parse_result_id,
+                        order=params.media_index,
+                        commit=True,
+                    )
+            except Exception:
+                logger.exception(f"[{sub_task.sub_task_id}] Failed to save downloaded media")
+                result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+                self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message="Failed to save media record")
+                self.update_sub_task_result(sub_task.id, result)
+                return result
+
+            result = MediaDownloadSubResult(
+                status=SubTaskResultStatus.SUCCESS,
+                media_path=downloaded.media_path,
+            )
+            self.update_sub_task_status(sub_task.id, TaskStatus.COMPLETED)
+            self.update_sub_task_result(sub_task.id, result)
             return result
 
         except Exception as e:
             error_msg = str(e)
             logger.exception(f"Media download sub task {sub_task.sub_task_id} failed")
-
-            # Update sub task status to FAILED
+            try:
+                with ContentDAO() as content_dao:
+                    content_dao.save_downloaded_media(
+                        DownloadedMediaInfo(
+                            status=MediaStatus.FAILED,
+                            url=params.media.url,
+                            type=params.media.type,
+                            title=params.media.title,
+                            cover=params.media.cover,
+                            url_fallbacks=params.media.url_fallbacks or [],
+                            cover_fallbacks=params.media.cover_fallbacks or [],
+                            duration=params.media.duration,
+                            width=params.media.width,
+                            height=params.media.height,
+                            media_path=None,
+                            cover_path=None,
+                        ),
+                        params.parse_result_id,
+                        order=params.media_index,
+                        commit=True,
+                    )
+            except Exception:
+                logger.exception(f"[{sub_task.sub_task_id}] Failed to persist FAILED media status")
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
-            self.update_sub_task_result(sub_task.id, {"status": "failed", "error": error_msg})
+            result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
+            self.update_sub_task_result(sub_task.id, result)
+            return result
 
-            # Return a failed DownloadedMediaInfo object instead of raising exception
-            _url = media_data.get("url", "https://unknown.url")
-            return DownloadedMediaInfo(
-                status=MediaStatus.FAILED,
-                url=_url,
-                type=media_data.get("type"),
-                title=media_data.get("title"),
-                cover=media_data.get("cover"),
-                url_fallbacks=media_data.get("url_fallbacks") or [],
-                cover_fallbacks=media_data.get("cover_fallbacks") or [],
-                duration=media_data.get("duration"),
-                width=media_data.get("width"),
-                height=media_data.get("height"),
-                media_path=None,
-                cover_path=None,
-            )
-
-    async def _execute_content_analysis_sub_task(self, sub_task: SubTaskEntity) -> dict[str, Any]:
+    async def _execute_content_analysis_sub_task(self, sub_task: SubTaskEntity) -> ContentAnalysisSubResult:
         """
         Execute a content analysis sub task.
 
@@ -1202,15 +1273,13 @@ class TaskService:
         # TODO: Implement actual analysis logic for sub task
 
         # Placeholder implementation
-        result = {
-            "status": "completed",
-            "sub_task_id": sub_task.sub_task_id,
-            "task_type": sub_task.type.value,
-            "parameters": sub_task.parameters,
-            "message": "Content analysis sub task placeholder - implementation pending",
-        }
-
-        return result
+        return ContentAnalysisSubResult(
+            status=SubTaskResultStatus.COMPLETED,
+            sub_task_id=sub_task.sub_task_id,
+            task_type=sub_task.type.value,
+            parameters=sub_task.parameters,
+            message="Content analysis sub task placeholder - implementation pending",
+        )
 
     # Task Management Methods
 
@@ -1386,19 +1455,21 @@ class TaskService:
             # Complete all linked tasks with the same result
             for linked_task in waiting_tasks:
                 try:
+                    primary_result = parse_main_task_result(TaskType.PARSE_CONTENT, primary_task.result)
+                    if primary_result is None:
+                        primary_result = ParseContentMainResult()
+                    linked_payload = primary_result.model_dump(mode="json")
                     with TaskDAO() as dao:
-                        # Update status to completed
                         dao.update_main_task_status(linked_task.id, TaskStatus.COMPLETED, commit=False)
-                        # Copy result from primary task
-                        dao.update_main_task_result(
-                            linked_task.id,
-                            {
-                                **(primary_task.result or {}),
-                                "linked_to": primary_task_id,
-                                "linked": True,
-                            },
-                            commit=True,
-                        )
+                        if primary_task.parse_result_id is not None:
+                            dao.update_main_task_result(linked_task.id, linked_payload, commit=False)
+                            dao.update_main_task_parse_result_id(
+                                linked_task.id,
+                                primary_task.parse_result_id,
+                                commit=True,
+                            )
+                        else:
+                            dao.update_main_task_result(linked_task.id, linked_payload, commit=True)
                     logger.debug(f"Completed linked task {linked_task.task_id} (ID: {linked_task.id})")
                 except Exception:
                     logger.exception(f"Failed to complete linked task {linked_task.id}")

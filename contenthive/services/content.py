@@ -14,6 +14,7 @@ from contenthive.models.content import (
     PaginationInfo,
     PlatformInfo,
     SyncResponse,
+    SyncURLParserResult,
     URLParserResult,
 )
 from contenthive.plugins.contracts import ParserResult
@@ -139,6 +140,8 @@ class ContentService:
         user_id: int,
         platform_id: int | None = None,
         author_id: int | None = None,
+        tag_id: int | None = None,
+        exclude_tag_id: int | None = None,
         page: int = 1,
         page_size: int = 10,
         sort_by: str = "created_at",
@@ -151,6 +154,8 @@ class ContentService:
             user_id: User ID to filter contents
             platform_id: Filter by platform ID
             author_id: Filter by author ID
+            tag_id: Only include contents with this tag ID
+            exclude_tag_id: Exclude contents with this tag ID
             page: Page number (starting from 1)
             page_size: Number of items per page
             sort_by: Field to sort by
@@ -166,6 +171,8 @@ class ContentService:
                     user_id=user_id,
                     platform_id=platform_id,
                     author_id=author_id,
+                    tag_id=tag_id,
+                    exclude_tag_id=exclude_tag_id,
                     limit=page_size,
                     offset=offset,
                     sort_by=sort_by,
@@ -230,6 +237,8 @@ class ContentService:
         self,
         user_id: int,
         platform_id: int | None = None,
+        tag_id: int | None = None,
+        exclude_tag_id: int | None = None,
         page: int = 1,
         page_size: int = 10,
         sort_by: str = "id",
@@ -241,6 +250,8 @@ class ContentService:
         Args:
             user_id: User ID to filter authors
             platform_id: Filter by platform ID
+            tag_id: Only include authors with this tag ID
+            exclude_tag_id: Exclude authors with this tag ID
             page: Page number (starting from 1)
             page_size: Number of items per page
             sort_by: Field to sort by
@@ -255,6 +266,8 @@ class ContentService:
                 authors, total = dao.list_authors(
                     user_id=user_id,
                     platform_id=platform_id,
+                    tag_id=tag_id,
+                    exclude_tag_id=exclude_tag_id,
                     limit=page_size,
                     offset=offset,
                     sort_by=sort_by,
@@ -358,7 +371,7 @@ class ContentService:
         last_sync_time: datetime | None = None,
         page: int = 1,
         page_size: int = 10,
-    ) -> SyncResponse[URLParserResult]:
+    ) -> SyncResponse[SyncURLParserResult]:
         """
         Incrementally sync content for the user based on last sync time.
 
@@ -384,7 +397,7 @@ class ContentService:
                     offset=offset,
                 )
 
-            items = [URLParserResult.from_entity(result) for result in results]
+            items = [SyncURLParserResult.from_entity(result) for result in results]
             total_pages = (total + page_size - 1) // page_size
 
             return SyncResponse(
