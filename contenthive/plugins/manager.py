@@ -17,19 +17,20 @@ from packaging.requirements import Requirement
 from packaging.version import InvalidVersion, Version
 
 from contenthive.logger import logger
+from contenthive.plugins.catalog import CatalogPlugin, fetch_catalog
 from contenthive.plugins.config import (
+    get_prerelease_domains,
     init_plugin_config_defaults,
     plugin_get_config,
     plugin_save_config,
 )
 from contenthive.plugins.contracts import PluginConfigSchema
-from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.registry import PluginRecord, PluginState
 
 
 @dataclass(frozen=True)
 class PluginUpdateOffer:
-    """Remote offer: update for an installed plugin, or install for a registry-only plugin."""
+    """Catalog offer: update for an installed plugin, or install for a plugin not installed yet."""
 
     latest_version: str
     release_notes: str | None = None
@@ -281,7 +282,7 @@ class PluginManager:
     def has_installed_plugin_updates(self) -> bool:
         """Return True if any locally installed plugin has a newer remote version.
 
-        Registry-only install offers in ``_available_updates`` are ignored.
+        Catalog-only install offers in ``_available_updates`` are ignored.
 
         Returns:
             True if at least one installed plugin has a cached update offer
@@ -303,51 +304,45 @@ class PluginManager:
         else:
             return callback(data)
 
-    async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, PluginUpdateOffer | None]:
+    async def async_check_updates(
+        self, catalog: dict[str, CatalogPlugin] | None = None
+    ) -> dict[str, PluginUpdateOffer | None]:
         """
-        Check for available plugin updates by comparing local versions against the remote registry.
+        Check for available plugin updates by comparing local versions against the plugin catalog.
 
-        Fetches registry.json from the remote repository. For each remote plugin:
+        Each plugin's release track (stable, or beta when ``prerelease`` is set in
+        plugins.yaml) decides which catalog release is offered:
         - If not installed locally, records an install offer.
         - If installed, compares versions and records an update offer when newer.
-        Results are cached on the manager.
+        Plugins whose chosen track has no release are not offered. Results are cached on the manager.
 
         Args:
-            repo_url: GitHub repository URL
-            ref: Git reference (branch name, tag, or commit SHA)
+            catalog: Already-fetched catalog to reuse; fetched when omitted.
 
         Returns:
             Dict mapping domain to a PluginUpdateOffer when an update is available
-            or the plugin is present only in the remote registry (not yet installed).
+            or the plugin is present only in the catalog (not yet installed).
             ``None`` means the local install is already up to date.
 
         Raises:
-            Exception: If the remote registry could not be fetched
+            CatalogError: If the catalog could not be fetched
         """
-        downloader = GitHubPluginDownloader(self.plugins_dir)
-        remote_manifest = await downloader.fetch_remote_manifest(repo_url, ref)
-
-        if remote_manifest is None:
-            raise Exception("Failed to fetch remote plugins registry")
+        if catalog is None:
+            catalog = await fetch_catalog()
+        prerelease_domains = get_prerelease_domains()
 
         results: dict[str, PluginUpdateOffer | None] = {}
 
-        for plugin_info in remote_manifest.get("plugins", []):
-            domain = plugin_info.get("domain")
-            remote_version_str = plugin_info.get("version")
-
-            if not domain or not remote_version_str:
+        for domain, plugin in catalog.items():
+            release = plugin.select_release(domain in prerelease_domains)
+            if release is None:
                 continue
-
-            release_notes = plugin_info.get("release_notes")
-            if not isinstance(release_notes, str) or not release_notes.strip():
-                release_notes = None
-
-            offer = PluginUpdateOffer(latest_version=remote_version_str, release_notes=release_notes)
+            remote_version_str = release.version
+            offer = PluginUpdateOffer(latest_version=remote_version_str, release_notes=release.release_notes)
 
             local_record = self.plugins.get(domain)
             if not local_record:
-                # Registry-only plugin: surface as an install offer for startup/UI
+                # Catalog-only plugin: surface as an install offer for startup/UI
                 results[domain] = offer
                 continue
 

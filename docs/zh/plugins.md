@@ -2,7 +2,7 @@
 
 Content Hive 采用 Home Assistant 风格的插件架构。每个受支持的平台（Twitter、YouTube、TikTok 等）都是独立插件，可以在不重启应用的情况下安装、更新、配置和热重载。
 
-插件通过 GitHub 仓库统一分发，通过 REST API 进行管理。
+每个插件都在自己的 GitHub 仓库里，通过 GitHub Release 发布。Content Hive 通过[插件目录](https://github.com/content-hive/plugins)发现插件，通过 REST API 管理插件。
 
 如需了解系统内部架构，请参阅[插件系统设计](/zh/plugin-system)。
 
@@ -343,6 +343,39 @@ context.register_service(DOMAIN, "download", my_download)
 ```
 
 类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主媒体文件的字节比例；子任务是否结束以任务 `status` 为准。任务详情里的 `retry` live 态（`phase` / `attempt` 等）仅由内置下载器上报；插件 `download` 服务不会收到对应回调，`retry` 保持为 `null`。
+
+---
+
+## 分发
+
+Content Hive 读取内置的插件目录 `https://content-hive.github.io/plugins/catalog.json`。安装或更新插件时，从插件仓库下载对应 Release tag 的源码包，把其中的 `plugin/` 目录拷贝到 `PLUGINS_DIR/<domain>`。
+
+发布插件时，把代码放在 `plugin/` 目录，发布 tag 为 `v<manifest 版本号>` 的 GitHub Release，再把仓库加入插件目录。具体要求见插件目录仓库的 README。
+
+插件仓库 `contenthive.json` 中的 `contenthive` 是插件要求的最低 Content Hive 版本；高于当前核心版本的插件不会出现在列表里。
+
+### 发布轨道
+
+默认每个插件都跟踪稳定版，也就是最新的非预发布 GitHub Release。要让某个插件使用预发布（beta）版本，在 `plugins.yaml` 中设置 `prerelease: true`：
+
+```yaml
+douyin:
+  prerelease: true
+```
+
+或调用 API：
+
+```bash
+curl -s -X PUT "$BASE_URL/v1/plugins/douyin/prerelease" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+- 打开 `prerelease` 后，beta 比稳定版新时使用 beta，否则使用稳定版。
+- 可以在插件安装前设置；删除插件时这个设置会保留。
+- 关闭后不会把已安装的 beta 降级；等有更新的稳定版发布后才会再次提示更新。
+- 只有 beta 版本的插件，在打开 `prerelease` 之前，`/v1/plugins/available` 中显示 `installable: false`。
 
 ---
 

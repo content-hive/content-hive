@@ -2,19 +2,9 @@
 API models for application settings.
 """
 
-from typing import Literal
-
 from pydantic import Field
 
 from contenthive.models.api import APIBaseModel
-
-
-class PluginSettingsUpdate(APIBaseModel):
-    """Partial update for plugin repository settings."""
-
-    repo_url: str | None = None
-    repo_ref_type: Literal["branch", "tag", "commit"] | None = None
-    repo_ref: str | None = None
 
 
 class AuthSettingsUpdate(APIBaseModel):
@@ -34,6 +24,5 @@ class DownloadSettingsUpdate(APIBaseModel):
 class UpdateAppSettingsRequest(APIBaseModel):
     """Request body for PUT /v1/system/settings."""
 
-    plugins: PluginSettingsUpdate | None = None
     auth: AuthSettingsUpdate | None = None
     download: DownloadSettingsUpdate | None = None

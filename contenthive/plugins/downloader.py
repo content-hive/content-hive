@@ -1,32 +1,16 @@
 """
-Plugin downloader for fetching and installing plugins from GitHub repositories.
+Plugin downloader for installing plugin releases from their GitHub repositories.
 
-Required repository structure:
+Each plugin lives in its own repository, listed in the plugin catalog
+(see ``contenthive.plugins.catalog``). A release is installed from the
+source archive of its tag:
 
-    <repo-root>/
-    ├── registry.json           # required — lists all available plugins
-    └── <plugin-path>/          # one directory per plugin (path defined in registry)
+    <repo>-<tag>/
+    ├── contenthive.json
+    └── plugin/                 # copied to PLUGINS_DIR/<domain>
         ├── __init__.py
-        ├── manifest.json       # source of truth; copied on install
+        ├── manifest.json       # domain and version must match the catalog release
         └── ...
-
-registry.json format:
-
-    {
-      "plugins": [
-        {
-          "domain": "my_parser",
-          "name": "My Parser",
-          "version": "1.2.0",
-          "path": "plugins/my_parser",
-          "release_notes": "…",
-          "requirements": ["aiohttp"]
-        }
-      ]
-    }
-
-Repositories that do not contain a registry.json at their root are not
-supported and will raise an exception during download.
 """
 
 import json
@@ -35,20 +19,23 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import aiohttp
 
 from contenthive.logger import logger
+from contenthive.plugins.catalog import REPOSITORY_PATTERN, CatalogPlugin, CatalogRelease
 from contenthive.utils.path_safety import is_path_within_base, sanitize_path_separators
+
+PLUGIN_SOURCE_DIR = "plugin"
 
 
 class GitHubPluginDownloader:
-    """Download and install plugins from GitHub repositories"""
+    """Download and install plugin releases from GitHub repositories"""
 
     # Valid plugin domain pattern: lowercase letters, numbers, hyphens, underscores
     VALID_DOMAIN_PATTERN = re.compile(r"^[a-z0-9_-]+$")
-    # Valid git ref pattern: alphanumeric, hyphens, dots, underscores, slashes, and commit SHAs
+    # Valid git ref pattern: alphanumeric, hyphens, dots, underscores, slashes
     VALID_REF_PATTERN = re.compile(r"^[a-zA-Z0-9._/\-]+$")
     _INVALID_REF_SEGMENTS = re.compile(r"(^/|//|/\./|/\.\./|\.\.$|^\.\./)")
 
@@ -173,208 +160,101 @@ class GitHubPluginDownloader:
 
         logger.debug(f"Safely extracted {len(zip_file.namelist())} files to {extract_dir}")
 
-    async def download_plugins(
+    async def install_release(
         self,
-        repo_url: str,
-        ref: str = "main",
-        ref_type: str = "branch",
-        selected_plugins: list[str] | None = None,
-        force_reinstall: bool = False,
-    ) -> dict[str, bool]:
+        plugin: CatalogPlugin,
+        release: CatalogRelease,
+        force_reinstall: bool = True,
+    ) -> bool:
         """
-        Download and install plugins from a GitHub repository.
+        Download a plugin release from its repository and install it into the plugins directory.
 
-        The repository must contain a ``registry.json`` at its root
-        (see module docstring for the required format). Raises an exception if
-        the file is missing.
+        The release's ``plugin/manifest.json`` must declare the catalog domain and the
+        release version; otherwise the install is rejected.
 
         Args:
-            repo_url: GitHub repository URL (e.g., "github.com/user/repo").
-                      Accepts bare domain, https://, and .git suffix forms.
-            ref: Git reference — branch name, tag, or full commit SHA.
-            ref_type: One of "branch", "tag", or "commit".
-            selected_plugins: Domains to install. ``None`` installs all plugins
-                              listed in registry.json.
+            plugin: Catalog entry of the plugin to install.
+            release: Release (stable or beta) selected for this plugin.
             force_reinstall: Re-install even if the plugin directory already exists.
 
         Returns:
-            Dict mapping each plugin domain to ``True`` (installed) or
-            ``False`` (skipped or failed).
-
-        Raises:
-            ValueError: If ``repo_url`` or ``ref`` fail validation.
-            Exception: If the archive cannot be downloaded or
-                       registry.json is not found in the repository.
+            True if the plugin was installed, False otherwise.
         """
-        results = {}
-
+        domain = plugin.domain
         try:
-            logger.info(f"Downloading plugins from {repo_url} (ref: {ref})...")
+            if not self._validate_domain(domain):
+                return False
+            if not REPOSITORY_PATTERN.match(plugin.repository):
+                logger.warning(f"Invalid plugin repository for {domain}: {plugin.repository}")
+                return False
+            self._validate_ref(release.tag)
 
-            # Validate ref before use
-            self._validate_ref(ref)
-
-            owner, repo = self._parse_github_url(repo_url)
+            logger.info(f"Downloading plugin {domain} {release.version} from {plugin.repository} ({release.tag})...")
 
             with tempfile.TemporaryDirectory(prefix="contenthive_plugin_") as tmp:
                 tmp_path = Path(tmp)
+                archive_path = await self._download_archive(plugin.repository, release.tag, tmp_path)
 
-                archive_path = await self._download_archive(owner, repo, ref, ref_type, tmp_path)
-
-                # Extract archive
-                safe_ref = sanitize_path_separators(ref)
-                extract_dir = tmp_path / f"extract_{repo}_{ref_type}_{safe_ref}"
-                extract_dir.mkdir(parents=True)
-
+                extract_dir = tmp_path / "extract"
+                extract_dir.mkdir()
                 with zipfile.ZipFile(archive_path, "r") as zip_ref:
                     self._safe_extract(zip_ref, extract_dir)
 
-                # Find repo root (GitHub adds prefix like "repo-branch")
+                # GitHub archives contain a single top-level directory like "<repo>-<tag>"
                 root_dirs = [d for d in extract_dir.iterdir() if d.is_dir()]
-                if not root_dirs:
-                    raise Exception("No directories found in archive")
+                if len(root_dirs) != 1:
+                    raise ValueError(f"Expected one top-level directory in archive, found {len(root_dirs)}")
 
-                repo_root = root_dirs[0]
+                source_dir = root_dirs[0] / PLUGIN_SOURCE_DIR
+                if not source_dir.is_dir():
+                    raise ValueError(f"'{PLUGIN_SOURCE_DIR}/' directory not found in {release.tag}")
 
-                registry_path = repo_root / "registry.json"
-                if not registry_path.exists():
-                    raise Exception("registry.json not found in repository")
+                self._check_source_manifest(source_dir, domain, release.version)
+                installed = self._install_plugin_directory(source_dir, domain, force_reinstall)
 
-                results = await self._install_from_manifest(
-                    repo_root, registry_path, selected_plugins, force_reinstall
-                )
+            if installed:
+                logger.info(f"Plugin installed: {domain} {release.version}")
+            return installed
 
         except Exception as e:
-            logger.error(f"Failed to download plugins: {e}", exc_info=True)
+            logger.warning(f"Plugin install failed: {domain} ({e})", exc_info=True)
+            return False
 
-        return results
-
-    async def _install_from_manifest(
-        self,
-        repo_root: Path,
-        manifest_path: Path,
-        selected_plugins: list[str] | None,
-        force_reinstall: bool,
-    ) -> dict[str, bool]:
-        """Install plugins from registry.json"""
-        results = {}
-
+    def _check_source_manifest(self, source_dir: Path, domain: str, version: str) -> None:
+        """Raise ValueError unless plugin/manifest.json matches the catalog domain and release version."""
+        manifest_path = source_dir / "manifest.json"
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            logger.warning(f"Plugin registry not found: {manifest_path}")
-            return results
+        except FileNotFoundError as e:
+            raise ValueError(f"{PLUGIN_SOURCE_DIR}/manifest.json not found") from e
         except json.JSONDecodeError as e:
-            logger.warning(f"Invalid JSON in plugin registry {manifest_path}: {e}")
-            return results
+            raise ValueError(f"{PLUGIN_SOURCE_DIR}/manifest.json is not valid JSON: {e}") from e
 
         if not isinstance(manifest, dict):
-            logger.warning("Invalid plugin registry format: expected dict at root")
-            return results
+            raise ValueError(f"{PLUGIN_SOURCE_DIR}/manifest.json must be a JSON object")
+        if manifest.get("domain") != domain:
+            raise ValueError(f"manifest domain {manifest.get('domain')!r} does not match catalog domain {domain!r}")
+        if manifest.get("version") != version:
+            raise ValueError(f"manifest version {manifest.get('version')!r} does not match release {version!r}")
 
-        logger.debug(f"Found {len(manifest.get('plugins', []))} plugins in registry")
-
-        for plugin_info in manifest.get("plugins", []):
-            domain = plugin_info.get("domain")
-
-            if not domain:
-                logger.warning("Plugin missing 'domain' field, skipping...")
-                continue
-
-            # Validate domain
-            if not self._validate_domain(domain):
-                logger.warning(f"Invalid plugin domain: {domain}, skipping...")
-                results[domain] = False
-                continue
-
-            # Skip if not in selected list
-            if selected_plugins and domain not in selected_plugins:
-                logger.debug(f"Plugin {domain} not in selected list, skipping...")
-                continue
-
-            # Install plugin
-            plugin_rel_path = plugin_info.get("path")
-            if not plugin_rel_path:
-                logger.warning(f"Plugin {domain} missing 'path' in registry, skipping...")
-                results[domain] = False
-                continue
-
-            plugin_rel_path = Path(plugin_rel_path)
-            if plugin_rel_path.is_absolute():
-                logger.warning(f"Plugin {domain} has absolute path in registry, skipping...")
-                results[domain] = False
-                continue
-
-            plugin_path = (repo_root / plugin_rel_path).resolve()
-
-            if not self._validate_path_safety(plugin_path, repo_root, f"Plugin {domain} path"):
-                results[domain] = False
-                continue
-
-            if not plugin_path.exists():
-                logger.warning(f"Plugin path not found: {plugin_path}")
-                results[domain] = False
-                continue
-
-            logger.debug(f"Installing plugin: {domain} ({plugin_info.get('name', domain)})")
-            success = await self._install_plugin_directory(
-                plugin_path,
-                domain,
-                plugin_info=plugin_info,
-                force_reinstall=force_reinstall,
-            )
-
-            results[domain] = success
-
-            if success:
-                logger.info(f"Plugin installed: {domain}")
-            else:
-                logger.warning(f"Plugin install failed: {domain}")
-
-        return results
-
-    async def _download_archive(
-        self,
-        owner: str,
-        repo: str,
-        ref: str,
-        ref_type: str = "branch",
-        tmp_dir: Path | None = None,
-    ) -> Path:
+    async def _download_archive(self, repository: str, tag: str, tmp_dir: Path) -> Path:
         """
-        Download repository as zip archive from GitHub.
+        Download the source archive of a release tag from GitHub.
 
         Args:
-            owner: GitHub repository owner
-            repo: Repository name
-            ref: Git reference (branch name, tag, or commit SHA)
-            ref_type: Type of reference: "branch", "tag", or "commit"
+            repository: Repository as ``owner/repo``
+            tag: Release tag
+            tmp_dir: Directory for the downloaded archive
 
         Returns:
             Path to downloaded archive file
         """
-        # Build URL based on reference type
-        encoded_owner = quote(owner, safe="")
-        encoded_repo = quote(repo, safe="")
-        if ref_type == "branch":
-            # Branch: refs/heads/branch-name
-            encoded_ref = quote(ref, safe="")
-            url = f"https://github.com/{encoded_owner}/{encoded_repo}/archive/refs/heads/{encoded_ref}.zip"
-        elif ref_type == "tag":
-            # Tag: refs/tags/tag-name
-            encoded_ref = quote(ref, safe="")
-            url = f"https://github.com/{encoded_owner}/{encoded_repo}/archive/refs/tags/{encoded_ref}.zip"
-        elif ref_type == "commit":
-            # Commit SHA: directly use the SHA
-            encoded_ref = quote(ref, safe="")
-            url = f"https://github.com/{encoded_owner}/{encoded_repo}/archive/{encoded_ref}.zip"
-        else:
-            raise ValueError(f"Invalid ref_type: {ref_type}. Must be 'branch', 'tag', or 'commit'")
-
-        # Create a safe filename for the archive
-        safe_ref = sanitize_path_separators(ref)
-        base = tmp_dir or Path(tempfile.gettempdir())
-        archive_path = base / f"{repo}-{ref_type}-{safe_ref}.zip"
+        owner, repo = repository.split("/", 1)
+        url = (
+            f"https://github.com/{quote(owner, safe='')}/{quote(repo, safe='')}"
+            f"/archive/refs/tags/{quote(tag, safe='')}.zip"
+        )
+        archive_path = tmp_dir / f"{repo}-{sanitize_path_separators(tag)}.zip"
 
         logger.debug(f"Downloading from {url}...")
 
@@ -407,168 +287,33 @@ class GitHubPluginDownloader:
         logger.debug(f"Archive downloaded to {archive_path}")
         return archive_path
 
-    async def _install_plugin_directory(
-        self,
-        source_dir: Path,
-        domain: str,
-        plugin_info: dict,
-        force_reinstall: bool = False,
-    ) -> bool:
+    def _install_plugin_directory(self, source_dir: Path, domain: str, force_reinstall: bool) -> bool:
         """
-        Install a single plugin directory and write its manifest.json.
+        Copy a validated plugin directory to PLUGINS_DIR/<domain>.
 
         Args:
-            source_dir: Source directory containing plugin files
+            source_dir: Source directory containing plugin files and manifest.json
             domain: Plugin domain/ID (must be pre-validated)
-            plugin_info: Plugin entry from registry.json (used when source has no
-                valid manifest, or source manifest domain does not match *domain*)
             force_reinstall: If True, overwrite existing plugin
 
         Returns:
             True if installation successful
         """
-        try:
-            # Re-validate domain for safety (defense in depth)
-            if not self._validate_domain(domain):
-                logger.warning(f"Invalid plugin domain: {domain}")
-                return False
-
-            if not source_dir.exists():
-                logger.warning(f"Source directory does not exist: {source_dir}")
-                return False
-
-            target_dir = self.plugins_dir / domain
-
-            # Validate target path safety
-            if not self._validate_path_safety(target_dir, self.plugins_dir, "Target directory"):
-                return False
-
-            # Check if plugin already exists
-            if target_dir.exists():
-                if not force_reinstall:
-                    logger.warning(f"Plugin {domain} already exists, skipping...")
-                    return True
-
-                logger.warning(f"Plugin {domain} already exists, overwriting...")
-                shutil.rmtree(target_dir)
-
-            # Copy plugin files (includes source manifest.json when present)
-            shutil.copytree(source_dir, target_dir)
-
-            manifest_path = target_dir / "manifest.json"
-            source_manifest = source_dir / "manifest.json"
-            use_source_manifest = False
-            if source_manifest.exists():
-                try:
-                    data = json.loads(manifest_path.read_text(encoding="utf-8"))
-                    if isinstance(data, dict) and data.get("domain") == domain:
-                        use_source_manifest = True
-                        logger.debug(f"Using source manifest for plugin: {domain}")
-                    else:
-                        logger.warning(
-                            "Source manifest domain mismatch for %s (got %r); regenerating from registry",
-                            domain,
-                            data.get("domain") if isinstance(data, dict) else type(data).__name__,
-                        )
-                except (json.JSONDecodeError, OSError) as e:
-                    logger.warning(
-                        "Source manifest invalid for %s (%s); regenerating from registry",
-                        domain,
-                        e,
-                    )
-
-            if not use_source_manifest:
-                # Fallback: write from registry entry without index-only fields
-                local_manifest = {k: v for k, v in plugin_info.items() if k not in ("path", "enabled")}
-                manifest_path.write_text(json.dumps(local_manifest, ensure_ascii=False, indent=4), encoding="utf-8")
-
-            logger.debug(f"Plugin installed to: {target_dir}")
-            return True
-
-        except Exception as e:
-            logger.warning(f"Failed to install plugin {domain}: {e}", exc_info=True)
+        # Re-validate domain for safety (defense in depth)
+        if not self._validate_domain(domain):
             return False
 
-    def _parse_github_url(self, url: str) -> tuple[str, str]:
-        """
-        Parse GitHub URL to extract owner and repo.
+        target_dir = self.plugins_dir / domain
+        if not self._validate_path_safety(target_dir, self.plugins_dir, "Target directory"):
+            return False
 
-        Supports formats:
-        - github.com/owner/repo
-        - https://github.com/owner/repo
-        - https://github.com/owner/repo.git
+        if target_dir.exists():
+            if not force_reinstall:
+                logger.warning(f"Plugin {domain} already exists, skipping...")
+                return True
+            logger.warning(f"Plugin {domain} already exists, overwriting...")
+            shutil.rmtree(target_dir)
 
-        Args:
-            url: GitHub repository URL
-
-        Returns:
-            Tuple of (owner, repo)
-        """
-        # Normalize: add scheme if missing so urlparse works correctly
-        if not url.startswith(("https://", "http://")):
-            url = "https://" + url
-
-        parsed = urlparse(url)
-        if parsed.netloc not in ("github.com", "www.github.com"):
-            raise ValueError(f"Invalid GitHub URL: must be a github.com repository, got '{parsed.netloc}'")
-
-        # Strip leading slash, .git suffix, and trailing slash from path
-        path = parsed.path.lstrip("/").removesuffix(".git").rstrip("/")
-
-        parts = path.split("/")
-        if len(parts) != 2 or not parts[0] or not parts[1]:
-            raise ValueError(f"Invalid GitHub URL: expected github.com/owner/repo, got '{url}'")
-
-        return parts[0], parts[1]
-
-    async def fetch_remote_manifest(
-        self,
-        repo_url: str,
-        ref: str = "main",
-    ) -> dict | None:
-        """
-        Fetch registry.json from the remote repository without downloading the full archive.
-
-        Uses the raw.githubusercontent.com endpoint to retrieve only the registry file.
-
-        Args:
-            repo_url: GitHub repository URL
-            ref: Git reference (branch name, tag, or commit SHA)
-
-        Returns:
-            Parsed registry dict, or None if fetch or validation failed
-        """
-        try:
-            self._validate_ref(ref)
-
-            owner, repo = self._parse_github_url(repo_url)
-            url = (
-                f"https://raw.githubusercontent.com/{quote(owner, safe='')}/"
-                f"{quote(repo, safe='')}/{quote(ref, safe='/')}/registry.json"
-            )
-
-            logger.debug(f"Fetching remote registry from {url}")
-
-            timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session, session.get(url) as response:
-                if response.status == 404:
-                    logger.warning(f"registry.json not found in remote repository ({url})")
-                    return None
-                if response.status != 200:
-                    logger.warning(f"Failed to fetch remote registry: HTTP {response.status}")
-                    return None
-                text = await response.text()
-
-            manifest = json.loads(text)
-            if not isinstance(manifest, dict) or "plugins" not in manifest:
-                logger.warning("Remote registry has unexpected format")
-                return None
-
-            return manifest
-
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse remote registry JSON: {e}")
-            return None
-        except Exception as e:
-            logger.warning(f"Failed to fetch remote registry: {e}")
-            return None
+        shutil.copytree(source_dir, target_dir)
+        logger.debug(f"Plugin installed to: {target_dir}")
+        return True

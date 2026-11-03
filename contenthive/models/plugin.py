@@ -64,6 +64,7 @@ class PluginInfo(APIBaseModel):
     update_available: str | None = Field(None, description="Latest version if an update is available, otherwise null")
     description: str | None = Field(None, description="Plugin description")
     author: list[str] | None = Field(None, description="Plugin author")
+    prerelease: bool = Field(False, description="Whether the plugin tracks pre-release (beta) versions")
 
 
 class PluginUpdateInfo(APIBaseModel):
@@ -109,25 +110,34 @@ class CheckUpdatesResponse(APIBaseModel):
 
 
 class AvailablePluginInfo(APIBaseModel):
-    """A plugin available in the remote repository"""
+    """A plugin listed in the plugin catalog"""
 
     domain: str = Field(..., description="Plugin domain identifier")
     name: str = Field(..., description="Plugin display name")
-    version: str = Field(..., description="Latest version in remote repository")
+    version: str = Field(
+        ...,
+        description=(
+            "Version that install/update would use on the plugin's release track. "
+            "When installable is false, the version from the other track for display only"
+        ),
+    )
     description: str | None = Field(None, description="Plugin description")
     author: list[str] | None = Field(None, description="Plugin author")
     disclaimer: str | None = Field(None, description="Risk disclaimer to display before installation")
-    release_notes: str | None = Field(None, description="Release notes for the remote version")
+    release_notes: str | None = Field(None, description="Release notes for the version")
+    repository: str = Field(..., description="Plugin GitHub repository as owner/repo")
+    prerelease: bool = Field(False, description="Whether the plugin tracks pre-release (beta) versions")
+    installable: bool = Field(..., description="Whether the plugin's release track has a version to install")
     installed: bool = Field(..., description="Whether the plugin is currently installed")
     installed_version: str | None = Field(None, description="Installed version, if installed")
 
 
 class AvailablePluginsResponse(APIBaseModel):
-    """Response model for listing all available plugins from remote repository"""
+    """Response model for listing all plugins in the plugin catalog"""
 
     plugins: list[AvailablePluginInfo] = Field(
         default_factory=list,
-        description="List of plugins available in the remote repository",
+        description="List of plugins in the plugin catalog",
     )
 
 
@@ -136,8 +146,21 @@ class UpdatePluginsRequest(APIBaseModel):
 
     domains: list[str] = Field(
         default_factory=list,
-        description="List of plugin domains to update. Empty list means update all installed plugins.",
+        description="List of plugin domains to install or update. Empty list means every installable catalog plugin.",
     )
+
+
+class SetPrereleaseRequest(APIBaseModel):
+    """Request body for PUT /v1/plugins/{domain}/prerelease"""
+
+    enabled: bool = Field(..., description="Track pre-release (beta) versions for this plugin")
+
+
+class SetPrereleaseResponse(APIBaseModel):
+    """Response for PUT /v1/plugins/{domain}/prerelease"""
+
+    domain: str = Field(..., description="Plugin domain identifier")
+    prerelease: bool = Field(..., description="Whether the plugin now tracks pre-release (beta) versions")
 
 
 class UpdatePluginsResponse(APIBaseModel):

@@ -34,9 +34,10 @@ PluginState                manifest.json + Module Code
                         │
               ┌─────────┴─────────┐
               ▼                   ▼
- GitHubPluginDownloader      config.py
- （从 GitHub 仓库下载并       （plugins.yaml 读写，
-  安装插件）                   持久化插件配置）
+ catalog.py +                config.py
+ GitHubPluginDownloader      （plugins.yaml 读写，
+ （读取插件目录，             持久化插件配置）
+  安装 GitHub Release）
 
 ┌──────────────────────────────────────────────────────────┐
 │                   contracts.py                            │
@@ -176,8 +177,8 @@ PluginEntryData {
 | `async_delete(domain)` | 卸载所有条目 → 从注册表移除 → 删除磁盘目录 |
 | `async_reload(domain)` | 卸载 → 清除 `sys.modules` 缓存 → 重置为 INSTALLED → 重新 setup + setup_entry |
 | `async_activate(domain)` | 首次激活新安装插件：discover → setup → setup_entry |
-| `async_check_updates(repo_url, ref)` | 仅拉取远端 `registry.json`，比较版本并缓存更新信息（含 `release_notes`） |
-| `has_installed_plugin_updates()` | 已安装插件是否有版本落后。health 的 `plugin_updates_available` 只反映此项；未安装插件走 `/v1/plugins/available` |
+| `async_check_updates(catalog=None)` | 仅拉取插件目录，按各插件的发布轨道（stable 或 beta）选版本，比较后缓存更新信息（含 `release_notes`） |
+| `has_installed_plugin_updates()` | 已安装插件是否落后于其轨道上的目录版本。health 的 `plugin_updates_available` 只反映此项；未安装插件走 `/v1/plugins/available` |
 | `register_service(domain, service, callback)` | 注册命名服务 |
 | `call_service(domain, service, data)` | 调用已注册的服务 |
 
@@ -192,37 +193,45 @@ PluginEntryData {
 
 ---
 
+### `catalog.py` — 插件目录客户端
+
+读取 [content-hive/plugins](https://github.com/content-hive/plugins) 发布的插件目录，地址是内置的 `CATALOG_URL`（`https://content-hive.github.io/plugins/catalog.json`）。目录列出每个插件仓库，以及它最新的稳定版和预发布版 GitHub Release。
+
+```python
+async fetch_catalog() -> dict[str, CatalogPlugin]   # 以 domain 为键；失败时抛 CatalogError
+CatalogPlugin.select_release(prerelease: bool) -> CatalogRelease | None
+```
+
+- 只接受 `schema` 为 1 的目录
+- 格式不对的条目和重复的 domain 会被跳过并记录警告
+- `min_core_version` 高于当前 Content Hive 版本的插件会被跳过
+- `select_release(False)` 返回 `stable`；`select_release(True)` 有 `beta` 时返回 `beta`，否则返回 `stable`
+
+---
+
 ### `downloader.py` — GitHub 插件下载器
 
-`GitHubPluginDownloader` 从 GitHub 仓库安全地下载、解压并安装插件。
+`GitHubPluginDownloader` 从插件自己的 GitHub 仓库安全地下载、解压并安装单个插件版本。
 
-**远端仓库格式**：仓库根目录需包含 `registry.json`，描述所有可用插件及其路径。
-
-**主要方法**：
+**插件仓库格式**：插件代码在 Release tag 下的 `plugin/` 目录；`plugin/manifest.json` 的 `domain` 与目录一致，`version` 与该 Release 一致。
 
 ```python
-async download_plugins(
-    repo_url: str,
-    ref: str = "main",
-    ref_type: str = "branch",        # "branch" | "tag" | "commit"
-    selected_plugins: list[str] | None = None,
-    force_reinstall: bool = False
-) -> dict[str, bool]
+async install_release(
+    plugin: CatalogPlugin,
+    release: CatalogRelease,
+    force_reinstall: bool = True,
+) -> bool
 ```
 
-```python
-async fetch_remote_manifest(repo_url: str, ref: str = "main") -> dict | None
-# 仅拉取 registry.json，不下载完整包
-```
-
-**支持的 URL 格式**：裸域名、HTTPS、`.git` 后缀均可。
+下载 `https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip`，解压后校验 `plugin/manifest.json`，再把 `plugin/` 拷贝到 `PLUGINS_DIR/{domain}`。
 
 **安全机制**：
 
 | 机制 | 说明 |
 |------|------|
 | Domain 验证 | 仅允许 `[a-z0-9_-]`，防止路径穿越 |
-| Ref 验证 | 仅允许 `[a-zA-Z0-9._/\-]`，防止注入 |
+| 仓库与 tag 验证 | 仓库必须是 `owner/repo`；tag 仅允许 `[a-zA-Z0-9._/\-]`，防止注入 |
+| Manifest 校验 | `plugin/manifest.json` 必须与目录中的 domain 和 Release 版本一致 |
 | Zip Slip 防护 | 解压时逐条验证路径不逃出目标目录 |
 | 路径安全检查 | `_validate_path_safety()` 确保目标在 `plugins_dir` 内 |
 
@@ -230,7 +239,7 @@ async fetch_remote_manifest(repo_url: str, ref: str = "main") -> dict | None
 
 ### `config.py` — 插件配置文件工具
 
-读写 `PLUGINS_DIR/plugins.yaml`，持久化每个插件的配置（含启用/禁用状态）。
+读写 `PLUGINS_DIR/plugins.yaml`，持久化每个插件的配置（含启用/禁用状态和发布轨道）。
 
 ```yaml
 fxtwitter:
@@ -238,11 +247,13 @@ fxtwitter:
 
 youtube_parser:
   disabled: false
+  prerelease: true
   api_key: "xxx"
   quality: "high"
 ```
 
-- `disabled` 是框架保留字段（`_FRAMEWORK_KEYS`），其余字段为插件专属配置
+- `disabled` 和 `prerelease` 是框架保留字段（`FRAMEWORK_KEYS`），其余字段为插件专属配置
+- `prerelease: true` 表示该插件安装和更新到 beta 版本；可以在安装前设置，删除插件时会保留
 - **原子写入**：`tempfile.mkstemp` + `Path.replace`，在 `_config_lock` 线程锁内执行，保证并发安全
 
 | 函数 | 说明 |
@@ -251,7 +262,8 @@ youtube_parser:
 | `save_plugins_config(config)` | 原子写回 `plugins.yaml` |
 | `get_plugin_config(domain)` | 获取单个插件配置块 |
 | `set_plugin_field(domain, key, value)` | 加锁设置单个字段并持久化 |
-| `remove_plugin_config(domain)` | 删除插件整个配置块（插件删除时调用）|
+| `remove_plugin_config(domain)` | 删除插件配置块，保留 `prerelease: true`（插件删除时调用）|
+| `get_prerelease_domains()` | 返回跟踪预发布版的插件 domain |
 | `strip_framework_keys(cfg)` | 过滤掉框架内置键 |
 | `plugin_get_config(domain, schema_cls)` | 获取配置并反序列化为 `PluginConfigSchema` 子类实例 |
 | `plugin_save_config(domain, config)` | 序列化 `PluginConfigSchema` 实例并原子写入 |
@@ -265,7 +277,7 @@ youtube_parser:
 ```
 1. 创建 PluginContext 和 PluginManager，注入 HA 风格方法
 2. async_discover()        并发扫描本地 plugins/ 目录
-3. async_check_updates()   轻量检查远端版本，日志记录可用更新和新插件（不自动安装）
+3. async_check_updates()   轻量检查插件目录，日志记录可用更新和新插件（不自动安装）
 4. 读取 plugins.yaml
 5. for each plugin:
    ├── [disabled: true] → state = DISABLED，跳过
@@ -286,9 +298,10 @@ youtube_parser:
 | 方法 | 说明 |
 |------|------|
 | `list_plugins()` | 返回所有已发现插件的状态、版本、错误信息及更新可用性 |
-| `list_available()` | 拉取远端 manifest，合并本地安装状态，返回所有可用插件 |
-| `check_updates()` | 查询远端版本，返回各插件当前版本与最新版本 |
-| `update_plugins(domains)` | 下载并安装/更新插件；已有插件热重载，新插件直接激活 |
+| `list_available()` | 拉取插件目录，合并本地安装状态和发布轨道，返回目录中所有插件 |
+| `check_updates()` | 按各插件的发布轨道查询目录版本，返回各插件当前版本与最新版本 |
+| `update_plugins(domains)` | 从插件的 GitHub Release 安装/更新插件；已有插件热重载，新插件直接激活 |
+| `set_prerelease(domain, enabled)` | 把 `prerelease` 写入 `plugins.yaml`，并刷新缓存的更新信息 |
 | `enable(domain)` | 清除禁用标记，动态加载并激活插件 |
 | `disable(domain)` | 卸载插件并在 `plugins.yaml` 中写入 `disabled: true` |
 | `delete(domain)` | 卸载 + 从注册表移除 + 删除磁盘目录 + 清理 `plugins.yaml` |
@@ -297,7 +310,7 @@ youtube_parser:
 | `update_plugin_settings(domain, body)` | 校验并持久化插件配置（支持部分更新，严格类型检查）|
 
 **`update_plugin_settings` 校验规则**：
-- 框架保留键（`disabled`）被拒绝，返回 400
+- 框架保留键（`disabled`、`prerelease`）被拒绝，返回 400
 - 未声明的键静默忽略
 - 声明的键以 `strict=True` 模式做类型检查
 - 支持真正的部分更新
@@ -311,11 +324,12 @@ youtube_parser:
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/v1/plugins/` | 列出所有本地已发现的插件及其状态 |
-| `GET` | `/v1/plugins/available` | 列出远端仓库中所有可用插件（含未安装的）|
+| `GET` | `/v1/plugins/available` | 列出插件目录中的所有插件（含未安装的），带 `prerelease` 和 `installable` |
 | `POST` | `/v1/plugins/reload` | 热重载所有插件 |
 | `POST` | `/v1/plugins/check-config` | 校验所有插件 manifest 的必填字段 |
 | `GET` | `/v1/plugins/check-updates` | 检查各插件是否有新版本 |
-| `POST` | `/v1/plugins/update` | 从远端仓库下载并安装/更新插件 |
+| `POST` | `/v1/plugins/update` | 从插件的 GitHub Release 安装/更新插件 |
+| `PUT` | `/v1/plugins/{domain}/prerelease` | 请求体 `{ "enabled": true }`。响应为 `{ "domain", "prerelease" }`，返回保存后的开关。插件未安装也可以设置 |
 | `POST` | `/v1/plugins/{domain}/enable` | 启用指定插件 |
 | `POST` | `/v1/plugins/{domain}/disable` | 禁用指定插件 |
 | `DELETE` | `/v1/plugins/{domain}` | 删除插件（卸载 + 删除文件）|
@@ -350,10 +364,12 @@ POST /v1/task/parser { "url": "..." }
 POST /v1/plugins/update
   │
   └── PluginService.update_plugins(domains)
-      ├── GitHubPluginDownloader.download_plugins()
-      │   ├── 下载 GitHub zip 包
+      ├── fetch_catalog() + plugins.yaml 的 prerelease → 每个插件要装的版本
+      ├── GitHubPluginDownloader.install_release()（逐个插件）
+      │   ├── 从插件仓库下载该 tag 的 zip 包
       │   ├── 安全解压（Zip Slip 防护）
-      │   └── 按 registry.json 安装插件目录（拷贝源目录 manifest.json）
+      │   ├── 校验 plugin/manifest.json 的 domain 和 version
+      │   └── 拷贝 plugin/ 到 PLUGINS_DIR/{domain}
       │
       ├── 已有插件 → manager.async_reload(domain)
       │   ├── async_unload_entry
@@ -371,9 +387,9 @@ POST /v1/plugins/update
 1. **模块级加载** — 插件作为整个 Python 模块动态导入（`importlib`），而非实例化类，支持平台作为子模块独立注册
 2. **严格状态机** — 状态转移受 PluginManager 控制，防止无效操作，错误状态可被恢复
 3. **Home Assistant 风格** — `async_forward_entry_setup` / `async_unload_platforms` 模式让插件与平台高度解耦，易于横向扩展
-4. **安全的远程分发** — Domain 校验、Ref 验证、Zip Slip 防护多层保障
+4. **安全的远程分发** — Domain 校验、仓库与 tag 验证、manifest 校验、Zip Slip 防护多层保障
 5. **无停机热更新** — 完整清除模块缓存（包括 `sys.modules` 中的所有子模块）后重新加载
-6. **轻量版本检查** — 启动时仅拉取远端 `registry.json`（几 KB），对启动时间影响极小
+6. **轻量版本检查** — 启动时仅拉取插件目录（几 KB），不下载插件包，对启动时间影响极小
 7. **原子配置写入** — 临时文件 + rename + 线程锁，防止写入中断导致配置损坏
 8. **类型化配置 Schema** — `CONFIG_SCHEMA` 驱动配置读取、写入、类型校验和 API 暴露，插件无需额外代码
 9. **稳定接口契约** — 插件只依赖 `contenthive.plugins.*`，核心内部重构不影响已有插件

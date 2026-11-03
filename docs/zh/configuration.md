@@ -20,14 +20,9 @@
 
 **通过 API 修改**（`PUT /v1/system/settings`）：无需重启容器；修改会立即写入文件并更新内存缓存。部分设置在实际使用时生效（如下次下载、下次签发 token）。
 
-**直接编辑文件**：`GET /v1/system/settings` 每次从磁盘读取，可立即看到文件内容。但服务内部（下载、token、插件源等）使用启动时加载的内存缓存，直接改文件后需**重启容器**才能在这些路径生效。建议优先使用 API 修改。
+**直接编辑文件**：`GET /v1/system/settings` 每次从磁盘读取，可立即看到文件内容。但服务内部（下载、token 等）使用启动时加载的内存缓存，直接改文件后需**重启容器**才能在这些路径生效。建议优先使用 API 修改。
 
 ```yaml
-plugins:
-  repo_url: https://github.com/content-hive/plugins.git
-  repo_ref_type: branch   # branch | tag | commit
-  repo_ref: release
-
 auth:
   access_token_expire_minutes: 60
   refresh_token_expire_days: 30
@@ -41,9 +36,6 @@ download:
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `plugins.repo_url` | `https://github.com/content-hive/plugins.git` | 插件分发仓库地址。修改前请确认仓库可信度 |
-| `plugins.repo_ref_type` | `branch` | 仓库 ref 类型：`branch`、`tag` 或 `commit` |
-| `plugins.repo_ref` | `release` | 仓库 ref 值。`release` = Stable（默认），`main` = Beta |
 | `auth.access_token_expire_minutes` | `60` | Access token 有效期（分钟）|
 | `auth.refresh_token_expire_days` | `30` | Refresh token 有效期（天）|
 | `download.max_retries` | `3` | 媒体下载失败最大重试次数 |
@@ -65,11 +57,17 @@ curl -s -X PUT "$BASE_URL/v1/system/settings" \
   }'
 ```
 
-响应 `data` 字段为完整的嵌套配置对象（`plugins` / `auth` / `download`）。
+响应 `data` 字段为完整的嵌套配置对象（`auth` / `download`）。
+
+### 插件来源
+
+插件从内置的插件目录 `https://content-hive.github.io/plugins/catalog.json` 安装，来源不可配置。是否安装和更新到预发布（beta）版本，按插件在 `plugins.yaml` 中用 `prerelease` 设置，见[插件系统](/zh/plugins#发布轨道)。
 
 ### 从旧版本迁移
 
-若你此前通过环境变量 `PLUGINS_REPO_REF`、`PLUGINS_REPO_REF_TYPE`、`ACCESS_TOKEN_EXPIRE_MINUTES` 等自定义过这些值，升级后请手动写入 `/config/settings.yaml`。这些环境变量已不再读取。
+若你此前通过环境变量 `ACCESS_TOKEN_EXPIRE_MINUTES` 等自定义过这些值，升级后请手动写入 `/config/settings.yaml`。这些环境变量已不再读取。
+
+`plugins.repo_url`、`plugins.repo_ref_type`、`plugins.repo_ref` 已移除。`settings.yaml` 中已有的这些值会被忽略，并在下次保存设置时删除。
 
 ## 持久化数据
 
@@ -83,5 +81,5 @@ curl -s -X PUT "$BASE_URL/v1/system/settings" \
     media/              # 已下载的媒体文件
   logs/                 # 滚动日志文件
   plugins/              # 已安装的插件目录
-    plugins.yaml        # 插件启用状态和配置
+    plugins.yaml        # 插件启用状态、发布轨道和配置
 ```
