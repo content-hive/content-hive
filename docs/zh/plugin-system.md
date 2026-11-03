@@ -213,7 +213,7 @@ CatalogPlugin.select_release(prerelease: bool) -> CatalogRelease | None
 
 `GitHubPluginDownloader` 从插件自己的 GitHub 仓库安全地下载、解压并安装单个插件版本。
 
-**插件仓库格式**：插件代码在 Release tag 下的 `plugin/` 目录；`plugin/manifest.json` 的 `domain` 与目录一致，`version` 与该 Release 一致。
+**插件仓库格式**：插件代码在 Release tag 下的 `plugin/` 目录；`plugin/manifest.json` 的 `domain` 与目录一致，`version` 与该 Release 一致；tag 根目录的 `contenthive.json` 声明这一版要求的最低 Content Hive 版本。
 
 ```python
 async install_release(
@@ -223,7 +223,7 @@ async install_release(
 ) -> bool
 ```
 
-下载 `https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip`，解压后校验 `plugin/manifest.json`，再把 `plugin/` 拷贝到 `PLUGINS_DIR/{domain}`。
+下载 `https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip`，解压后校验 `contenthive.json` 和 `plugin/manifest.json`，再把 `plugin/` 拷贝到 `PLUGINS_DIR/{domain}`。
 
 **安全机制**：
 
@@ -232,6 +232,7 @@ async install_release(
 | Domain 验证 | 仅允许 `[a-z0-9_-]`，防止路径穿越 |
 | 仓库与 tag 验证 | 仓库必须是 `owner/repo`；tag 仅允许 `[a-zA-Z0-9._/\-]`，防止注入 |
 | Manifest 校验 | `plugin/manifest.json` 必须与目录中的 domain 和 Release 版本一致 |
+| 核心兼容性 | 所选 tag 的 `contenthive.json` 不得要求比当前运行更高的 Content Hive 版本 |
 | Zip Slip 防护 | 解压时逐条验证路径不逃出目标目录 |
 | 路径安全检查 | `_validate_path_safety()` 确保目标在 `plugins_dir` 内 |
 

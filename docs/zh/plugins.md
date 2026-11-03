@@ -352,7 +352,7 @@ Content Hive 读取内置的插件目录 `https://content-hive.github.io/plugins
 
 发布插件时，把代码放在 `plugin/` 目录，发布 tag 为 `v<manifest 版本号>` 的 GitHub Release，再把仓库加入插件目录。具体要求见插件目录仓库的 README。
 
-插件仓库 `contenthive.json` 中的 `contenthive` 是插件要求的最低 Content Hive 版本；高于当前核心版本的插件不会出现在列表里。
+目录里的 `min_core_version` 高于当前核心版本的插件不会出现在列表里。安装时还会校验所选 tag 根目录 `contenthive.json` 的 `contenthive`，因此即使目录条目来自稳定版，要求更新核心的 beta 也不会被装上。
 
 ### 发布轨道
 

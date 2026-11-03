@@ -169,6 +169,8 @@ class PluginService:
         For each plugin, downloads the release on its track (stable, or beta when
         prerelease is enabled), installs its ``plugin/`` directory, and then either
         hot-reloads an existing plugin or activates a newly installed one.
+        Installed plugins are skipped when the selected release is not newer, so
+        turning off prerelease does not downgrade a newer beta.
 
         Args:
             domains: Plugin domains to install or update. An empty list means every
@@ -196,6 +198,27 @@ class PluginService:
                     logger.warning(f"Plugin {domain} has no installable release in the plugin catalog")
                     failed.append(domain)
                 continue
+
+            local = plugin_manager.plugins.get(domain)
+            if local is not None:
+                try:
+                    if not is_plugin_update_available(release.version, local.version):
+                        logger.info(
+                            "Plugin %s: skipping %s (installed %s is newer or equal)",
+                            domain,
+                            release.version,
+                            local.version,
+                        )
+                        continue
+                except InvalidVersion:
+                    logger.warning(
+                        "Plugin %s: invalid version string (local=%s, remote=%s)",
+                        domain,
+                        local.version,
+                        release.version,
+                    )
+                    failed.append(domain)
+                    continue
 
             if not await downloader.install_release(plugin, release):
                 failed.append(domain)

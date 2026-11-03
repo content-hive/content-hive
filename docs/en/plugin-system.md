@@ -215,7 +215,7 @@ CatalogPlugin.select_release(prerelease: bool) -> CatalogRelease | None
 
 `GitHubPluginDownloader` safely downloads, extracts, and installs a single plugin release from the plugin's own GitHub repository.
 
-**Plugin repository format**: the plugin code lives in `plugin/` at the release tag, and `plugin/manifest.json` declares the same `domain` as the catalog and the release `version`.
+**Plugin repository format**: the plugin code lives in `plugin/` at the release tag; `plugin/manifest.json` declares the same `domain` as the catalog and the release `version`; `contenthive.json` at the tag root declares the minimum Content Hive version for that release.
 
 ```python
 async install_release(
@@ -225,7 +225,7 @@ async install_release(
 ) -> bool
 ```
 
-Downloads `https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip`, extracts it, checks `plugin/manifest.json`, and copies `plugin/` to `PLUGINS_DIR/{domain}`.
+Downloads `https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip`, extracts it, checks `contenthive.json` and `plugin/manifest.json`, and copies `plugin/` to `PLUGINS_DIR/{domain}`.
 
 **Security measures**:
 
@@ -234,6 +234,7 @@ Downloads `https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.zip`, extra
 | Domain validation | Only `[a-z0-9_-]` allowed; prevents path traversal |
 | Repository and tag validation | Repository must be `owner/repo`; tag only allows `[a-zA-Z0-9._/\-]`; prevents injection |
 | Manifest check | `plugin/manifest.json` must match the catalog domain and release version |
+| Core compatibility | The selected tag's `contenthive.json` must not require a newer Content Hive than is running |
 | Zip Slip protection | Each extracted path is verified to remain within the target directory |
 | Path safety check | `_validate_path_safety()` ensures the destination is inside `plugins_dir` |
 

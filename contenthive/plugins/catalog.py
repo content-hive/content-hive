@@ -136,19 +136,24 @@ def _parse_plugin(data: Any) -> CatalogPlugin:
     )
 
 
-def _is_core_supported(plugin: CatalogPlugin) -> bool:
-    if plugin.min_core_version is None:
+def is_core_compatible(min_core_version: str | None, *, domain: str | None = None) -> bool:
+    """Return True if this Content Hive version meets ``min_core_version``."""
+    if min_core_version is None:
         return True
     try:
-        return Version(APP_VERSION) >= Version(plugin.min_core_version)
+        return Version(APP_VERSION) >= Version(min_core_version)
     except InvalidVersion:
         logger.warning(
             "Plugin %s: cannot compare min_core_version %r with core %r",
-            plugin.domain,
-            plugin.min_core_version,
+            domain or "unknown",
+            min_core_version,
             APP_VERSION,
         )
         return False
+
+
+def _is_core_supported(plugin: CatalogPlugin) -> bool:
+    return is_core_compatible(plugin.min_core_version, domain=plugin.domain)
 
 
 def parse_catalog(data: Any) -> dict[str, CatalogPlugin]:

@@ -352,7 +352,7 @@ Content Hive reads the built-in catalog at `https://content-hive.github.io/plugi
 
 To publish a plugin, keep the code in `plugin/`, publish a GitHub Release tagged `v<manifest version>`, and add the repository to the catalog. The catalog repository's README lists the requirements.
 
-Plugins whose minimum Content Hive version (`contenthive` in the plugin repository's `contenthive.json`) is newer than the running core are not offered.
+Plugins whose catalog `min_core_version` is newer than the running core are not offered. Install also checks `contenthive.json` in the selected release tag, so a beta that needs a newer core is rejected even when the catalog entry was taken from stable.
 
 ### Release Tracks
 

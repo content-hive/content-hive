@@ -23,8 +23,9 @@ from urllib.parse import quote
 
 import aiohttp
 
+from contenthive.const import APP_VERSION
 from contenthive.logger import logger
-from contenthive.plugins.catalog import REPOSITORY_PATTERN, CatalogPlugin, CatalogRelease
+from contenthive.plugins.catalog import REPOSITORY_PATTERN, CatalogPlugin, CatalogRelease, is_core_compatible
 from contenthive.utils.path_safety import is_path_within_base, sanitize_path_separators
 
 PLUGIN_SOURCE_DIR = "plugin"
@@ -170,7 +171,8 @@ class GitHubPluginDownloader:
         Download a plugin release from its repository and install it into the plugins directory.
 
         The release's ``plugin/manifest.json`` must declare the catalog domain and the
-        release version; otherwise the install is rejected.
+        release version, and ``contenthive.json`` must not require a newer core;
+        otherwise the install is rejected.
 
         Args:
             plugin: Catalog entry of the plugin to install.
@@ -205,10 +207,12 @@ class GitHubPluginDownloader:
                 if len(root_dirs) != 1:
                     raise ValueError(f"Expected one top-level directory in archive, found {len(root_dirs)}")
 
-                source_dir = root_dirs[0] / PLUGIN_SOURCE_DIR
+                repo_root = root_dirs[0]
+                source_dir = repo_root / PLUGIN_SOURCE_DIR
                 if not source_dir.is_dir():
                     raise ValueError(f"'{PLUGIN_SOURCE_DIR}/' directory not found in {release.tag}")
 
+                self._check_release_core_requirement(repo_root, domain)
                 self._check_source_manifest(source_dir, domain, release.version)
                 installed = self._install_plugin_directory(source_dir, domain, force_reinstall)
 
@@ -219,6 +223,33 @@ class GitHubPluginDownloader:
         except Exception as e:
             logger.warning(f"Plugin install failed: {domain} ({e})", exc_info=True)
             return False
+
+    def _check_release_core_requirement(self, repo_root: Path, domain: str) -> None:
+        """Raise ValueError unless this tag's contenthive.json is compatible with the running core.
+
+        Catalog ``min_core_version`` is taken from the stable tag when one exists, so a
+        selected beta can require a newer core. Check the downloaded tag before replacing files.
+        """
+        meta_path = repo_root / "contenthive.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except FileNotFoundError as e:
+            raise ValueError("contenthive.json not found") from e
+        except json.JSONDecodeError as e:
+            raise ValueError(f"contenthive.json is not valid JSON: {e}") from e
+
+        if not isinstance(meta, dict):
+            raise ValueError("contenthive.json must be a JSON object")
+        if meta.get("domain") != domain:
+            raise ValueError(f"contenthive.json domain {meta.get('domain')!r} does not match catalog domain {domain!r}")
+
+        min_core = meta.get("contenthive")
+        if min_core is None:
+            return
+        if not isinstance(min_core, str) or not min_core.strip():
+            raise ValueError("contenthive.json 'contenthive' must be a non-empty string")
+        if not is_core_compatible(min_core, domain=domain):
+            raise ValueError(f"plugin requires Content Hive {min_core} (current {APP_VERSION})")
 
     def _check_source_manifest(self, source_dir: Path, domain: str, version: str) -> None:
         """Raise ValueError unless plugin/manifest.json matches the catalog domain and release version."""
