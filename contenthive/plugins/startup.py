@@ -13,7 +13,6 @@ from contenthive.plugins.manager import (
     set_plugin_manager,
 )
 from contenthive.plugins.registry import PluginState
-from contenthive.settings.store import get_settings
 
 
 async def load_plugins_on_startup():
@@ -37,12 +36,9 @@ async def load_plugins_on_startup():
     # Discover locally installed plugins
     await plugin_manager.async_discover()
 
-    # Fetch remote manifest and compare — no archive download, lightweight check only
+    # Fetch the plugin catalog and compare — no archive download, lightweight check only
     try:
-        check_results = await plugin_manager.async_check_updates(
-            repo_url=get_settings().plugins.repo_url,
-            ref=get_settings().plugins.repo_ref,
-        )
+        check_results = await plugin_manager.async_check_updates()
         installed_domains = set(plugin_manager.plugins)
         new_plugins = {
             d: offer.latest_version
@@ -65,7 +61,7 @@ async def load_plugins_on_startup():
         if not new_plugins and not available_updates:
             logger.debug("All plugins are up to date")
     except Exception:
-        logger.warning("Failed to check for plugin updates from remote registry")
+        logger.warning("Failed to check for plugin updates from the plugin catalog", exc_info=True)
 
     # Setup and enable plugins
     plugins_config = load_plugins_config()

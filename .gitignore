@@ -224,6 +224,9 @@ __marimo__/
 # Runtime data for Content Hive
 /runtime-data/
 
+# Local Docker Compose overrides
+/docker-compose.override.yml
+
 # Node.js (VitePress docs)
 docs/node_modules/
 docs/.vitepress/dist/

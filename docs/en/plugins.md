@@ -2,7 +2,7 @@
 
 Content Hive uses a Home Assistant-style plugin architecture. Each supported platform (Twitter, YouTube, TikTok, etc.) is an independent plugin that can be installed, updated, configured, and hot-reloaded at runtime without restarting the application.
 
-Plugins are distributed via a GitHub repository and managed through the REST API.
+Each plugin lives in its own GitHub repository and ships as GitHub Releases. Content Hive finds plugins through the [plugin catalog](https://github.com/content-hive/plugins) and manages them through the REST API.
 
 For internal architecture details, see [Plugin System Internals](/en/plugin-system).
 
@@ -343,6 +343,39 @@ context.register_service(DOMAIN, "download", my_download)
 ```
 
 The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.). Optional progress reporting uses `on_progress`: a `ProgressCallback` imported from `contenthive.plugins.contracts` (may be sync or async; guard for `None` and `await` when needed). Report main-media percent only; treat task `status` as the source of truth for completion. Live `retry` state on task details (`phase` / `attempt` / etc.) is emitted only by the built-in downloader; plugin `download` services do not receive a retry callback, so `retry` stays `null`.
+
+---
+
+## Distribution
+
+Content Hive reads the built-in catalog at `https://content-hive.github.io/plugins/catalog.json`. To install or update a plugin, it downloads the release tag's source archive from the plugin repository and copies its `plugin/` directory to `PLUGINS_DIR/<domain>`.
+
+To publish a plugin, keep the code in `plugin/`, publish a GitHub Release tagged `v<manifest version>`, and add the repository to the catalog. The catalog repository's README lists the requirements.
+
+Plugins whose catalog `min_core_version` is newer than the running core are not offered. Install also checks `contenthive.json` in the selected release tag, so a beta that needs a newer core is rejected even when the catalog entry was taken from stable.
+
+### Release Tracks
+
+Every plugin follows the stable track by default: the latest GitHub Release that is not a pre-release. To use pre-release (beta) versions for one plugin, set `prerelease: true` in `plugins.yaml`:
+
+```yaml
+douyin:
+  prerelease: true
+```
+
+or call the API:
+
+```bash
+curl -s -X PUT "$BASE_URL/v1/plugins/douyin/prerelease" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+- With `prerelease: true`, the plugin uses the latest beta when it is newer than stable, otherwise stable.
+- The setting works before the plugin is installed and is kept when the plugin is deleted.
+- Turning it off does not downgrade an installed beta; the plugin updates again once a newer stable is released.
+- A plugin that only has beta releases shows `installable: false` in `/v1/plugins/available` until `prerelease` is enabled.
 
 ---
 

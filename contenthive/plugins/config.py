@@ -15,7 +15,8 @@ from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.plugins.contracts import PluginConfigSchema
 
-FRAMEWORK_KEYS = {"disabled"}
+PRERELEASE_KEY = "prerelease"
+FRAMEWORK_KEYS = {"disabled", PRERELEASE_KEY}
 
 _yaml = YAML()
 _yaml.preserve_quotes = True
@@ -95,11 +96,22 @@ def set_plugin_field(domain: str, key: str, value: Any) -> None:
 
 
 def remove_plugin_config(domain: str) -> None:
-    """Remove a plugin's entire config block from plugins.yaml and persist."""
+    """Remove a plugin's config block from plugins.yaml, keeping its release-track choice."""
     with _config_lock:
         config = load_plugins_config()
-        config.pop(domain, None)
+        domain_cfg = config.pop(domain, None)
+        if isinstance(domain_cfg, dict) and domain_cfg.get(PRERELEASE_KEY) is True:
+            config[domain] = {PRERELEASE_KEY: True}
         save_plugins_config(config)
+
+
+def get_prerelease_domains() -> set[str]:
+    """Return domains that opted into pre-release (beta) versions."""
+    return {
+        domain
+        for domain, cfg in load_plugins_config().items()
+        if isinstance(cfg, dict) and cfg.get(PRERELEASE_KEY) is True
+    }
 
 
 def init_plugin_config_defaults(

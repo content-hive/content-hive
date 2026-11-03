@@ -22,12 +22,16 @@ from contenthive.models.plugin import (
     PluginListResponse,
     PluginUpdateInfo,
     ReloadResponse,
+    SetPrereleaseResponse,
     UpdatePluginConfigRequest,
     UpdatePluginConfigResponse,
     UpdatePluginsResponse,
 )
+from contenthive.plugins.catalog import DOMAIN_PATTERN, CatalogError, fetch_catalog
 from contenthive.plugins.config import (
     FRAMEWORK_KEYS,
+    PRERELEASE_KEY,
+    get_prerelease_domains,
     plugin_get_config,
     plugin_save_config,
     remove_plugin_config,
@@ -41,7 +45,6 @@ from contenthive.plugins.manager import (
     is_plugin_update_available,
 )
 from contenthive.plugins.registry import PluginState
-from contenthive.settings.store import get_settings
 
 
 class ConfigValidationError(Exception):
@@ -120,10 +123,11 @@ class PluginService:
         )
 
     async def check_updates(self) -> CheckUpdatesResponse:
-        """Fetch the remote registry.json and compare versions.
+        """Fetch the plugin catalog and compare versions.
 
-        Performs a lightweight fetch (no full download) against the configured
-        GitHub repository. Results are cached on the PluginManager instance.
+        Performs a lightweight fetch (no archive download). Each plugin is compared
+        against the release on its track (stable, or beta when prerelease is enabled).
+        Results are cached on the PluginManager instance.
 
         Returns:
             CheckUpdatesResponse with per-plugin current/latest version,
@@ -131,11 +135,7 @@ class PluginService:
         """
         plugin_manager = _get_plugin_manager()
 
-        app_settings = get_settings()
-        update_results = await plugin_manager.async_check_updates(
-            repo_url=app_settings.plugins.repo_url,
-            ref=app_settings.plugins.repo_ref,
-        )
+        update_results = await plugin_manager.async_check_updates()
 
         plugins_info: dict[str, PluginUpdateInfo] = {}
         for domain, record in plugin_manager.plugins.items():
@@ -164,36 +164,63 @@ class PluginService:
         )
 
     async def update_plugins(self, domains: list[str]) -> UpdatePluginsResponse:
-        """Download and install plugins from the remote repository.
+        """Install or update plugins from their repositories' GitHub Releases.
 
-        Downloads the repository archive, extracts the selected plugins, and
-        then either hot-reloads existing plugins or activates newly installed ones.
+        For each plugin, downloads the release on its track (stable, or beta when
+        prerelease is enabled), installs its ``plugin/`` directory, and then either
+        hot-reloads an existing plugin or activates a newly installed one.
+        Installed plugins are skipped when the selected release is not newer, so
+        turning off prerelease does not downgrade a newer beta.
 
         Args:
-            domains: Plugin domains to update. An empty list updates all enabled
-                     plugins listed in the remote registry.json.
+            domains: Plugin domains to install or update. An empty list means every
+                     catalog plugin that has a release on its track.
 
         Returns:
             UpdatePluginsResponse with lists of successfully updated and failed domains.
+
+        Raises:
+            CatalogError: If the plugin catalog cannot be fetched.
         """
         plugin_manager = _get_plugin_manager()
-        selected = domains if domains else None
-
+        catalog = await fetch_catalog()
+        prerelease_domains = get_prerelease_domains()
         downloader = GitHubPluginDownloader(settings.plugins_dir)
-        app_settings = get_settings()
-        download_results = await downloader.download_plugins(
-            repo_url=app_settings.plugins.repo_url,
-            ref=app_settings.plugins.repo_ref,
-            ref_type=app_settings.plugins.repo_ref_type,
-            selected_plugins=selected,
-            force_reinstall=True,
-        )
 
         updated: list[str] = []
         failed: list[str] = []
 
-        for domain, success in download_results.items():
-            if not success:
+        for domain in dict.fromkeys(domains or catalog):
+            plugin = catalog.get(domain)
+            release = plugin.select_release(domain in prerelease_domains) if plugin else None
+            if plugin is None or release is None:
+                if domains:
+                    logger.warning(f"Plugin {domain} has no installable release in the plugin catalog")
+                    failed.append(domain)
+                continue
+
+            local = plugin_manager.plugins.get(domain)
+            if local is not None:
+                try:
+                    if not is_plugin_update_available(release.version, local.version):
+                        logger.info(
+                            "Plugin %s: skipping %s (installed %s is newer or equal)",
+                            domain,
+                            release.version,
+                            local.version,
+                        )
+                        continue
+                except InvalidVersion:
+                    logger.warning(
+                        "Plugin %s: invalid version string (local=%s, remote=%s)",
+                        domain,
+                        local.version,
+                        release.version,
+                    )
+                    failed.append(domain)
+                    continue
+
+            if not await downloader.install_release(plugin, release):
                 failed.append(domain)
                 continue
 
@@ -221,57 +248,76 @@ class PluginService:
         return UpdatePluginsResponse(updated=updated, failed=failed)
 
     async def list_available(self) -> AvailablePluginsResponse:
-        """Fetch remote registry.json and merge with local installation state.
+        """Fetch the plugin catalog and merge it with local installation state.
 
-        Returns all plugins known to the remote repository, annotated with
-        whether each is installed locally and what version is installed.
+        Returns every catalog plugin supported by this core version, with the version
+        on its release track and whether it is installed locally.
 
         Returns:
-            AvailablePluginsResponse with a list of AvailablePluginInfo entries,
-            each carrying domain, name, version, description, author, disclaimer,
-            release_notes, installed flag, and installed_version (None if not installed).
+            AvailablePluginsResponse with a list of AvailablePluginInfo entries.
 
         Raises:
-            RuntimeError: If the remote registry cannot be fetched.
+            CatalogError: If the plugin catalog cannot be fetched.
         """
         plugin_manager = get_plugin_manager()
-
-        downloader = GitHubPluginDownloader(settings.plugins_dir)
-        app_settings = get_settings()
-        remote_manifest = await downloader.fetch_remote_manifest(
-            repo_url=app_settings.plugins.repo_url,
-            ref=app_settings.plugins.repo_ref,
-        )
-        if remote_manifest is None:
-            raise RuntimeError("Failed to fetch remote plugins registry")
-
+        catalog = await fetch_catalog()
+        prerelease_domains = get_prerelease_domains()
         installed = plugin_manager.plugins if plugin_manager else {}
 
         result: list[AvailablePluginInfo] = []
-        for plugin in remote_manifest.get("plugins", []):
-            domain = plugin.get("domain")
-            version = plugin.get("version")
-            if not domain or not version:
-                continue
+        for domain, plugin in catalog.items():
+            prerelease = domain in prerelease_domains
+            release = plugin.display_release(prerelease)
             local = installed.get(domain)
-            release_notes = plugin.get("release_notes")
-            if not isinstance(release_notes, str) or not release_notes.strip():
-                release_notes = None
             result.append(
                 AvailablePluginInfo(
                     domain=domain,
-                    name=plugin.get("name", domain),
-                    version=version,
-                    description=plugin.get("description"),
-                    author=plugin.get("author"),
-                    disclaimer=plugin.get("disclaimer"),
-                    release_notes=release_notes,
+                    name=plugin.name,
+                    version=release.version,
+                    description=plugin.description,
+                    disclaimer=plugin.disclaimer,
+                    release_notes=release.release_notes,
+                    repository=plugin.repository,
+                    prerelease=prerelease,
+                    installable=plugin.select_release(prerelease) is not None,
                     installed=local is not None,
                     installed_version=local.version if local else None,
                 )
             )
 
         return AvailablePluginsResponse(plugins=result)
+
+    async def set_prerelease(self, domain: str, enabled: bool) -> SetPrereleaseResponse:
+        """Choose whether a plugin tracks pre-release (beta) versions.
+
+        The choice is stored in plugins.yaml and may be set before the plugin is
+        installed. Cached update offers are refreshed from the catalog when possible.
+
+        Args:
+            domain: Plugin domain identifier.
+            enabled: True to track beta releases, False for stable only.
+
+        Returns:
+            SetPrereleaseResponse with the stored choice. The selected version is
+            available from the catalog endpoints after the cached offers are refreshed.
+
+        Raises:
+            ValueError: If the domain is not a valid plugin domain.
+        """
+        if not DOMAIN_PATTERN.match(domain):
+            raise ValueError(f"Invalid plugin domain '{domain}'")
+
+        set_plugin_field(domain, PRERELEASE_KEY, enabled)
+
+        try:
+            catalog = await fetch_catalog()
+        except CatalogError as e:
+            logger.warning(f"Saved prerelease={enabled} for {domain}, but could not refresh the catalog: {e}")
+        else:
+            if plugin_manager := get_plugin_manager():
+                await plugin_manager.async_check_updates(catalog)
+
+        return SetPrereleaseResponse(domain=domain, prerelease=enabled)
 
     def list_plugins(self) -> PluginListResponse:
         """Return metadata and runtime state for all discovered plugins.
@@ -285,6 +331,7 @@ class PluginService:
 
         plugin_status: dict[str, PluginInfo] = {}
         if plugin_manager:
+            prerelease_domains = get_prerelease_domains()
             for domain, record in plugin_manager.plugins.items():
                 plugin_status[domain] = PluginInfo(
                     state=record.state,
@@ -298,6 +345,7 @@ class PluginService:
                     ),
                     description=record.description,
                     author=record.author,
+                    prerelease=domain in prerelease_domains,
                 )
 
         return PluginListResponse(plugins=plugin_status)
@@ -460,7 +508,7 @@ class PluginService:
         empty settings list is returned.
 
         Validation rules (when schema exists):
-        - Framework-reserved keys ('disabled') are rejected with 400.
+        - Framework-reserved keys ('disabled', 'prerelease') are rejected with 400.
         - Keys not declared in the schema are silently ignored.
         - Type checking is performed with strict=True for each declared key.
         - Required fields must be present.

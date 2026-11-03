@@ -17,6 +17,8 @@ from contenthive.models.plugin import (
     PluginConfigResponse,
     PluginListResponse,
     ReloadResponse,
+    SetPrereleaseRequest,
+    SetPrereleaseResponse,
     UpdatePluginConfigRequest,
     UpdatePluginConfigResponse,
     UpdatePluginsRequest,
@@ -41,7 +43,7 @@ async def list_plugins(
 async def list_available_plugins(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
 ) -> APIResponse[AvailablePluginsResponse]:
-    """List all plugins available in the remote repository, including uninstalled ones"""
+    """List all plugins in the plugin catalog, including uninstalled ones"""
     try:
         data = await plugin_service.list_available()
     except Exception as e:
@@ -49,8 +51,8 @@ async def list_available_plugins(
         raise DetailedHTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=ErrorDetail(
-                code="REMOTE_MANIFEST_FETCH_FAILED",
-                message="Failed to fetch remote plugin manifest",
+                code="PLUGIN_CATALOG_FETCH_FAILED",
+                message="Failed to fetch the plugin catalog",
                 details={"error": str(e)},
             ),
         ) from e
@@ -92,7 +94,7 @@ async def check_plugin_updates(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
 ) -> APIResponse[CheckUpdatesResponse]:
     """
-    Check whether installed plugins have newer versions available in the remote repository.
+    Check whether installed plugins have newer versions on their release track in the plugin catalog.
     """
     try:
         data = await plugin_service.check_updates()
@@ -107,7 +109,7 @@ async def check_plugin_updates(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=ErrorDetail(
                 code="UPDATE_CHECK_FAILED",
-                message=f"Failed to fetch remote plugin manifest: {e}",
+                message=f"Failed to fetch the plugin catalog: {e}",
             ),
         ) from e
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
@@ -243,15 +245,35 @@ async def update_plugin_config(
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
+@router_v1.put("/{domain}/prerelease", response_model=APIResponse[SetPrereleaseResponse])
+async def set_plugin_prerelease(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+    body: SetPrereleaseRequest = Body(...),
+) -> APIResponse[SetPrereleaseResponse]:
+    """Choose whether a plugin installs and updates to pre-release (beta) versions.
+
+    The plugin does not need to be installed yet.
+    """
+    try:
+        data = await plugin_service.set_prerelease(domain, body.enabled)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(code="INVALID_PLUGIN_DOMAIN", message=str(e)),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
 @router_v1.post("/update", response_model=APIResponse[UpdatePluginsResponse])
 async def update_plugins(
     current_user: Annotated[UserModel, Depends(get_current_admin_user)],
     body: UpdatePluginsRequest = Body(default_factory=UpdatePluginsRequest),
 ) -> APIResponse[UpdatePluginsResponse]:
     """
-    Download and reload plugins from the remote repository.
+    Install or update plugins from their GitHub Releases and reload them.
 
-    - domains: list of plugin domains to update. Empty means update all.
+    - domains: plugin domains to install or update. Empty means every installable catalog plugin.
     """
     try:
         data = await plugin_service.update_plugins(body.domains)
