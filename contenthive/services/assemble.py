@@ -37,6 +37,14 @@ async def assemble_streams(media: ParserMediaInfo, temps: dict[str, Path]) -> As
     cover_path: Path | None = None
     owned_temps: list[Path] = []
     try:
+        missing = [
+            stream.role
+            for stream in media.downloadable_streams()
+            if stream.role != "cover" and stream.role not in temps
+        ]
+        if missing:
+            raise RuntimeError(f"Missing downloaded files for streams: {sorted(missing)}")
+
         video = temps.get("video")
         audio = temps.get("audio")
         image = temps.get("image")
@@ -70,7 +78,13 @@ async def assemble_streams(media: ParserMediaInfo, temps: dict[str, Path]) -> As
         media_duration, media_width, media_height = await probe_media(media_path) if media_path else (None, None, None)
         cover_width, cover_height = (None, None)
         if cover_path is not None:
-            _, cover_width, cover_height = await probe_media(cover_path)
+            try:
+                _, cover_width, cover_height = await probe_media(cover_path)
+            except Exception:
+                if media.type == MediaType.LIVEPHOTO:
+                    raise
+                logger.warning(f"Cover probe failed, skipping: {cover_path}")
+                cover_path = None
         return AssembledMedia(
             media_path=media_path,
             cover_path=cover_path,

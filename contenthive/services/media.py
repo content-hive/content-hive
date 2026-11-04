@@ -281,7 +281,7 @@ class MediaService:
     def _temps_from_plugin_result(self, plugin_result: dict) -> dict[str, Path]:
         """Validate plugin-returned per-role temporary files."""
         raw = plugin_result.get("streams")
-        if not isinstance(raw, dict) or not raw:
+        if not isinstance(raw, dict):
             raise RuntimeError("Plugin download result missing 'streams'")
         temps: dict[str, Path] = {}
         for role, path in raw.items():
@@ -334,13 +334,18 @@ class MediaService:
                     )
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
+            required_error: BaseException | None = None
             for role, result in zip(roles, results, strict=True):
                 if isinstance(result, BaseException):
                     if role == "cover":
                         logger.warning(f"Cover download failed, skipping: {result}")
                         continue
-                    raise result
+                    if required_error is None:
+                        required_error = result
+                    continue
                 temps[role] = result
+            if required_error is not None:
+                raise required_error
             await invoke_progress(on_progress, 100)
             return temps
         except Exception:
@@ -804,6 +809,7 @@ class _CombinedStreamProgress:
         self._last_pct = -1
 
     def bind(self, part_id: str) -> ByteProgressCallback | None:
+        self._parts.setdefault(part_id, (0, None))
         if self._on_progress is None:
             return None
 

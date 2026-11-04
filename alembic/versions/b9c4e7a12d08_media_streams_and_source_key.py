@@ -38,6 +38,14 @@ def _stream(role: str, url: str, fallbacks: list[str]) -> dict:
     return {"role": role, "urls": [url, *fallbacks] if url else fallbacks}
 
 
+def _normalize_media_type(media_type: object) -> str | None:
+    """SQLAlchemy Enum persists names (IMAGE); comparisons use values (image)."""
+    if media_type is None:
+        return None
+    text = str(media_type).strip().lower()
+    return text or None
+
+
 def _migrate_streams(
     media_type: str | None,
     url: str,
@@ -45,6 +53,7 @@ def _migrate_streams(
     url_fallbacks: list[str],
     cover_fallbacks: list[str],
 ) -> list[dict]:
+    media_type = _normalize_media_type(media_type)
     cover_stream_role = "image" if media_type == "livephoto" else "cover"
     if media_type in ("image", "gif"):
         return [_stream("image", url, url_fallbacks)]
