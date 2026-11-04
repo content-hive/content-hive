@@ -230,17 +230,64 @@ async def async_setup_entry(context, entry, async_add_entities):
 
 ### `ParserMediaInfo`
 
+媒体主体只回答「这是帖子里的哪一项、是什么类型」。远程地址写在带角色的 `streams` 里。`source_key` 是帖子内的稳定身份，不要把会轮换的签名参数写进去。`source_key_from_url()` 取路径最后一段并去掉 query。
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `url` | `str` | 主媒体 URL |
-| `type` | `MediaType \| None` | `image`、`video`、`audio` 等 |
+| `source_key` | `str` | 帖子内稳定身份，重解析后必须保持不变 |
+| `type` | `MediaType` | `image`、`gif`、`video`、`audio`、`livephoto` 或 `link` |
 | `title` | `str \| None` | 媒体标题 |
-| `cover` | `str \| None` | 封面/缩略图 URL |
-| `duration` | `int \| None` | 时长（秒，视频/音频）|
-| `width` | `int \| None` | 宽度（像素）|
-| `height` | `int \| None` | 高度（像素）|
-| `url_fallbacks` | `list[str] \| None` | 备用下载 URL 列表 |
-| `cover_fallbacks` | `list[str] \| None` | 备用封面 URL 列表 |
+| `duration` | `int \| None` | 解析器给出的时长（毫秒，文件落盘前作参考）|
+| `width` | `int \| None` | 解析器给出的宽度（像素，文件落盘前作参考）|
+| `height` | `int \| None` | 解析器给出的高度（像素，文件落盘前作参考）|
+| `streams` | `list[MediaStream]` | 按 `role` 区分的轨列表 |
+| `extra` | `dict[str, Any]` | 核心不解释的平台字段（例如 B 站 `cid`、`qn`）|
+
+核心按 `type` 校验轨的组合，缺了必需轨就拒绝这条媒体：
+
+| `type` | 必需轨 | 可选轨 |
+|--------|--------|--------|
+| `image`、`gif` | 一条 `ImageStream` | — |
+| `video` | 一条 `VideoStream` | 一条 `AudioStream`（DASH）、一条 `CoverStream` |
+| `audio` | 一条 `AudioStream` | 一条 `CoverStream` |
+| `livephoto` | 一条 `VideoStream` 加一条 `ImageStream`（静帧） | — |
+| `link` | 一条 `LinkStream` | 一条 `CoverStream` |
+
+实况照片的静帧是成片的一部分，用 `ImageStream`，不用 `CoverStream`。
+
+### 轨类型
+
+每条轨都有 `urls: list[str]`（至少一项）。`urls[0]` 是主地址，后面的是下载备用。`role` 是判别字段。
+
+| 类 | `role` | 额外字段 | 说明 |
+|----|--------|----------|------|
+| `ImageStream` | `image` | `width`、`height` | 图片、GIF，或实况静帧 |
+| `VideoStream` | `video` | `codec`、`bandwidth`、`width`、`height`、`quality` | |
+| `AudioStream` | `audio` | `codec`、`bandwidth`、`quality`、`label` | `label` 放 FLAC、杜比这类音质名 |
+| `CoverStream` | `cover` | — | 海报，不是成片的一部分 |
+| `LinkStream` | `link` | — | 只保存地址，不当成媒体文件下载 |
+
+```python
+from contenthive.plugins.contracts import (
+    CoverStream,
+    ParserMediaInfo,
+    VideoStream,
+    AudioStream,
+    MediaType,
+    source_key_from_url,
+)
+
+ParserMediaInfo(
+    source_key=source_key_from_url(video_url),
+    type=MediaType.VIDEO,
+    streams=[
+        VideoStream(urls=[video_url], width=3840, height=2160, quality="127"),
+        AudioStream(urls=[audio_url], label="FLAC"),
+        CoverStream(urls=[cover_url]),
+    ],
+    extra={"cid": 123, "qn": "127"},
+)
+```
 
 ### `ParserAuthorInfo`
 
@@ -328,21 +375,22 @@ from contenthive.plugins.contracts import ProgressCallback
 async def my_download(data: dict):
     media = data["media"]
     on_progress: ProgressCallback | None = data.get("on_progress")
-    # 自定义下载逻辑（处理签名 URL、登录态等）
-    # on_progress 反映主媒体文件进度（0-100）；封面可并行下载但不计入
+    # 只负责把各轨字节拿回来（签名 URL、登录态等），不要合成或归档。
+    # 返回按 role 索引的临时文件。LinkStream 不下载。
+    # on_progress 反映主轨进度（0-100）；封面可并行下载但不计入
     # 有进度时：先判断非 None；若返回 awaitable 则 await
-    pct = 100  # TODO: 按主媒体 downloaded/total 计算 0–100
+    pct = 100  # TODO: 按主轨 downloaded/total 计算 0–100
     if on_progress is not None:
         result = on_progress(pct)
         if inspect.isawaitable(result):
             await result
-    return {"media_path": "/tmp/file.mp4"}
+    return {"streams": {"video": "/tmp/video.m4s", "audio": "/tmp/audio.m4s"}}
 
 # 在 async_setup_entry 中注册
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主媒体文件的字节比例；子任务是否结束以任务 `status` 为准。任务详情里的 `retry` live 态（`phase` / `attempt` 等）仅由内置下载器上报；插件 `download` 服务不会收到对应回调，`retry` 保持为 `null`。
+类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主轨的字节比例；子任务是否结束以任务 `status` 为准。核心会把插件返回的临时轨收成归档文件（DASH 音视频由核心用 ffmpeg 混流）。任务详情里的 `retry` live 态（`phase` / `attempt` 等）仅由内置下载器上报；插件 `download` 服务不会收到对应回调，`retry` 保持为 `null`。
 
 ---
 

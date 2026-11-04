@@ -234,17 +234,64 @@ Import from `contenthive.plugins.contracts`. Do not import from core internals.
 
 ### `ParserMediaInfo`
 
+The media item itself only answers “which attachment is this, and what kind is it”. Remote addresses live on typed `streams`. `source_key` is the stable identity inside a post; do not put rotating signed query parameters in it. `source_key_from_url()` takes the last path component without the query string.
+
 | Field | Type | Description |
 |-------|------|-------------|
-| `url` | `str` | Primary media URL |
-| `type` | `MediaType \| None` | `image`, `video`, `audio`, etc. |
+| `source_key` | `str` | Stable identity within the post. Must stay the same across re-parses. |
+| `type` | `MediaType` | `image`, `gif`, `video`, `audio`, `livephoto`, or `link` |
 | `title` | `str \| None` | Media title |
-| `cover` | `str \| None` | Thumbnail/cover URL |
-| `duration` | `int \| None` | Duration in seconds (video/audio) |
-| `width` | `int \| None` | Width in pixels |
-| `height` | `int \| None` | Height in pixels |
-| `url_fallbacks` | `list[str] \| None` | Fallback URLs if primary fails |
-| `cover_fallbacks` | `list[str] \| None` | Fallback cover URLs |
+| `duration` | `int \| None` | Parser-provided duration in milliseconds (reference until the file is probed) |
+| `width` | `int \| None` | Parser-provided width in pixels (reference until the file is probed) |
+| `height` | `int \| None` | Parser-provided height in pixels (reference until the file is probed) |
+| `streams` | `list[MediaStream]` | Typed streams discriminated by `role` |
+| `extra` | `dict[str, Any]` | Platform fields the core does not interpret (for example Bilibili `cid` / `qn`) |
+
+Core rejects a media item whose streams do not match `type`:
+
+| `type` | Required streams | Optional streams |
+|--------|------------------|------------------|
+| `image`, `gif` | one `ImageStream` | — |
+| `video` | one `VideoStream` | one `AudioStream` (DASH), one `CoverStream` |
+| `audio` | one `AudioStream` | one `CoverStream` |
+| `livephoto` | one `VideoStream` and one `ImageStream` (still frame) | — |
+| `link` | one `LinkStream` | one `CoverStream` |
+
+A live-photo still is part of the finished item, so it uses `ImageStream`, not `CoverStream`.
+
+### Stream types
+
+Every stream has `urls: list[str]` (at least one). `urls[0]` is the primary address; later entries are download fallbacks. `role` is the discriminator.
+
+| Class | `role` | Extra fields | Notes |
+|-------|--------|--------------|-------|
+| `ImageStream` | `image` | `width`, `height` | Still image, GIF, or live-photo still |
+| `VideoStream` | `video` | `codec`, `bandwidth`, `width`, `height`, `quality` | |
+| `AudioStream` | `audio` | `codec`, `bandwidth`, `quality`, `label` | `label` holds names such as FLAC or Dolby |
+| `CoverStream` | `cover` | — | Poster; not part of the finished file |
+| `LinkStream` | `link` | — | Stored URL only; never downloaded as a media file |
+
+```python
+from contenthive.plugins.contracts import (
+    CoverStream,
+    ParserMediaInfo,
+    VideoStream,
+    AudioStream,
+    MediaType,
+    source_key_from_url,
+)
+
+ParserMediaInfo(
+    source_key=source_key_from_url(video_url),
+    type=MediaType.VIDEO,
+    streams=[
+        VideoStream(urls=[video_url], width=3840, height=2160, quality="127"),
+        AudioStream(urls=[audio_url], label="FLAC"),
+        CoverStream(urls=[cover_url]),
+    ],
+    extra={"cid": 123, "qn": "127"},
+)
+```
 
 ### `ParserAuthorInfo`
 
@@ -329,20 +376,21 @@ from contenthive.plugins.contracts import ProgressCallback
 async def my_download(data: dict):
     media = data["media"]
     on_progress: ProgressCallback | None = data.get("on_progress")
-    # custom download logic (signed URLs, session cookies, etc.)
-    # on_progress reflects main media progress (0-100); cover may download
-    # in parallel but should not be counted
-    pct = 100  # TODO: compute 0–100 from main media downloaded/total
+    # Fetch each stream's bytes (signed URLs, session cookies, etc.).
+    # Return temporary files keyed by role. Do not mux or archive.
+    # on_progress reflects main-stream progress (0-100); cover may download
+    # in parallel but should not be counted. Link streams are not downloaded.
+    pct = 100  # TODO: compute 0–100 from main stream downloaded/total
     if on_progress is not None:
         result = on_progress(pct)
         if inspect.isawaitable(result):
             await result
-    return {"media_path": "/tmp/file.mp4"}
+    return {"streams": {"video": "/tmp/video.m4s", "audio": "/tmp/audio.m4s"}}
 
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin handle media fetching with custom logic (session cookies, signed URLs, etc.). Optional progress reporting uses `on_progress`: a `ProgressCallback` imported from `contenthive.plugins.contracts` (may be sync or async; guard for `None` and `await` when needed). Report main-media percent only; treat task `status` as the source of truth for completion. Live `retry` state on task details (`phase` / `attempt` / etc.) is emitted only by the built-in downloader; plugin `download` services do not receive a retry callback, so `retry` stays `null`.
+The core media pipeline checks for a `download` service before falling back to its built-in HTTP downloader. Registering a `download` service lets your plugin fetch bytes with custom logic (session cookies, signed URLs, etc.). Return `{streams: {role: temp_path}}` for the files you fetched; the core assembles them (including DASH video+audio mux with ffmpeg). Optional progress reporting uses `on_progress`: a `ProgressCallback` imported from `contenthive.plugins.contracts` (may be sync or async; guard for `None` and `await` when needed). Report main-stream percent only; treat task `status` as the source of truth for completion. Live `retry` state on task details (`phase` / `attempt` / etc.) is emitted only by the built-in downloader; plugin `download` services do not receive a retry callback, so `retry` stays `null`.
 
 ---
 

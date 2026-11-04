@@ -23,6 +23,7 @@ from contenthive.models.download import DownloadRetryInfo
 from contenthive.models.enumerates import (
     AuthorProfileAsset,
     MediaStatus,
+    MediaType,
     SubTaskResultStatus,
     TaskRole,
     TaskStatus,
@@ -963,15 +964,15 @@ class TaskService:
         Whether a MEDIA_DOWNLOAD sub task can skip the actual download.
 
         Evaluated at sub task execution time. Requires COMPLETED status and a
-        present main media file. If the parse result still advertises a cover
-        (or cover fallbacks), the local cover file must also exist — otherwise a
-        missing cover would never be retried.
+        present main media file unless the item is a link. If the parse result
+        still advertises a cover or live-photo still, the local cover file must
+        also exist — otherwise a missing cover would never be retried.
         """
         if existing.status != MediaStatus.COMPLETED:
             return False
-        if not media_service.media_file_exists(existing.media_path):
+        if media.type != MediaType.LINK and not media_service.media_file_exists(existing.media_path):
             return False
-        expects_cover = bool(media.cover) or bool(media.cover_fallbacks)
+        expects_cover = media.cover_file_stream() is not None
         return (not expects_cover) or media_service.media_file_exists(existing.cover_path)
 
     def _categorize_download_results(
@@ -1129,7 +1130,7 @@ class TaskService:
         params = parse_sub_task_parameters(sub_task.type, sub_task.parameters)
         if not isinstance(params, MediaDownloadSubParameters):
             error_msg = "Invalid MEDIA_DOWNLOAD parameters"
-            logger.error(f"[{sub_task.sub_task_id}] {error_msg}: {sub_task.parameters!r}")
+            logger.debug(f"[{sub_task.sub_task_id}] Skipping unreadable MEDIA_DOWNLOAD parameters")
             self.update_sub_task_status(sub_task.id, TaskStatus.FAILED, error_message=error_msg)
             result = MediaDownloadSubResult(status=SubTaskResultStatus.FAILED)
             self.update_sub_task_result(sub_task.id, result)
@@ -1142,11 +1143,12 @@ class TaskService:
 
             self.update_sub_task_status(sub_task.id, TaskStatus.RUNNING)
 
-            media_url = str(params.media.url)
             existing: MediaEntity | None = None
             try:
                 with ContentDAO() as content_dao:
-                    existing = content_dao.get_media_by_parse_result_url(params.parse_result_id, media_url)
+                    existing = content_dao.get_media_by_parse_result_source_key(
+                        params.parse_result_id, params.media.source_key
+                    )
             except Exception:
                 logger.exception(f"[{sub_task.sub_task_id}] Failed to load existing media for download skip check")
 
@@ -1178,15 +1180,11 @@ class TaskService:
                         content_dao.save_downloaded_media(
                             DownloadedMediaInfo(
                                 status=MediaStatus.FAILED,
-                                url=params.media.url,
+                                source_key=params.media.source_key,
                                 type=params.media.type,
                                 title=params.media.title,
-                                cover=params.media.cover,
-                                url_fallbacks=params.media.url_fallbacks or [],
-                                cover_fallbacks=params.media.cover_fallbacks or [],
-                                duration=params.media.duration,
-                                width=params.media.width,
-                                height=params.media.height,
+                                streams=list(params.media.streams),
+                                extra=dict(params.media.extra or {}),
                                 media_path=None,
                                 cover_path=None,
                             ),
@@ -1232,15 +1230,11 @@ class TaskService:
                     content_dao.save_downloaded_media(
                         DownloadedMediaInfo(
                             status=MediaStatus.FAILED,
-                            url=params.media.url,
+                            source_key=params.media.source_key,
                             type=params.media.type,
                             title=params.media.title,
-                            cover=params.media.cover,
-                            url_fallbacks=params.media.url_fallbacks or [],
-                            cover_fallbacks=params.media.cover_fallbacks or [],
-                            duration=params.media.duration,
-                            width=params.media.width,
-                            height=params.media.height,
+                            streams=list(params.media.streams),
+                            extra=dict(params.media.extra or {}),
                             media_path=None,
                             cover_path=None,
                         ),

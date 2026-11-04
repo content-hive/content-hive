@@ -7,6 +7,7 @@ import hashlib
 import mimetypes
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import ClassVar
 from urllib.parse import quote, unquote
@@ -22,9 +23,11 @@ from contenthive.models.download import DownloadRetryInfo
 from contenthive.models.enumerates import AuthorProfileAsset, DownloadRetryPhase, MediaStatus
 from contenthive.plugins.contracts import ParserMediaInfo
 from contenthive.plugins.manager import get_plugin_manager
+from contenthive.services.assemble import assemble_streams
 from contenthive.settings.store import get_settings
 from contenthive.utils.live_download import (
     BoundPercentProgress,
+    ByteProgressCallback,
     DownloadStateCallback,
     ProgressCallback,
     bind_percent_progress,
@@ -134,6 +137,8 @@ class MediaService:
         """
         save_dir = self._prepare_media_directory(platform, author, content_id)
         manager = get_plugin_manager()
+        temps: dict[str, Path] = {}
+        assembled_files: list[Path] = []
 
         try:
             if plugin_domain and manager and manager.has_service(plugin_domain, "download"):
@@ -146,42 +151,50 @@ class MediaService:
                         "on_progress": on_progress,
                     },
                 )
-                media_path, cover_path = self._move_plugin_download_result(
-                    save_dir=save_dir,
-                    plugin_result=plugin_result,
-                    media_index=media_index,
-                    media_url=media.url,
-                    media_cover=media.cover,
-                )
+                temps = self._temps_from_plugin_result(plugin_result)
             else:
                 logger.debug("Using built-in downloader")
-                media_urls = [media.url, *list(media.url_fallbacks or [])]
-                cover_urls = ([media.cover] if media.cover else []) + list(media.cover_fallbacks or [])
-                media_path, cover_path = await self._download_single_media(
-                    save_dir=save_dir,
-                    media_urls=media_urls,
-                    media_index=media_index,
-                    cover_urls=cover_urls,
+                temps = await self._download_streams_builtin(
+                    media,
                     on_progress=on_progress,
                     on_download_state=on_download_state,
                 )
+            assembled = await assemble_streams(media, temps)
+            temps = {}
+            assembled_files = [path for path in (assembled.media_path, assembled.cover_path) if path is not None]
+            media_path = (
+                self._move_to_save_dir(assembled.media_path, save_dir, media_index, "media", media.hash_url())
+                if assembled.media_path is not None
+                else None
+            )
+            cover_stream = media.cover_file_stream()
+            cover_path = (
+                self._move_to_save_dir(assembled.cover_path, save_dir, media_index, "cover", cover_stream.urls[0])
+                if assembled.cover_path is not None and cover_stream is not None
+                else None
+            )
         except Exception:
-            logger.exception(f"Failed to download media for content {content_id}: {media.url}")
+            for path in temps.values():
+                path.unlink(missing_ok=True)
+            for path in assembled_files:
+                path.unlink(missing_ok=True)
+            logger.exception(f"Failed to download media for content {content_id}: {media.source_key}")
             return None
 
         return DownloadedMediaInfo(
             status=MediaStatus.COMPLETED,
-            url=media.url,
+            source_key=media.source_key,
             type=media.type,
             title=media.title,
-            cover=media.cover,
-            url_fallbacks=media.url_fallbacks or [],
-            cover_fallbacks=media.cover_fallbacks or [],
-            duration=media.duration,
-            width=media.width,
-            height=media.height,
-            media_path=self._get_relative_media_path(media_path),
+            streams=list(media.streams),
+            extra=dict(media.extra or {}),
+            media_path=self._get_relative_media_path(media_path) if media_path else None,
+            media_duration=assembled.media_duration,
+            media_width=assembled.media_width,
+            media_height=assembled.media_height,
             cover_path=self._get_relative_media_path(cover_path) if cover_path else None,
+            cover_width=assembled.cover_width,
+            cover_height=assembled.cover_height,
         )
 
     def _prepare_media_directory(self, platform: str, author: str, content_id: str) -> Path:
@@ -265,103 +278,185 @@ class MediaService:
         await invoke_progress(on_progress, 100)
         return self._get_relative_media_path(result)
 
-    def _move_plugin_download_result(
+    def _temps_from_plugin_result(self, plugin_result: dict) -> dict[str, Path]:
+        """Validate plugin-returned per-role temporary files."""
+        raw = plugin_result.get("streams")
+        if not isinstance(raw, dict):
+            raise RuntimeError("Plugin download result missing 'streams'")
+        temps: dict[str, Path] = {}
+        for role, path in raw.items():
+            if not isinstance(role, str) or not role:
+                raise RuntimeError(f"Plugin returned invalid stream role: {role!r}")
+            validated = self._validate_plugin_temp_path(path)
+            if validated is None:
+                raise RuntimeError(f"Plugin returned empty path for stream {role}")
+            temps[role] = validated
+        return temps
+
+    async def _download_streams_builtin(
         self,
-        save_dir: Path,
-        plugin_result: dict,
-        media_index: int,
-        media_url: str,
-        media_cover: str | None,
-    ) -> tuple[Path, Path | None]:
-        """
-        Validate plugin-returned temporary file paths and move them into save_dir.
-
-        Args:
-            save_dir: Destination directory
-            plugin_result: Dict with keys "media_path" (Path) and optional "cover_path" (Path)
-            media_index: Media index used in the filename
-            media_url: Original media URL, used to compute filename hash
-            media_cover: Original cover URL, used to compute filename hash
-
-        Returns:
-            Tuple of (media_path, cover_path)
-        """
-        temp_media = self._validate_plugin_temp_path(plugin_result["media_path"])
-        temp_cover = self._validate_plugin_temp_path(plugin_result.get("cover_path"))
-
-        if temp_media is None:
-            raise RuntimeError("Plugin result missing required 'media_path'")
-        media_path = self._move_to_save_dir(temp_media, save_dir, media_index, "media", media_url)
-        cover_path = (
-            self._move_to_save_dir(temp_cover, save_dir, media_index, "cover", media_cover)
-            if temp_cover and media_cover
-            else None
-        )
-        return media_path, cover_path
-
-    async def _download_single_media(
-        self,
-        save_dir: Path,
-        media_urls: list[str],
-        media_index: int,
-        cover_urls: list[str],
+        media: ParserMediaInfo,
         on_progress: ProgressCallback | None = None,
         on_download_state: DownloadStateCallback | None = None,
-    ) -> tuple[Path, Path | None]:
-        """
-        Download media and optional cover concurrently into save_dir.
-        Each accepts a list of URLs; fallback order is handled inside _download_file.
+    ) -> dict[str, Path]:
+        """Download each downloadable stream to a temporary file."""
+        streams = media.downloadable_streams()
+        if not streams:
+            await invoke_progress(on_progress, 100)
+            return {}
 
-        Progress:
-        - Intermediate updates are media-only and emitted only when Content-Length
-          is known (0-99 via bind_percent_progress). Cover is downloaded in
-          parallel but not included.
-        - Per-attempt progress may drop after reset_attempt on retry / fallback.
-        - A final on_progress(100) is always emitted after downloads succeed,
-          even when Content-Length was unknown.
-        - on_download_state reports retry phase for the main media file only.
-
-        Returns:
-            Tuple of (media_path, cover_path)
-        """
         headers = {"User-Agent": get_settings().download.user_agent}
-        bound = bind_percent_progress(on_progress)
-        async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
-            tasks = [
-                self._download_file(
-                    session,
-                    media_urls,
-                    save_dir,
-                    media_index,
-                    "media",
-                    on_byte_progress=bound,
-                    on_progress=on_progress,
-                    on_download_state=on_download_state,
-                )
-            ]
-            if cover_urls:
-                tasks.append(
-                    self._download_file(
-                        session,
-                        cover_urls,
-                        save_dir,
-                        media_index,
-                        "cover",
+        progress_roles = {stream.role for stream in streams if stream.role != "cover"}
+        combined = _CombinedStreamProgress(on_progress) if len(progress_roles) > 1 else None
+        single = bind_percent_progress(on_progress) if combined is None else None
+
+        temps: dict[str, Path] = {}
+        try:
+            async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
+                tasks = []
+                roles: list[str] = []
+                for stream in streams:
+                    roles.append(stream.role)
+                    if combined is not None and stream.role != "cover":
+                        byte_progress = combined.bind(stream.role)
+                    elif stream.role != "cover":
+                        byte_progress = single
+                    else:
+                        byte_progress = None
+                    tasks.append(
+                        self._download_to_temp(
+                            session,
+                            stream.urls,
+                            on_byte_progress=byte_progress,
+                            on_progress=on_progress if stream.role != "cover" and combined is None else None,
+                            on_download_state=on_download_state if stream.role != "cover" else None,
+                        )
                     )
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            required_error: BaseException | None = None
+            for role, result in zip(roles, results, strict=True):
+                if isinstance(result, BaseException):
+                    if role == "cover":
+                        logger.warning(f"Cover download failed, skipping: {result}")
+                        continue
+                    if required_error is None:
+                        required_error = result
+                    continue
+                temps[role] = result
+            if required_error is not None:
+                raise required_error
+            await invoke_progress(on_progress, 100)
+            return temps
+        except Exception:
+            for path in temps.values():
+                path.unlink(missing_ok=True)
+            raise
+
+    async def _download_to_temp(
+        self,
+        session: aiohttp.ClientSession,
+        urls: list[str],
+        on_byte_progress: BoundPercentProgress | ByteProgressCallback | None = None,
+        on_progress: ProgressCallback | None = None,
+        on_download_state: DownloadStateCallback | None = None,
+    ) -> Path:
+        """Download a file to a temporary path with fallback URL support."""
+        last_error: Exception = Exception("No URLs provided")
+        download_max_retries = get_settings().download.max_retries
+        max_attempts = download_max_retries + 1
+        url_count = len(urls)
+
+        for url_index, url in enumerate(urls):
+            url_last_error: Exception = Exception("Unknown error")
+            for retry in range(max_attempts):
+                attempt = retry + 1
+                if attempt > 1 or url_index > 0:
+                    if isinstance(on_byte_progress, BoundPercentProgress):
+                        on_byte_progress.reset_attempt()
+                    await invoke_progress(on_progress, 0)
+
+                await invoke_download_state(
+                    on_download_state,
+                    DownloadRetryInfo(
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        url_index=url_index,
+                        url_count=url_count,
+                        phase=DownloadRetryPhase.DOWNLOADING,
+                    ),
                 )
-            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        media_result = results[0]
-        if isinstance(media_result, BaseException):
-            raise media_result
+                tmp_fd, tmp_path_str = tempfile.mkstemp()
+                os.close(tmp_fd)
+                tmp_path = Path(tmp_path_str)
+                try:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                        response.raise_for_status()
+                        first_chunk = await response.content.read(4096)
+                        if not first_chunk:
+                            raise aiohttp.ClientError("Empty response body")
 
-        cover_result = results[1] if cover_urls else None
-        if isinstance(cover_result, BaseException):
-            logger.warning(f"Cover download failed, skipping: {cover_result}")
-            cover_result = None
+                        total_size = response.content_length
+                        downloaded = len(first_chunk)
+                        await invoke_byte_progress(on_byte_progress, downloaded, total_size)
 
-        await invoke_progress(on_progress, 100)
-        return media_result, cover_result
+                        async with aiofiles.open(tmp_path, "wb") as f:
+                            await f.write(first_chunk)
+                            async for chunk in response.content.iter_chunked(65536):
+                                await f.write(chunk)
+                                downloaded += len(chunk)
+                                await invoke_byte_progress(on_byte_progress, downloaded, total_size)
+
+                        logger.debug(f"Downloaded stream from {url} -> {tmp_path}")
+                        return tmp_path
+                except aiohttp.ClientResponseError as e:
+                    tmp_path.unlink(missing_ok=True)
+                    url_last_error = e
+                    if 400 <= e.status < 500:
+                        break
+                except (TimeoutError, aiohttp.ClientError) as e:
+                    tmp_path.unlink(missing_ok=True)
+                    url_last_error = e
+                except Exception:
+                    tmp_path.unlink(missing_ok=True)
+                    raise
+
+                if retry < download_max_retries:
+                    wait = 2**retry
+                    logger.warning(
+                        f"Download attempt {attempt}/{max_attempts} "
+                        f"failed for {url}, retrying in {wait}s: {url_last_error}"
+                    )
+                    await invoke_download_state(
+                        on_download_state,
+                        DownloadRetryInfo(
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            url_index=url_index,
+                            url_count=url_count,
+                            phase=DownloadRetryPhase.RETRYING,
+                        ),
+                    )
+                    await asyncio.sleep(wait)
+
+            last_error = url_last_error
+            if url_index < url_count - 1:
+                logger.warning(
+                    f"Stream URL {url_index + 1}/{url_count} failed ({url}), trying fallback: {urls[url_index + 1]}"
+                )
+                await invoke_download_state(
+                    on_download_state,
+                    DownloadRetryInfo(
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        url_index=url_index,
+                        url_count=url_count,
+                        phase=DownloadRetryPhase.SWITCHING_URL,
+                    ),
+                )
+
+        raise last_error
 
     async def _download_file(
         self,
@@ -702,6 +797,36 @@ class MediaService:
         except Exception as e:
             logger.warning(f"Failed to delete content directory for {platform}/{author_uid}/{content_id}: {e}")
             return False
+
+
+class _CombinedStreamProgress:
+    """Map two-stream byte progress onto a single 0-99 percent callback."""
+
+    def __init__(self, on_progress: ProgressCallback | None):
+        self._on_progress = on_progress
+        self._lock = asyncio.Lock()
+        self._parts: dict[str, tuple[int, int | None]] = {}
+        self._last_pct = -1
+
+    def bind(self, part_id: str) -> ByteProgressCallback | None:
+        self._parts.setdefault(part_id, (0, None))
+        if self._on_progress is None:
+            return None
+
+        async def _report(downloaded: int, total: int | None) -> None:
+            async with self._lock:
+                self._parts[part_id] = (downloaded, total)
+                totals = [size for _, size in self._parts.values() if size]
+                if len(totals) != len(self._parts) or not totals:
+                    return
+                done = sum(size for size, _ in self._parts.values())
+                pct = min(99, int(done * 100 / sum(totals)))
+                if pct <= self._last_pct:
+                    return
+                self._last_pct = pct
+                await invoke_progress(self._on_progress, pct)
+
+        return _report
 
 
 media_service = MediaService()

@@ -20,6 +20,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
