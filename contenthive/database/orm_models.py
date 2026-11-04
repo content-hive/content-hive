@@ -170,23 +170,23 @@ class Media(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     parse_result_id: Mapped[int] = mapped_column(Integer, ForeignKey("parse_results.id"), nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    url: Mapped[str] = mapped_column(String, nullable=False)
+    source_key: Mapped[str] = mapped_column(String, nullable=False)
     type: Mapped[MediaType | None] = mapped_column(SQLEnum(MediaType), nullable=True)
     title: Mapped[str | None] = mapped_column(String, nullable=True)
-    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    cover: Mapped[str | None] = mapped_column(String, nullable=True)
-    url_fallbacks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    cover_fallbacks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    media_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    cover_path: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[MediaStatus] = mapped_column(
         SQLEnum(MediaStatus), default=MediaStatus.PENDING, nullable=False, index=True
     )
+    streams: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    extra: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    media_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    media_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    media_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    media_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cover_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cover_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Unique constraint: media URLs are unique within a single parse result
-    __table_args__ = (UniqueConstraint("parse_result_id", "url", name="uq_parse_result_url"),)
+    __table_args__ = (UniqueConstraint("parse_result_id", "source_key", name="uq_parse_result_source_key"),)
 
     # Relationships
     parse_result: Mapped["ParseResult"] = relationship("ParseResult", back_populates="media")
