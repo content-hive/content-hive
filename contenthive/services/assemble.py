@@ -214,7 +214,7 @@ def _oriented_size(tags: dict) -> tuple[int | None, int | None]:
         return None, None
     orientation = tags.get("Orientation")
     rotation = tags.get("Rotation")
-    if orientation in (6, 8) or rotation in (90, 270):
+    if orientation in (5, 6, 7, 8) or rotation in (90, 270):
         return height, width
     return width, height
 
