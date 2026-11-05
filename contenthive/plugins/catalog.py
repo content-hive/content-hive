@@ -13,6 +13,7 @@ plugin repository with its latest stable and pre-release GitHub Releases:
           "domain": "douyin",
           "name": "抖音",
           "description": "...",
+          "author": ["content-hive"],
           "license": "MIT",
           "min_core_version": "0.1.0",
           "requirements": ["gmssl>=3.2.2"],
@@ -27,7 +28,7 @@ plugin repository with its latest stable and pre-release GitHub Releases:
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
@@ -63,9 +64,10 @@ class CatalogPlugin:
     stable: CatalogRelease | None
     beta: CatalogRelease | None
     description: str | None = None
+    author: list[str] | None = None
     license: str | None = None
     min_core_version: str | None = None
-    requirements: list[str] = field(default_factory=list)
+    requirements: list[str] | None = None
     disclaimer: str | None = None
 
     def select_release(self, prerelease: bool) -> CatalogRelease | None:
@@ -85,6 +87,13 @@ def _optional_str(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     return value.strip() or None
+
+
+def _optional_str_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    items = [item.strip() for item in value if item.strip()]
+    return items or None
 
 
 def _parse_release(data: Any) -> CatalogRelease | None:
@@ -118,10 +127,6 @@ def _parse_plugin(data: Any) -> CatalogPlugin:
     if stable is None and beta is None:
         raise ValueError("no stable or beta release")
 
-    requirements = data.get("requirements") or []
-    if not isinstance(requirements, list) or not all(isinstance(r, str) for r in requirements):
-        raise ValueError("requirements must be a list of strings")
-
     return CatalogPlugin(
         repository=repository,
         domain=domain,
@@ -129,9 +134,10 @@ def _parse_plugin(data: Any) -> CatalogPlugin:
         stable=stable,
         beta=beta,
         description=_optional_str(data.get("description")),
+        author=_optional_str_list(data.get("author")),
         license=_optional_str(data.get("license")),
         min_core_version=_optional_str(data.get("min_core_version")),
-        requirements=requirements,
+        requirements=_optional_str_list(data.get("requirements")),
         disclaimer=_optional_str(data.get("disclaimer")),
     )
 
