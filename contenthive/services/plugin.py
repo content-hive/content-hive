@@ -275,6 +275,7 @@ class PluginService:
                     name=plugin.name,
                     version=release.version,
                     description=plugin.description,
+                    author=plugin.author,
                     disclaimer=plugin.disclaimer,
                     release_notes=release.release_notes,
                     repository=plugin.repository,
