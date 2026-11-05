@@ -76,15 +76,7 @@ async def assemble_streams(media: ParserMediaInfo, temps: dict[str, Path]) -> As
             raise RuntimeError(f"Missing archived media file for {media.type.value}")
 
         media_duration, media_width, media_height = await probe_media(media_path) if media_path else (None, None, None)
-        cover_width, cover_height = (None, None)
-        if cover_path is not None:
-            try:
-                _, cover_width, cover_height = await probe_media(cover_path)
-            except Exception:
-                if media.type == MediaType.LIVEPHOTO:
-                    raise
-                logger.warning(f"Cover probe failed, skipping: {cover_path}")
-                cover_path = None
+        _, cover_width, cover_height = await probe_media(cover_path) if cover_path else (None, None, None)
         return AssembledMedia(
             media_path=media_path,
             cover_path=cover_path,
@@ -126,33 +118,16 @@ async def mux_video_audio(video_path: Path, audio_path: Path) -> Path:
 
 
 async def probe_media(path: Path) -> tuple[int | None, int | None, int | None]:
-    """Return (duration_ms, width, height) for a local media file."""
+    """Return (duration_ms, width, height) for a local media file.
+
+    Dimensions and duration come from ExifTool. A failed probe leaves them
+    empty and logs a warning; the file is still archived.
+    """
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "ffprobe",
-            "-v",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            str(path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except FileNotFoundError as e:
-        raise RuntimeError("ffprobe is not available on PATH") from e
-    stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        detail = stderr.decode(errors="replace")[-2000:]
-        raise RuntimeError(f"ffprobe failed ({proc.returncode}): {detail}")
-    try:
-        payload = json.loads(stdout.decode())
-    except json.JSONDecodeError as e:
-        raise RuntimeError("ffprobe returned invalid JSON") from e
-    duration_ms = _duration_ms(payload.get("format") or {})
-    width, height = _first_frame_size(payload.get("streams") or [])
-    return duration_ms, width, height
+        return await _probe_with_exiftool(path)
+    except Exception as exc:
+        logger.warning(f"Media probe failed, leaving dimensions empty: {path}: {exc}")
+        return None, None, None
 
 
 async def _run_mux(video_path: Path, audio_path: Path, out_path: Path, *, copy_audio: bool) -> None:
@@ -188,12 +163,43 @@ async def _run_mux(video_path: Path, audio_path: Path, out_path: Path, *, copy_a
         raise RuntimeError(f"ffmpeg mux failed ({proc.returncode}): {detail}")
 
 
-def _duration_ms(fmt: dict) -> int | None:
-    raw = fmt.get("duration")
+async def _probe_with_exiftool(path: Path) -> tuple[int | None, int | None, int | None]:
+    """Return (duration_ms, width, height) from ExifTool."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "exiftool",
+            "-json",
+            "-n",
+            "-ImageWidth",
+            "-ImageHeight",
+            "-Duration",
+            "-Orientation",
+            "-Rotation",
+            str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("exiftool is not available on PATH") from exc
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        detail = stderr.decode(errors="replace")[-2000:]
+        raise RuntimeError(f"exiftool failed ({proc.returncode}): {detail}")
+    try:
+        payload = json.loads(stdout.decode())
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("exiftool returned invalid JSON") from exc
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+        raise RuntimeError("exiftool returned no metadata")
+    tags = payload[0]
+    return _seconds_to_ms(tags.get("Duration")), *_oriented_size(tags)
+
+
+def _seconds_to_ms(raw: object) -> int | None:
     if raw is None:
         return None
     try:
-        seconds = float(raw)
+        seconds = float(raw)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
     if seconds <= 0:
@@ -201,14 +207,23 @@ def _duration_ms(fmt: dict) -> int | None:
     return int(seconds * 1000)
 
 
-def _first_frame_size(streams: list) -> tuple[int | None, int | None]:
-    for stream in streams:
-        if not isinstance(stream, dict):
-            continue
-        width, height = stream.get("width"), stream.get("height")
-        if width and height:
-            try:
-                return int(width), int(height)
-            except (TypeError, ValueError):
-                continue
-    return None, None
+def _oriented_size(tags: dict) -> tuple[int | None, int | None]:
+    width = _positive_int(tags.get("ImageWidth"))
+    height = _positive_int(tags.get("ImageHeight"))
+    if width is None or height is None:
+        return None, None
+    orientation = tags.get("Orientation")
+    rotation = tags.get("Rotation")
+    if orientation in (5, 6, 7, 8) or rotation in (90, 270):
+        return height, width
+    return width, height
+
+
+def _positive_int(raw: object) -> int | None:
+    try:
+        value = int(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    return value
