@@ -16,6 +16,7 @@ from contenthive.models.plugin import (
     CheckUpdatesResponse,
     PluginConfigResponse,
     PluginListResponse,
+    PluginStatusResponse,
     ReloadResponse,
     SetPrereleaseRequest,
     SetPrereleaseResponse,
@@ -26,7 +27,7 @@ from contenthive.models.plugin import (
 )
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_admin_user
-from contenthive.services.plugin import ConfigValidationError, plugin_service
+from contenthive.services.plugin import ConfigValidationError, PluginNotEnabledError, plugin_service
 
 router_v1 = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 
@@ -115,6 +116,36 @@ async def check_plugin_updates(
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
 
+@router_v1.post("/{domain}/reload", response_model=APIResponse[OperationResult])
+async def reload_plugin(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[OperationResult]:
+    """Reload one plugin so it reads the current config.
+
+    Rejected when the in-memory state is disabled. The module stays loaded and no
+    entry is activated. Plugins that never finished setup are set up again.
+    """
+    try:
+        data = await plugin_service.reload(domain)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
+        ) from e
+    except PluginNotEnabledError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=ErrorDetail(code="PLUGIN_NOT_ENABLED", message=str(e)),
+        ) from e
+    except RuntimeError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="PLUGIN_RELOAD_FAILED", message=str(e)),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
 @router_v1.post("/{domain}/disable", response_model=APIResponse[OperationResult])
 async def disable_plugin(
     domain: str,
@@ -153,6 +184,27 @@ async def enable_plugin(
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(code="PLUGIN_ENABLE_FAILED", message=str(e)),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
+@router_v1.get("/{domain}", response_model=APIResponse[PluginStatusResponse])
+async def get_plugin(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[PluginStatusResponse]:
+    """Return state and metadata for one installed plugin."""
+    try:
+        data = plugin_service.get_plugin(domain)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
+        ) from e
+    except RuntimeError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         ) from e
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 

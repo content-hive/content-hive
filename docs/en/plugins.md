@@ -127,12 +127,10 @@ The `domain` must match the `domain` field in `manifest.json` and must contain o
 
 ```
 INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
-    ▲                         ▲                               │
-    │                         └──────── async_unload_entry ──┘
-    │
-    ├── (disabled: true in plugins.yaml)
-    │
-DISABLED                                                  FAILED
+                              │
+                              ├── disabled: true (module stays loaded, no entry)
+                              ▼
+                           DISABLED                         FAILED
 ```
 
 | State | Meaning |
@@ -140,7 +138,7 @@ DISABLED                                                  FAILED
 | `INSTALLED` | `manifest.json` loaded; module not yet imported |
 | `LOADED` | Module imported, dependencies installed; no active config entry |
 | `ENABLED` | Config entry active; plugin is running |
-| `DISABLED` | Marked `disabled: true` in `plugins.yaml`; skipped at startup |
+| `DISABLED` | Marked `disabled: true`. Module stays loaded after setup; no config entry is activated |
 | `FAILED` | An error occurred during setup or runtime |
 
 ---
@@ -421,7 +419,7 @@ curl -s -X PUT "$BASE_URL/v1/plugins/douyin/prerelease" \
 ```
 
 - With `prerelease: true`, the plugin uses the latest beta when it is newer than stable, otherwise stable.
-- The setting works before the plugin is installed and is kept when the plugin is deleted.
+- The setting works before the plugin is installed. Deleting the plugin removes it along with the rest of that plugin's config.
 - Turning it off does not downgrade an installed beta; the plugin updates again once a newer stable is released.
 - A plugin that only has beta releases shows `installable: false` in `/v1/plugins/available` until `prerelease` is enabled.
 

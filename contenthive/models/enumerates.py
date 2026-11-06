@@ -18,6 +18,7 @@ class OperationType(StrEnum):
     UPDATE = "update"
     ENABLE = "enable"
     DISABLE = "disable"
+    RELOAD = "reload"
 
 
 class TaskType(StrEnum):

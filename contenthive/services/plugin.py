@@ -20,6 +20,7 @@ from contenthive.models.plugin import (
     PluginConfigResponse,
     PluginInfo,
     PluginListResponse,
+    PluginStatusResponse,
     PluginUpdateInfo,
     ReloadResponse,
     SetPrereleaseResponse,
@@ -31,6 +32,7 @@ from contenthive.plugins.catalog import DOMAIN_PATTERN, CatalogError, fetch_cata
 from contenthive.plugins.config import (
     FRAMEWORK_KEYS,
     PRERELEASE_KEY,
+    get_plugin_config,
     get_prerelease_domains,
     plugin_get_config,
     plugin_save_config,
@@ -41,10 +43,11 @@ from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import (
     PluginEntryData,
     PluginManager,
+    PluginReloadResult,
     get_plugin_manager,
     is_plugin_update_available,
 )
-from contenthive.plugins.registry import PluginState
+from contenthive.plugins.registry import PluginRecord, PluginState
 
 
 class ConfigValidationError(Exception):
@@ -53,6 +56,10 @@ class ConfigValidationError(Exception):
     def __init__(self, errors: list[str]):
         self.errors = errors
         super().__init__("; ".join(errors))
+
+
+class PluginNotEnabledError(Exception):
+    """Raised when an operation requires the plugin to be enabled."""
 
 
 def _get_plugin_manager() -> PluginManager:
@@ -71,22 +78,21 @@ class PluginService:
     """
 
     async def reload_all(self) -> ReloadResponse:
-        """Hot-reload all discovered plugins without restarting the application.
+        """Hot-reload discovered plugins that are not disabled.
 
-        Each plugin is unloaded, its module cache cleared, and then re-setup
-        and re-enabled. Failures are captured per-domain and do not abort the
-        remaining reloads.
+        A plugin whose memory state is DISABLED is set up again and left disabled
+        even if setup fails, with no config entry. Failures are captured per-domain
+        and do not abort the remaining reloads.
 
         Returns:
-            ReloadResponse with per-domain reload outcome ("reloaded" / "failed" / "error: ...").
+            ReloadResponse with per-domain outcome (reloaded / disabled / failed / error: ...).
         """
         plugin_manager = _get_plugin_manager()
 
         results: dict[str, str] = {}
         for domain in list(plugin_manager.plugins.keys()):
             try:
-                success = await plugin_manager.async_reload(domain)
-                results[domain] = "reloaded" if success else "failed"
+                results[domain] = await plugin_manager.async_reload_domain(domain)
             except Exception as e:
                 results[domain] = f"error: {e!s}"
                 logger.exception(f"Failed to reload {domain}: {e}")
@@ -167,10 +173,12 @@ class PluginService:
         """Install or update plugins from their repositories' GitHub Releases.
 
         For each plugin, downloads the release on its track (stable, or beta when
-        prerelease is enabled), installs its ``plugin/`` directory, and then either
-        hot-reloads an existing plugin or activates a newly installed one.
-        Installed plugins are skipped when the selected release is not newer, so
-        turning off prerelease does not downgrade a newer beta.
+        prerelease is enabled), installs its ``plugin/`` directory, and then reloads
+        it. A disabled plugin stays disabled. A plugin that is not yet in memory is
+        registered from its manifest first; ``disabled: true`` in plugins.yaml is
+        copied into memory at that moment. Installed plugins are skipped when the
+        selected release is not newer, so turning off prerelease does not downgrade
+        a newer beta.
 
         Args:
             domains: Plugin domains to install or update. An empty list means every
@@ -225,22 +233,19 @@ class PluginService:
                 continue
 
             try:
-                if domain in plugin_manager.plugins:
-                    # Existing plugin: reload to pick up new files
-                    reloaded = await plugin_manager.async_reload(domain)
-                    if reloaded:
-                        updated.append(domain)
-                        plugin_manager._available_updates.pop(domain, None)
-                    else:
+                if domain not in plugin_manager.plugins:
+                    if not await plugin_manager.async_discover_domain(domain):
                         failed.append(domain)
+                        continue
+                    saved = get_plugin_config(domain)
+                    if isinstance(saved, dict) and saved.get("disabled", False):
+                        plugin_manager.plugins[domain].state = PluginState.DISABLED
+                outcome = await plugin_manager.async_reload_domain(domain)
+                if outcome == PluginReloadResult.FAILED:
+                    failed.append(domain)
                 else:
-                    # New plugin: discover → setup → enable
-                    activated = await plugin_manager.async_activate(domain)
-                    if activated:
-                        updated.append(domain)
-                        plugin_manager._available_updates.pop(domain, None)
-                    else:
-                        failed.append(domain)
+                    updated.append(domain)
+                    plugin_manager._available_updates.pop(domain, None)
             except Exception as e:
                 logger.exception(f"Failed to activate plugin {domain} after update: {e}")
                 failed.append(domain)
@@ -320,6 +325,25 @@ class PluginService:
 
         return SetPrereleaseResponse(domain=domain, prerelease=enabled)
 
+    def _to_plugin_info(
+        self,
+        plugin_manager: PluginManager,
+        domain: str,
+        record: PluginRecord,
+        prerelease_domains: set[str],
+    ) -> PluginInfo:
+        offer = plugin_manager._available_updates.get(domain)
+        return PluginInfo(
+            state=record.state,
+            version=record.version,
+            name=record.name,
+            error=record.error if record.state == PluginState.FAILED else None,
+            update_available=offer.latest_version if offer is not None else None,
+            description=record.description,
+            author=record.author,
+            prerelease=domain in prerelease_domains,
+        )
+
     def list_plugins(self) -> PluginListResponse:
         """Return metadata and runtime state for all discovered plugins.
 
@@ -334,28 +358,38 @@ class PluginService:
         if plugin_manager:
             prerelease_domains = get_prerelease_domains()
             for domain, record in plugin_manager.plugins.items():
-                plugin_status[domain] = PluginInfo(
-                    state=record.state,
-                    version=record.version,
-                    name=record.name,
-                    error=record.error if record.state == PluginState.FAILED else None,
-                    update_available=(
-                        offer.latest_version
-                        if (offer := plugin_manager._available_updates.get(domain)) is not None
-                        else None
-                    ),
-                    description=record.description,
-                    author=record.author,
-                    prerelease=domain in prerelease_domains,
-                )
+                plugin_status[domain] = self._to_plugin_info(plugin_manager, domain, record, prerelease_domains)
 
         return PluginListResponse(plugins=plugin_status)
 
-    async def disable(self, domain: str) -> OperationResult:
-        """Unload all active config entries for a plugin and mark it disabled.
+    def get_plugin(self, domain: str) -> PluginStatusResponse:
+        """Return metadata and runtime state for one installed plugin.
 
-        Persists ``disabled: true`` to plugins.yaml so the plugin is skipped
-        on next application startup.
+        Status fields match the entry ``list_plugins`` would return for this domain.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            PluginStatusResponse with domain plus state, version, name, error,
+            update_available, description, author, and prerelease.
+
+        Raises:
+            ValueError: If the domain is not found.
+            RuntimeError: If the plugin manager is not initialized.
+        """
+        plugin_manager = _get_plugin_manager()
+        record = plugin_manager.plugins.get(domain)
+        if record is None:
+            raise ValueError(f"Plugin '{domain}' not found")
+        info = self._to_plugin_info(plugin_manager, domain, record, get_prerelease_domains())
+        return PluginStatusResponse(domain=domain, **info.model_dump())
+
+    async def disable(self, domain: str) -> OperationResult:
+        """Unload active config entries and mark the plugin disabled.
+
+        The imported module stays loaded so CONFIG_SCHEMA can still be read.
+        Persists ``disabled: true`` to plugins.yaml. State stays DISABLED, not INSTALLED.
 
         Args:
             domain: Plugin domain identifier.
@@ -365,6 +399,7 @@ class PluginService:
 
         Raises:
             ValueError: If the domain is not found.
+            RuntimeError: If an entry fails to unload. Disabled state and the module are left unchanged.
         """
         plugin_manager = _get_plugin_manager()
         if domain not in plugin_manager.plugins:
@@ -372,7 +407,8 @@ class PluginService:
 
         entries = [entry for entry in plugin_manager.config_entries.values() if entry.domain == domain]
         for entry in entries:
-            await plugin_manager.async_unload_entry(entry.entry_id)
+            if not await plugin_manager.async_unload_entry(entry.entry_id):
+                raise RuntimeError(f"Plugin '{domain}' unload failed")
 
         plugin_manager.plugins[domain].state = PluginState.DISABLED
         set_plugin_field(domain, "disabled", True)
@@ -444,7 +480,7 @@ class PluginService:
 
         Raises:
             ValueError: If the domain is not found.
-            RuntimeError: If the plugin directory cannot be deleted.
+            RuntimeError: If an entry fails to unload, or the plugin directory cannot be deleted.
         """
         plugin_manager = _get_plugin_manager()
         if domain not in plugin_manager.plugins:
@@ -561,6 +597,42 @@ class PluginService:
         return UpdatePluginConfigResponse(
             domain=domain,
             settings=schema_class_to_setting_items(schema_cls, updated),
+        )
+
+    async def reload(self, domain: str) -> OperationResult:
+        """Reload one plugin so it reads the current config.
+
+        Rejected when the in-memory state is DISABLED. The module is set up again
+        and left DISABLED even if setup fails, with no config entry. Plugins with
+        an active entry are hot-reloaded. Plugins that never finished setup receive
+        schema defaults and a default entry from the saved config.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            OperationResult indicating success.
+
+        Raises:
+            ValueError: If the domain is not found.
+            PluginNotEnabledError: If the plugin is disabled.
+            RuntimeError: If setup, entry activation, or the plugin manager fails.
+        """
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        outcome = await plugin_manager.async_reload_domain(domain)
+        if outcome == PluginReloadResult.DISABLED:
+            raise PluginNotEnabledError(f"Plugin '{domain}' is not enabled")
+        if outcome == PluginReloadResult.FAILED:
+            raise RuntimeError(f"Plugin '{domain}' reload failed")
+
+        return OperationResult(
+            operation=OperationType.RELOAD,
+            id=domain,
+            success=True,
+            message=f"Plugin '{domain}' reloaded",
         )
 
 

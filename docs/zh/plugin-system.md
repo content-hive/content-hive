@@ -51,15 +51,13 @@ PluginState                manifest.json + Module Code
 
 ```
 INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
-    ▲                         ▲                               │
-    │                         └──────── async_unload_entry ──┘
-    │                                   （无其他活跃条目时）
-    │
-    ├── （plugins.yaml: disabled: true）
-    │
-DISABLED                                                  FAILED
-    │                                              （设置或运行时错误）
-    └── async_setup (enable API) ──> LOADED ──> ENABLED
+                              │            ▲                  │
+                              │            └─ async_unload_entry
+                              │               （模块保持加载）
+                              ▼
+                           DISABLED ── enable: async_setup + async_setup_entry ──> ENABLED
+
+FAILED  （设置或运行时错误）
 ```
 
 | 状态 | 含义 | 模块是否加载 |
@@ -67,7 +65,7 @@ DISABLED                                                  FAILED
 | `INSTALLED` | `manifest.json` 已加载，模块尚未导入 | 否 |
 | `LOADED` | 模块已导入，依赖已安装，等待配置条目激活 | 是 |
 | `ENABLED` | 配置条目已激活，插件正在运行 | 是 |
-| `DISABLED` | `plugins.yaml` 标记 `disabled: true`，启动时跳过 | 否 |
+| `DISABLED` | 标记 `disabled: true`。setup 之后模块仍加载，不激活 entry | 是 |
 | `FAILED` | 设置或运行时发生错误 | 可能 |
 
 状态转移严格受 PluginManager 控制，外部只能通过 API 触发（enable / disable / reload / delete）。
@@ -170,13 +168,15 @@ PluginEntryData {
 | 方法 | 说明 |
 |------|------|
 | `async_discover()` | 并发扫描 `plugins/` 目录，读取所有 `manifest.json`，创建 `PluginRecord`（state=INSTALLED）|
-| `async_setup(domain)` | 安装依赖（线程池执行 `uv pip install`）→ 动态导入模块 → 调用 `async_setup(context)` → state=LOADED |
+| `async_setup(domain)` | 安装依赖并导入模块 → 按 `CONFIG_SCHEMA` 补上尚未写入的默认配置 → 调用 `async_setup(context)` → state=LOADED |
 | `async_setup_entry(entry)` | 调用插件的 `async_setup_entry(context, entry)` → 存储条目 → state=ENABLED |
 | `async_forward_entry_setup(entry, platform)` | 加载平台子模块（如 `parser.py`），以 `contenthive_plugin_{domain}.{platform}` 注入 `sys.modules`，调用平台的 `async_setup_entry` |
 | `async_unload_entry(entry_id)` | 调用插件的 `async_unload_entry` → 删除条目 → 若无其他活跃条目则 state=LOADED |
-| `async_delete(domain)` | 卸载所有条目 → 从注册表移除 → 删除磁盘目录 |
-| `async_reload(domain)` | 卸载 → 清除 `sys.modules` 缓存 → 重置为 INSTALLED → 重新 setup + setup_entry |
-| `async_activate(domain)` | 首次激活新安装插件：discover → setup → setup_entry |
+| `async_delete(domain)` | 卸载所有条目 → 从注册表移除 → 删除磁盘目录。unload 失败则中止，不丢弃 module、不删除目录 |
+| `async_reload(domain)` | 卸载 → 清除 `sys.modules` 缓存 → 重置为 INSTALLED → 重新 setup，再用 `plugins.yaml` 里的配置执行 `setup_entry`。unload 失败则中止，不清除 module |
+| `async_reload_domain(domain)` | 重载一个已在内存里的插件。DISABLED 会重新 setup，setup 失败也保持 DISABLED，不创建 entry。否则没有 entry 时用已保存的配置创建默认 entry |
+| `async_discover_domain(domain)` | 读取一个已安装插件的 `manifest.json`，注册为 INSTALLED。不加载模块 |
+| `unload_disabled_module(domain)` | 卸掉已导入的模块并重新读 manifest。状态保持 DISABLED，不执行 setup |
 | `async_check_updates(catalog=None)` | 仅拉取插件目录，按各插件的发布轨道（stable 或 beta）选版本，比较后缓存更新信息（含 `release_notes`） |
 | `has_installed_plugin_updates()` | 已安装插件是否落后于其轨道上的目录版本。health 的 `plugin_updates_available` 只反映此项；未安装插件走 `/v1/plugins/available` |
 | `register_service(domain, service, callback)` | 注册命名服务 |
@@ -185,10 +185,12 @@ PluginEntryData {
 **热重载实现细节**（`async_reload`）：
 
 ```
-1. async_unload_entry（卸载所有活跃 entry）
+1. async_unload_entry（卸载所有活跃 entry）。任一 unload 失败则返回 false，不清除 module
 2. 清除 sys.modules 中的 plugin_{domain} 和 contenthive_plugin_{domain}.* 缓存
 3. 将 record 重置为 INSTALLED
-4. async_setup(config) + async_setup_entry
+4. async_setup
+5. 从 plugins.yaml 刷新每个 entry 的 data（去掉框架保留键），再 async_setup_entry。
+   某个 entry 失败不会跳过其余 entry。setup 或任一 entry 失败时返回 false。
 ```
 
 ---
@@ -254,7 +256,7 @@ youtube_parser:
 ```
 
 - `disabled` 和 `prerelease` 是框架保留字段（`FRAMEWORK_KEYS`），其余字段为插件专属配置
-- `prerelease: true` 表示该插件安装和更新到 beta 版本；可以在安装前设置，删除插件时会保留
+- `prerelease: true` 表示该插件安装和更新到 beta 版本；可以在安装前设置。删除插件时会去掉整块配置，包括 `prerelease`
 - **原子写入**：`tempfile.mkstemp` + `Path.replace`，在 `_config_lock` 线程锁内执行，保证并发安全
 
 | 函数 | 说明 |
@@ -263,9 +265,10 @@ youtube_parser:
 | `save_plugins_config(config)` | 原子写回 `plugins.yaml` |
 | `get_plugin_config(domain)` | 获取单个插件配置块 |
 | `set_plugin_field(domain, key, value)` | 加锁设置单个字段并持久化 |
-| `remove_plugin_config(domain)` | 删除插件配置块，保留 `prerelease: true`（插件删除时调用）|
+| `remove_plugin_config(domain)` | 删除插件的整块配置，包括 `prerelease`（插件删除时调用）|
 | `get_prerelease_domains()` | 返回跟踪预发布版的插件 domain |
 | `strip_framework_keys(cfg)` | 过滤掉框架内置键 |
+| `plugin_entry_data(domain)` | 给 config entry 用的已保存配置，不含框架保留键 |
 | `plugin_get_config(domain, schema_cls)` | 获取配置并反序列化为 `PluginConfigSchema` 子类实例 |
 | `plugin_save_config(domain, config)` | 序列化 `PluginConfigSchema` 实例并原子写入 |
 
@@ -281,8 +284,10 @@ youtube_parser:
 3. async_check_updates()   轻量检查插件目录，日志记录可用更新和新插件（不自动安装）
 4. 读取 plugins.yaml
 5. for each plugin:
-   ├── [disabled: true] → state = DISABLED，跳过
-   └── async_setup(config) + async_setup_entry
+   ├── async_setup
+   ├── [setup 失败] → 状态保持 FAILED
+   ├── [disabled: true] → state = DISABLED，模块保持加载，不建 entry
+   └── async_setup_entry
 6. 汇总日志：X/Y enabled
 ```
 
@@ -301,14 +306,15 @@ youtube_parser:
 | `list_plugins()` | 返回所有已发现插件的状态、版本、错误信息及更新可用性 |
 | `list_available()` | 拉取插件目录，合并本地安装状态和发布轨道，返回目录中所有插件 |
 | `check_updates()` | 按各插件的发布轨道查询目录版本，返回各插件当前版本与最新版本 |
-| `update_plugins(domains)` | 从插件的 GitHub Release 安装/更新插件；已有插件热重载，新插件直接激活 |
+| `update_plugins(domains)` | 从插件的 GitHub Release 安装或更新，然后重载。禁用的插件保持 DISABLED。新插件先从 manifest 注册进内存 |
 | `set_prerelease(domain, enabled)` | 把 `prerelease` 写入 `plugins.yaml`，并刷新缓存的更新信息 |
 | `enable(domain)` | 清除禁用标记，动态加载并激活插件 |
-| `disable(domain)` | 卸载插件并在 `plugins.yaml` 中写入 `disabled: true` |
-| `delete(domain)` | 卸载 + 从注册表移除 + 删除磁盘目录 + 清理 `plugins.yaml` |
-| `reload_all()` | 热重载所有插件 |
+| `disable(domain)` | 卸掉 entry，并在 `plugins.yaml` 中写入 `disabled: true`。模块保持加载。状态保持 DISABLED。unload 失败则中止，不改 disabled 状态、不丢弃 module |
+| `delete(domain)` | 卸载模块 + 从注册表移除 + 删除磁盘目录 + 删掉 `plugins.yaml` 里的整块配置，包括 `prerelease`。unload 失败则中止，不丢弃 module、不删除目录 |
+| `reload_all()` | 重载每个插件。禁用的插件会重新 setup，setup 失败也保持 DISABLED 且没有 entry，结果为 `disabled` |
+| `reload(domain)` | 热重载一个插件。内存状态为 DISABLED 时，setup 失败也保持 DISABLED、不建 entry，并返回 409 `PLUGIN_NOT_ENABLED`。已有 entry 会带上已保存的配置重新加载；没有 entry 时用已保存的配置创建默认 entry。unload 失败则中止，不丢弃 module。失败返回 500 `PLUGIN_RELOAD_FAILED` |
 | `get_plugin_settings(domain)` | 读取 `CONFIG_SCHEMA`，返回字段列表及当前配置值 |
-| `update_plugin_settings(domain, body)` | 校验并持久化插件配置（支持部分更新，严格类型检查）|
+| `update_plugin_settings(domain, body)` | 校验并持久化插件配置（支持部分更新，严格类型检查） |
 
 **`update_plugin_settings` 校验规则**：
 - 框架保留键（`disabled`、`prerelease`）被拒绝，返回 400
@@ -327,12 +333,14 @@ youtube_parser:
 | `GET` | `/v1/plugins/` | 列出所有本地已发现的插件及其状态 |
 | `GET` | `/v1/plugins/available` | 列出插件目录中的所有插件（含未安装的），带 `prerelease` 和 `installable` |
 | `POST` | `/v1/plugins/reload` | 热重载所有插件 |
+| `POST` | `/v1/plugins/{domain}/reload` | 热重载指定插件。未启用返回 409 `PLUGIN_NOT_ENABLED`；重载失败返回 500 `PLUGIN_RELOAD_FAILED` |
 | `POST` | `/v1/plugins/check-config` | 校验所有插件 manifest 的必填字段 |
 | `GET` | `/v1/plugins/check-updates` | 检查各插件是否有新版本 |
 | `POST` | `/v1/plugins/update` | 从插件的 GitHub Release 安装/更新插件 |
 | `PUT` | `/v1/plugins/{domain}/prerelease` | 请求体 `{ "enabled": true }`。响应为 `{ "domain", "prerelease" }`，返回保存后的开关。插件未安装也可以设置 |
 | `POST` | `/v1/plugins/{domain}/enable` | 启用指定插件 |
 | `POST` | `/v1/plugins/{domain}/disable` | 禁用指定插件 |
+| `GET` | `/v1/plugins/{domain}` | 获取一个已安装插件的状态。响应含 `domain`，以及与列表相同的 `state`、`version`、`name`、`error`、`update_available`、`description`、`author`、`prerelease`。未安装返回 404 `PLUGIN_NOT_FOUND` |
 | `DELETE` | `/v1/plugins/{domain}` | 删除插件（卸载 + 删除文件）|
 | `GET` | `/v1/plugins/{domain}/config` | 获取插件配置 Schema 及当前值 |
 | `PUT` | `/v1/plugins/{domain}/config` | 更新插件配置字段 |
@@ -372,13 +380,12 @@ POST /v1/plugins/update
       │   ├── 校验 plugin/manifest.json 的 domain 和 version
       │   └── 拷贝 plugin/ 到 PLUGINS_DIR/{domain}
       │
-      ├── 已有插件 → manager.async_reload(domain)
-      │   ├── async_unload_entry
-      │   ├── 清除 sys.modules 缓存
-      │   └── 重新 async_setup + async_setup_entry
+      ├── 已在内存或刚注册的插件 → manager.async_reload_domain(domain)
+      │   ├── 内存状态 DISABLED → async_setup，setup 失败也保持 DISABLED，不建 entry
+      │   └── 否则 → async_reload；没有 entry 时创建默认 entry
       │
-      └── 新插件 → manager.async_activate(domain)
-          └── discover → setup → setup_entry
+      └── 新插件，重载之前 → async_discover_domain(domain)
+          └── 把 plugins.yaml 的 disabled 写入内存，再 async_reload_domain
 ```
 
 ---

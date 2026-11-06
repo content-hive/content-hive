@@ -67,6 +67,20 @@ class PluginInfo(APIBaseModel):
     prerelease: bool = Field(False, description="Whether the plugin tracks pre-release (beta) versions")
 
 
+class PluginStatusResponse(APIBaseModel):
+    """Response for GET /v1/plugins/{domain}"""
+
+    domain: str = Field(..., description="Plugin domain identifier")
+    state: PluginState = Field(..., description="Plugin state")
+    version: str = Field(..., description="Plugin version")
+    name: str = Field(..., description="Plugin display name")
+    error: str | None = Field(None, description="Error message if plugin is in FAILED state")
+    update_available: str | None = Field(None, description="Latest version if an update is available, otherwise null")
+    description: str | None = Field(None, description="Plugin description")
+    author: list[str] | None = Field(None, description="Plugin author")
+    prerelease: bool = Field(False, description="Whether the plugin tracks pre-release (beta) versions")
+
+
 class PluginUpdateInfo(APIBaseModel):
     """Update status for a single plugin"""
 
@@ -88,7 +102,9 @@ class ReloadResponse(APIBaseModel):
     """Response model for plugin reload operation"""
 
     message: str = Field(..., description="Human-readable status message")
-    plugins: dict[str, str] = Field(..., description="Per-plugin reload result (reloaded / failed / error: ...)")
+    plugins: dict[str, str] = Field(
+        ..., description="Per-plugin reload result (reloaded / disabled / failed / error: ...)"
+    )
 
 
 class CheckConfigResponse(APIBaseModel):
