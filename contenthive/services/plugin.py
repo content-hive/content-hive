@@ -399,6 +399,7 @@ class PluginService:
 
         Raises:
             ValueError: If the domain is not found.
+            RuntimeError: If an entry fails to unload. Disabled state and the module are left unchanged.
         """
         plugin_manager = _get_plugin_manager()
         if domain not in plugin_manager.plugins:
@@ -406,7 +407,8 @@ class PluginService:
 
         entries = [entry for entry in plugin_manager.config_entries.values() if entry.domain == domain]
         for entry in entries:
-            await plugin_manager.async_unload_entry(entry.entry_id)
+            if not await plugin_manager.async_unload_entry(entry.entry_id):
+                raise RuntimeError(f"Plugin '{domain}' unload failed")
 
         plugin_manager.plugins[domain].state = PluginState.DISABLED
         set_plugin_field(domain, "disabled", True)
@@ -478,7 +480,7 @@ class PluginService:
 
         Raises:
             ValueError: If the domain is not found.
-            RuntimeError: If the plugin directory cannot be deleted.
+            RuntimeError: If an entry fails to unload, or the plugin directory cannot be deleted.
         """
         plugin_manager = _get_plugin_manager()
         if domain not in plugin_manager.plugins:

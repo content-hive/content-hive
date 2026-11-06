@@ -446,12 +446,14 @@ class PluginManager:
 
         Each entry's data is replaced from plugins.yaml before its setup callback.
         One entry failing to activate does not skip the remaining entries.
-        Returns False when setup fails or any entry fails to activate.
+        Returns False when unload fails, setup fails, or any entry fails to activate.
+        An unload failure returns before the module cache or instance is cleared.
         """
         entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
 
         for entry in entries:
-            await self.async_unload_entry(entry.entry_id)
+            if not await self.async_unload_entry(entry.entry_id):
+                return False
 
         self._clear_module_cache(domain)
 
@@ -552,7 +554,8 @@ class PluginManager:
 
         Raises:
             ValueError: If the domain is not found in the plugin registry.
-            RuntimeError: If the plugin directory cannot be deleted from disk.
+            RuntimeError: If an entry fails to unload, or the plugin directory cannot be deleted from disk.
+                An unload failure leaves the module and directory in place.
         """
         if domain not in self.plugins:
             raise ValueError(f"Plugin '{domain}' not found")
@@ -560,7 +563,8 @@ class PluginManager:
         # Unload all config entries
         entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
         for entry in entries:
-            await self.async_unload_entry(entry.entry_id)
+            if not await self.async_unload_entry(entry.entry_id):
+                raise RuntimeError(f"Plugin '{domain}' unload failed")
 
         self.unload_disabled_module(domain)
 

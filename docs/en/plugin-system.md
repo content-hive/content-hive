@@ -174,8 +174,8 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | `async_setup_entry(entry)` | Calls the plugin's `async_setup_entry(context, entry)` → stores entry → state=ENABLED |
 | `async_forward_entry_setup(entry, platform)` | Loads the platform submodule (e.g. `parser.py`), injects it into `sys.modules` as `contenthive_plugin_{domain}.{platform}`, calls the platform's `async_setup_entry` |
 | `async_unload_entry(entry_id)` | Calls the plugin's `async_unload_entry` → removes entry → state reverts to LOADED if no other active entries remain |
-| `async_delete(domain)` | Unloads all entries → removes from registry → deletes the plugin directory from disk |
-| `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup, then `setup_entry` with data reloaded from `plugins.yaml` |
+| `async_delete(domain)` | Unloads all entries → removes from registry → deletes the plugin directory from disk. Aborts before dropping the module or deleting the directory if unload fails |
+| `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup, then `setup_entry` with data reloaded from `plugins.yaml`. Aborts before clearing the module if unload fails |
 | `async_reload_domain(domain)` | Reloads one in-memory plugin. DISABLED is set up again and left disabled, with no entry. Otherwise a missing entry gets a default entry from the saved config |
 | `async_discover_domain(domain)` | Reads one installed plugin's `manifest.json` and registers it as INSTALLED. Does not set up the module |
 | `unload_disabled_module(domain)` | Drops the imported module and re-reads the manifest. State stays DISABLED; setup is not run |
@@ -187,7 +187,7 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 **Hot-reload implementation** (`async_reload`):
 
 ```
-1. async_unload_entry  (unload all active entries)
+1. async_unload_entry  (unload all active entries). Returns false if any unload fails, without clearing the module
 2. Clear sys.modules entries for plugin_{domain} and contenthive_plugin_{domain}.*
 3. Reset PluginRecord state to INSTALLED
 4. async_setup
@@ -310,10 +310,10 @@ Encapsulates plugin management operations for the HTTP router layer.
 | `update_plugins(domains)` | Installs or updates plugins from their GitHub Releases, then reloads each one. A disabled plugin stays disabled. A new plugin is registered from its manifest first |
 | `set_prerelease(domain, enabled)` | Writes `prerelease` to `plugins.yaml` and refreshes cached update offers |
 | `enable(domain)` | Clears disabled flag, dynamically loads and activates the plugin |
-| `disable(domain)` | Unloads entries and writes `disabled: true`. The module stays loaded. State stays DISABLED |
-| `delete(domain)` | Unloads the module + removes from registry + deletes from disk + removes the whole `plugins.yaml` block, including `prerelease` |
+| `disable(domain)` | Unloads entries and writes `disabled: true`. The module stays loaded. State stays DISABLED. Aborts without changing the disabled state or dropping the module if unload fails |
+| `delete(domain)` | Unloads the module + removes from registry + deletes from disk + removes the whole `plugins.yaml` block, including `prerelease`. Aborts without dropping the module or deleting the directory if unload fails |
 | `reload_all()` | Reloads every plugin. A disabled plugin is set up again, left DISABLED with no entry, and reported as `disabled` |
-| `reload(domain)` | Reloads one plugin. Memory state DISABLED returns 409 `PLUGIN_NOT_ENABLED` after setup, with no entry. Existing entries reload with the saved config. A plugin with no entry gets a default entry from the saved config. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
+| `reload(domain)` | Reloads one plugin. Memory state DISABLED returns 409 `PLUGIN_NOT_ENABLED` after setup, with no entry. Existing entries reload with the saved config. A plugin with no entry gets a default entry from the saved config. An unload failure aborts before dropping the module. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
 | `get_plugin_settings(domain)` | Reads `CONFIG_SCHEMA`; returns field list and current config values |
 | `update_plugin_settings(domain, body)` | Validates and persists plugin config (supports partial updates with strict type checking) |
 
