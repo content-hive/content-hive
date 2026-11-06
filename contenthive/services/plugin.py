@@ -55,6 +55,10 @@ class ConfigValidationError(Exception):
         super().__init__("; ".join(errors))
 
 
+class PluginNotEnabledError(Exception):
+    """Raised when an operation requires the plugin to be enabled."""
+
+
 def _get_plugin_manager() -> PluginManager:
     plugin_manager = get_plugin_manager()
     if not plugin_manager:
@@ -561,6 +565,51 @@ class PluginService:
         return UpdatePluginConfigResponse(
             domain=domain,
             settings=schema_class_to_setting_items(schema_cls, updated),
+        )
+
+    async def reload(self, domain: str) -> OperationResult:
+        """Reload one plugin so it reads the current config.
+
+        A disabled plugin is rejected. Plugins with an active entry are hot-reloaded.
+        Plugins that never finished setup (no entry, for example a missing required
+        cookie) are set up again.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            OperationResult indicating success.
+
+        Raises:
+            ValueError: If the domain is not found.
+            PluginNotEnabledError: If the plugin is disabled.
+            RuntimeError: If setup, entry activation, or the plugin manager fails.
+        """
+        plugin_manager = _get_plugin_manager()
+        if domain not in plugin_manager.plugins:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        record = plugin_manager.plugins[domain]
+        if record.state == PluginState.DISABLED:
+            raise PluginNotEnabledError(f"Plugin '{domain}' is not enabled")
+
+        entries = [entry for entry in plugin_manager.config_entries.values() if entry.domain == domain]
+        if entries:
+            reloaded = await plugin_manager.async_reload(domain)
+        elif await plugin_manager.async_setup(domain):
+            entry = PluginEntryData(entry_id=f"{domain}_default", domain=domain, data={})
+            reloaded = await plugin_manager.async_setup_entry(entry)
+        else:
+            reloaded = False
+
+        if not reloaded:
+            raise RuntimeError(f"Plugin '{domain}' reload failed")
+
+        return OperationResult(
+            operation=OperationType.RELOAD,
+            id=domain,
+            success=True,
+            message=f"Plugin '{domain}' reloaded",
         )
 
 

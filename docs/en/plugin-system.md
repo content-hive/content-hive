@@ -309,6 +309,7 @@ Encapsulates plugin management operations for the HTTP router layer.
 | `disable(domain)` | Unloads plugin and writes `disabled: true` to `plugins.yaml` |
 | `delete(domain)` | Unloads + removes from registry + deletes from disk + cleans up `plugins.yaml` |
 | `reload_all()` | Hot-reloads all plugins |
+| `reload(domain)` | Hot-reloads one plugin. A disabled plugin returns 409 `PLUGIN_NOT_ENABLED`. An existing config entry is unloaded and loaded again; a plugin with no entry is set up. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
 | `get_plugin_settings(domain)` | Reads `CONFIG_SCHEMA`; returns field list and current config values |
 | `update_plugin_settings(domain, body)` | Validates and persists plugin config (supports partial updates with strict type checking) |
 
@@ -329,6 +330,7 @@ All endpoints require admin privileges (Bearer Token). Route prefix: `/v1/plugin
 | `GET` | `/v1/plugins/` | List all locally discovered plugins and their state |
 | `GET` | `/v1/plugins/available` | List all plugins in the plugin catalog (including uninstalled), with `prerelease` and `installable` |
 | `POST` | `/v1/plugins/reload` | Hot-reload all plugins |
+| `POST` | `/v1/plugins/{domain}/reload` | Hot-reload one plugin. A disabled plugin returns 409 `PLUGIN_NOT_ENABLED`; a failed reload returns 500 `PLUGIN_RELOAD_FAILED` |
 | `POST` | `/v1/plugins/check-config` | Validate all plugin manifests for required fields |
 | `GET` | `/v1/plugins/check-updates` | Check whether newer versions are available |
 | `POST` | `/v1/plugins/update` | Install/update plugins from their GitHub Releases |

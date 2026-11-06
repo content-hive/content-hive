@@ -26,7 +26,7 @@ from contenthive.models.plugin import (
 )
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_admin_user
-from contenthive.services.plugin import ConfigValidationError, plugin_service
+from contenthive.services.plugin import ConfigValidationError, PluginNotEnabledError, plugin_service
 
 router_v1 = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 
@@ -111,6 +111,35 @@ async def check_plugin_updates(
                 code="UPDATE_CHECK_FAILED",
                 message=f"Failed to fetch the plugin catalog: {e}",
             ),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
+@router_v1.post("/{domain}/reload", response_model=APIResponse[OperationResult])
+async def reload_plugin(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[OperationResult]:
+    """Reload one plugin so it reads the current config.
+
+    A disabled plugin is rejected. Plugins that never finished setup are set up again.
+    """
+    try:
+        data = await plugin_service.reload(domain)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
+        ) from e
+    except PluginNotEnabledError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=ErrorDetail(code="PLUGIN_NOT_ENABLED", message=str(e)),
+        ) from e
+    except RuntimeError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="PLUGIN_RELOAD_FAILED", message=str(e)),
         ) from e
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 

@@ -307,8 +307,9 @@ youtube_parser:
 | `disable(domain)` | 卸载插件并在 `plugins.yaml` 中写入 `disabled: true` |
 | `delete(domain)` | 卸载 + 从注册表移除 + 删除磁盘目录 + 清理 `plugins.yaml` |
 | `reload_all()` | 热重载所有插件 |
+| `reload(domain)` | 热重载一个插件。未启用返回 409 `PLUGIN_NOT_ENABLED`。已有 config entry 时卸载再加载；没有 entry 时重新 setup。失败返回 500 `PLUGIN_RELOAD_FAILED` |
 | `get_plugin_settings(domain)` | 读取 `CONFIG_SCHEMA`，返回字段列表及当前配置值 |
-| `update_plugin_settings(domain, body)` | 校验并持久化插件配置（支持部分更新，严格类型检查）|
+| `update_plugin_settings(domain, body)` | 校验并持久化插件配置（支持部分更新，严格类型检查） |
 
 **`update_plugin_settings` 校验规则**：
 - 框架保留键（`disabled`、`prerelease`）被拒绝，返回 400
@@ -327,6 +328,7 @@ youtube_parser:
 | `GET` | `/v1/plugins/` | 列出所有本地已发现的插件及其状态 |
 | `GET` | `/v1/plugins/available` | 列出插件目录中的所有插件（含未安装的），带 `prerelease` 和 `installable` |
 | `POST` | `/v1/plugins/reload` | 热重载所有插件 |
+| `POST` | `/v1/plugins/{domain}/reload` | 热重载指定插件。未启用返回 409 `PLUGIN_NOT_ENABLED`；重载失败返回 500 `PLUGIN_RELOAD_FAILED` |
 | `POST` | `/v1/plugins/check-config` | 校验所有插件 manifest 的必填字段 |
 | `GET` | `/v1/plugins/check-updates` | 检查各插件是否有新版本 |
 | `POST` | `/v1/plugins/update` | 从插件的 GitHub Release 安装/更新插件 |

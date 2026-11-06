@@ -412,12 +412,14 @@ class PluginManager:
                 except Exception as e:
                     self.context.logger.warning(f"Plugins[Reload]: {domain} - Failed to re-read manifest: {e}")
 
-        if await self.async_setup(domain):
-            for entry in entries:
-                await self.async_setup_entry(entry)
-            return True
+        if not await self.async_setup(domain):
+            return False
 
-        return False
+        for entry in entries:
+            if not await self.async_setup_entry(entry):
+                return False
+
+        return True
 
     async def async_unload_platforms(self, entry: PluginEntryData, platforms: list[str]) -> bool:
         """
