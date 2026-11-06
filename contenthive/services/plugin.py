@@ -602,7 +602,7 @@ class PluginService:
 
         A disabled plugin is rejected. Plugins with an active entry are hot-reloaded.
         Plugins that never finished setup (no entry, for example a missing required
-        cookie) are set up again.
+        cookie) are reset from a failed state and set up again.
 
         Args:
             domain: Plugin domain identifier.
@@ -624,13 +624,10 @@ class PluginService:
             raise PluginNotEnabledError(f"Plugin '{domain}' is not enabled")
 
         entries = [entry for entry in plugin_manager.config_entries.values() if entry.domain == domain]
-        if entries:
-            reloaded = await plugin_manager.async_reload(domain)
-        elif await plugin_manager.async_setup(domain):
+        reloaded = await plugin_manager.async_reload(domain)
+        if reloaded and not entries:
             entry = PluginEntryData(entry_id=f"{domain}_default", domain=domain, data={})
             reloaded = await plugin_manager.async_setup_entry(entry)
-        else:
-            reloaded = False
 
         if not reloaded:
             raise RuntimeError(f"Plugin '{domain}' reload failed")
