@@ -123,8 +123,8 @@ async def reload_plugin(
 ) -> APIResponse[OperationResult]:
     """Reload one plugin so it reads the current config.
 
-    Rejected when the in-memory state is disabled. The imported module is dropped
-    and the plugin is not set up. Plugins that never finished setup are set up again.
+    Rejected when the in-memory state is disabled. The module stays loaded and no
+    entry is activated. Plugins that never finished setup are set up again.
     """
     try:
         data = await plugin_service.reload(domain)

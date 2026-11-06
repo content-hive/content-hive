@@ -127,10 +127,10 @@ plugins/
 
 ```
 INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
-    ▲                         ▲                               │
-    │                         └──────── async_unload_entry ──┘
-    │
-DISABLED                                                  FAILED
+                              │
+                              ├── disabled: true（模块保持加载，不建 entry）
+                              ▼
+                           DISABLED                         FAILED
 ```
 
 | 状态 | 含义 |
@@ -138,7 +138,7 @@ DISABLED                                                  FAILED
 | `INSTALLED` | `manifest.json` 已加载，模块尚未导入 |
 | `LOADED` | 模块已导入，依赖已安装，等待配置条目激活 |
 | `ENABLED` | 配置条目已激活，插件正在运行 |
-| `DISABLED` | `plugins.yaml` 中标记为 `disabled: true`，启动时跳过 |
+| `DISABLED` | 标记为 `disabled: true`。setup 之后模块仍加载，不激活 entry |
 | `FAILED` | 设置或运行时发生错误 |
 
 ---

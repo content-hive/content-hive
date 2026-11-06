@@ -53,15 +53,13 @@ PluginState                manifest.json + Module Code
 
 ```
 INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
-    ▲                         ▲                               │
-    │                         └──────── async_unload_entry ──┘
-    │                                   (when no other active entries)
-    │
-    ├── (plugins.yaml: disabled: true)
-    │
-DISABLED                                                  FAILED
-    │                                              (setup or runtime error)
-    └── async_setup (via enable API) ──> LOADED ──> ENABLED
+                              │            ▲                  │
+                              │            └─ async_unload_entry
+                              │               (module stays loaded)
+                              ▼
+                           DISABLED ── enable: async_setup + async_setup_entry ──> ENABLED
+
+FAILED  (setup or runtime error)
 ```
 
 | State | Meaning | Module loaded |
@@ -69,7 +67,7 @@ DISABLED                                                  FAILED
 | `INSTALLED` | `manifest.json` loaded; module not yet imported | No |
 | `LOADED` | Module imported, dependencies installed; no active config entry | Yes |
 | `ENABLED` | Config entry active; plugin is running | Yes |
-| `DISABLED` | Marked `disabled: true` in `plugins.yaml`; skipped at startup | No |
+| `DISABLED` | Marked `disabled: true`. Module is loaded after setup; no config entry is activated | Yes |
 | `FAILED` | An error occurred during setup or runtime | Maybe |
 
 State transitions are strictly controlled by `PluginManager`. External callers can only trigger them via API (enable / disable / reload / delete).
@@ -172,13 +170,13 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | Method | Description |
 |--------|-------------|
 | `async_discover()` | Concurrently scans `plugins/` directory, reads all `manifest.json` files, creates `PluginRecord` objects (state=INSTALLED) |
-| `async_setup(domain)` | Installs dependencies (runs `uv pip install` in a thread pool) → dynamically imports module → calls `async_setup(context)` → state=LOADED |
+| `async_setup(domain)` | Installs dependencies and imports the module → writes missing schema defaults → calls `async_setup(context)` → state=LOADED |
 | `async_setup_entry(entry)` | Calls the plugin's `async_setup_entry(context, entry)` → stores entry → state=ENABLED |
 | `async_forward_entry_setup(entry, platform)` | Loads the platform submodule (e.g. `parser.py`), injects it into `sys.modules` as `contenthive_plugin_{domain}.{platform}`, calls the platform's `async_setup_entry` |
 | `async_unload_entry(entry_id)` | Calls the plugin's `async_unload_entry` → removes entry → state reverts to LOADED if no other active entries remain |
 | `async_delete(domain)` | Unloads all entries → removes from registry → deletes the plugin directory from disk |
 | `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup, then `setup_entry` with data reloaded from `plugins.yaml` |
-| `async_reload_domain(domain)` | Reloads one in-memory plugin. DISABLED unloads the module and stays disabled. No entry gets schema defaults and a default entry |
+| `async_reload_domain(domain)` | Reloads one in-memory plugin. DISABLED is set up again and left disabled, with no entry. Otherwise a missing entry gets a default entry from the saved config |
 | `async_discover_domain(domain)` | Reads one installed plugin's `manifest.json` and registers it as INSTALLED. Does not set up the module |
 | `unload_disabled_module(domain)` | Drops the imported module and re-reads the manifest. State stays DISABLED; setup is not run |
 | `async_check_updates(catalog=None)` | Fetches only the plugin catalog, picks each plugin's release on its track (stable or beta), compares versions, caches update offers (including `release_notes`) |
@@ -288,8 +286,9 @@ youtube_parser:
 3. async_check_updates()   lightweight catalog check; logs available updates (no auto-install)
 4. Load plugins.yaml
 5. For each plugin:
-   ├── [disabled: true] → state = DISABLED, skip
-   └── async_setup(config) + async_setup_entry
+   ├── async_setup
+   ├── [disabled: true] → state = DISABLED, module stays loaded, no entry
+   └── async_setup_entry
 6. Summary log: X/Y enabled
 ```
 
@@ -311,10 +310,10 @@ Encapsulates plugin management operations for the HTTP router layer.
 | `update_plugins(domains)` | Installs or updates plugins from their GitHub Releases, then reloads each one. A disabled plugin stays disabled. A new plugin is registered from its manifest first |
 | `set_prerelease(domain, enabled)` | Writes `prerelease` to `plugins.yaml` and refreshes cached update offers |
 | `enable(domain)` | Clears disabled flag, dynamically loads and activates the plugin |
-| `disable(domain)` | Unloads entries and the imported module, then writes `disabled: true` to `plugins.yaml`. State stays DISABLED |
+| `disable(domain)` | Unloads entries and writes `disabled: true`. The module stays loaded. State stays DISABLED |
 | `delete(domain)` | Unloads the module + removes from registry + deletes from disk + removes the whole `plugins.yaml` block, including `prerelease` |
-| `reload_all()` | Reloads plugins that are not DISABLED. A disabled plugin is reported as `disabled` and is not set up |
-| `reload(domain)` | Reloads one plugin. Memory state DISABLED returns 409 `PLUGIN_NOT_ENABLED` after the imported module is dropped. Existing entries reload with the saved config. A plugin with no entry gets schema defaults and a default entry. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
+| `reload_all()` | Reloads every plugin. A disabled plugin is set up again, left DISABLED with no entry, and reported as `disabled` |
+| `reload(domain)` | Reloads one plugin. Memory state DISABLED returns 409 `PLUGIN_NOT_ENABLED` after setup, with no entry. Existing entries reload with the saved config. A plugin with no entry gets a default entry from the saved config. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
 | `get_plugin_settings(domain)` | Reads `CONFIG_SCHEMA`; returns field list and current config values |
 | `update_plugin_settings(domain, body)` | Validates and persists plugin config (supports partial updates with strict type checking) |
 
@@ -383,7 +382,7 @@ POST /v1/plugins/update
       │   └── Copy plugin/ to PLUGINS_DIR/{domain}
       │
       ├── Existing or newly registered plugin → manager.async_reload_domain(domain)
-      │   ├── Memory state DISABLED → unload module, stay DISABLED
+      │   ├── Memory state DISABLED → async_setup, stay DISABLED, no entry
       │   └── Otherwise → async_reload; create a default entry when none exists
       │
       └── New plugin, before reload → async_discover_domain(domain)

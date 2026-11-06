@@ -80,8 +80,8 @@ class PluginService:
     async def reload_all(self) -> ReloadResponse:
         """Hot-reload discovered plugins that are not disabled.
 
-        A plugin whose memory state is DISABLED keeps that state and drops its
-        imported module. Failures are captured per-domain and do not abort the
+        A plugin whose memory state is DISABLED is set up again and left disabled,
+        with no config entry. Failures are captured per-domain and do not abort the
         remaining reloads.
 
         Returns:
@@ -386,11 +386,10 @@ class PluginService:
         return PluginStatusResponse(domain=domain, **info.model_dump())
 
     async def disable(self, domain: str) -> OperationResult:
-        """Unload all active config entries for a plugin and mark it disabled.
+        """Unload active config entries and mark the plugin disabled.
 
-        Drops the imported module so memory matches a plugin skipped at startup.
-        Persists ``disabled: true`` to plugins.yaml so the plugin is skipped
-        on next application startup. State stays DISABLED, not INSTALLED.
+        The imported module stays loaded so CONFIG_SCHEMA can still be read.
+        Persists ``disabled: true`` to plugins.yaml. State stays DISABLED, not INSTALLED.
 
         Args:
             domain: Plugin domain identifier.
@@ -411,7 +410,6 @@ class PluginService:
 
         plugin_manager.plugins[domain].state = PluginState.DISABLED
         set_plugin_field(domain, "disabled", True)
-        plugin_manager.unload_disabled_module(domain)
 
         return OperationResult(
             operation=OperationType.DISABLE,
@@ -602,11 +600,10 @@ class PluginService:
     async def reload(self, domain: str) -> OperationResult:
         """Reload one plugin so it reads the current config.
 
-        Rejected when the in-memory state is DISABLED. That plugin's imported
-        module is dropped and it is not set up. Plugins with an active entry are
-        hot-reloaded. Plugins that never finished setup (no entry, for example a
-        missing required cookie) receive schema defaults and a default entry from
-        the saved config.
+        Rejected when the in-memory state is DISABLED. The module is set up again
+        and left disabled, with no config entry. Plugins with an active entry are
+        hot-reloaded. Plugins that never finished setup receive schema defaults and
+        a default entry from the saved config.
 
         Args:
             domain: Plugin domain identifier.

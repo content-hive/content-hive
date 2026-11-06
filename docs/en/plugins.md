@@ -127,12 +127,10 @@ The `domain` must match the `domain` field in `manifest.json` and must contain o
 
 ```
 INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
-    ▲                         ▲                               │
-    │                         └──────── async_unload_entry ──┘
-    │
-    ├── (disabled: true in plugins.yaml)
-    │
-DISABLED                                                  FAILED
+                              │
+                              ├── disabled: true (module stays loaded, no entry)
+                              ▼
+                           DISABLED                         FAILED
 ```
 
 | State | Meaning |
@@ -140,7 +138,7 @@ DISABLED                                                  FAILED
 | `INSTALLED` | `manifest.json` loaded; module not yet imported |
 | `LOADED` | Module imported, dependencies installed; no active config entry |
 | `ENABLED` | Config entry active; plugin is running |
-| `DISABLED` | Marked `disabled: true` in `plugins.yaml`; skipped at startup |
+| `DISABLED` | Marked `disabled: true`. Module stays loaded after setup; no config entry is activated |
 | `FAILED` | An error occurred during setup or runtime |
 
 ---

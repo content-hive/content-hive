@@ -140,7 +140,7 @@ class PluginManager:
     async def async_setup(self, domain: str) -> bool:
         """
         Setup plugin from configuration (HA-style).
-        Calls the plugin module's async_setup function.
+        Writes missing schema defaults, then calls the plugin module's async_setup function.
         """
         record = self.plugins.get(domain)
         if not record:
@@ -163,6 +163,10 @@ class PluginManager:
                 return False
 
             record.instance = module  # Store module, not class instance
+
+            schema_cls = record.config_schema
+            if schema_cls is not None:
+                init_plugin_config_defaults(domain, schema_cls)
 
             # Call module-level async_setup function
             if hasattr(module, "async_setup"):
@@ -408,11 +412,12 @@ class PluginManager:
         record.state = PluginState.DISABLED
 
     async def async_reload_domain(self, domain: str) -> PluginReloadResult:
-        """Reload one in-memory plugin, or leave it disabled.
+        """Reload one in-memory plugin.
 
-        A disabled plugin drops its imported module and is not set up. A plugin
-        with no config entry receives schema defaults and a default entry built
-        from the saved config.
+        A disabled plugin is set up again so its CONFIG_SCHEMA stays available,
+        then left DISABLED with no config entry. A plugin with no config entry
+        receives a default entry built from the saved config. Schema defaults
+        are written by async_setup.
         """
         record = self.plugins.get(domain)
         if record is None:
@@ -420,14 +425,14 @@ class PluginManager:
 
         if record.state == PluginState.DISABLED:
             self.unload_disabled_module(domain)
+            if not await self.async_setup(domain):
+                return PluginReloadResult.FAILED
+            self.plugins[domain].state = PluginState.DISABLED
             return PluginReloadResult.DISABLED
 
         entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
         reloaded = await self.async_reload(domain)
         if reloaded and not entries:
-            schema_cls = self.plugins[domain].config_schema
-            if schema_cls is not None:
-                init_plugin_config_defaults(domain, schema_cls)
             entry = PluginEntryData(
                 entry_id=f"{domain}_default",
                 domain=domain,

@@ -1,7 +1,6 @@
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.plugins.config import (
-    init_plugin_config_defaults,
     load_plugins_config,
     strip_framework_keys,
 )
@@ -63,40 +62,31 @@ async def load_plugins_on_startup():
     except Exception:
         logger.warning("Failed to check for plugin updates from the plugin catalog", exc_info=True)
 
-    # Setup and enable plugins
+    # Setup every discovered plugin so CONFIG_SCHEMA is available, then activate
+    # the ones that are not disabled.
     plugins_config = load_plugins_config()
     for domain in plugin_manager.plugins:
         plugin_cfg = plugins_config.get(domain, {})
+        disabled = bool(plugin_cfg.get("disabled", False))
 
-        if plugin_cfg.get("disabled", False):
-            plugin_manager.plugins[domain].state = PluginState.DISABLED
-            logger.info(f"Plugin skipped (disabled): {domain}")
-            continue
-
-        # Setup plugin (load module, install dependencies)
         success = await plugin_manager.async_setup(domain)
-
         if not success:
             logger.warning(f"Plugin setup failed: {domain}")
             continue
 
-        # Write schema defaults to plugins.yaml for any fields not yet present
-        schema_cls = plugin_manager.plugins[domain].config_schema
-        if schema_cls:
-            init_plugin_config_defaults(domain, schema_cls)
-            plugin_cfg = load_plugins_config().get(domain, {})
+        if disabled:
+            plugin_manager.plugins[domain].state = PluginState.DISABLED
+            logger.info(f"Plugin loaded but not enabled (disabled): {domain}")
+            continue
 
-        # Create config entry
+        plugin_cfg = load_plugins_config().get(domain, {})
         config = strip_framework_keys(plugin_cfg)
         entry = PluginEntryData(
             entry_id=f"{domain}_default",
             domain=domain,
             data=config,
         )
-
-        # Setup entry (enable plugin)
         success = await plugin_manager.async_setup_entry(entry)
-
         if success:
             logger.debug(f"Plugin enabled: {domain}")
         else:
