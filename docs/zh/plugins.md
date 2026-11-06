@@ -421,7 +421,7 @@ curl -s -X PUT "$BASE_URL/v1/plugins/douyin/prerelease" \
 ```
 
 - 打开 `prerelease` 后，beta 比稳定版新时使用 beta，否则使用稳定版。
-- 可以在插件安装前设置；删除插件时这个设置会保留。
+- 可以在插件安装前设置。删除插件时，这个设置会和该插件的其他配置一起被删掉。
 - 关闭后不会把已安装的 beta 降级；等有更新的稳定版发布后才会再次提示更新。
 - 只有 beta 版本的插件，在打开 `prerelease` 之前，`/v1/plugins/available` 中显示 `installable: false`。
 

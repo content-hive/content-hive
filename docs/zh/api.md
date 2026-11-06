@@ -91,7 +91,7 @@ curl -s "$BASE_URL/v1/system/health"
 | `INVALID_CURSOR` | `400` | `/v1/task/parser/cursor`、`/v1/system/logs` | 游标格式错误或已失效；从第一页重新开始 |
 | `PLUGIN_NOT_FOUND` | `404` | `/v1/plugins/{domain}/*` | 指定插件未安装 |
 | `CONFIG_VALIDATION_FAILED` | `400` | `/v1/plugins/{domain}/config` | 提交的插件配置不符合 Schema |
-| `PLUGIN_NOT_ENABLED` | `409` | `/v1/plugins/{domain}/reload` | 插件未启用，不能重载；先启用插件，已保存的配置会在启用时生效 |
+| `PLUGIN_NOT_ENABLED` | `409` | `/v1/plugins/{domain}/reload` | 插件处于禁用，不能重载；先启用插件，已保存的配置会在启用时生效 |
 | `PLUGIN_RELOAD_FAILED` | `500` | `/v1/plugins/{domain}/reload` | 插件重载失败；检查插件日志和配置项 |
 | `STORAGE_STATUS_FAILED` | `500` | `/v1/system/storage` | 存储统计采集失败；检查文件系统与日志 |
 | `INVALID_TIME_RANGE` | `400` | `/v1/system/logs` | `from` 必须早于 `to` |

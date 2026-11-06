@@ -32,6 +32,7 @@ from contenthive.plugins.catalog import DOMAIN_PATTERN, CatalogError, fetch_cata
 from contenthive.plugins.config import (
     FRAMEWORK_KEYS,
     PRERELEASE_KEY,
+    get_plugin_config,
     get_prerelease_domains,
     plugin_get_config,
     plugin_save_config,
@@ -42,6 +43,7 @@ from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.manager import (
     PluginEntryData,
     PluginManager,
+    PluginReloadResult,
     get_plugin_manager,
     is_plugin_update_available,
 )
@@ -76,22 +78,21 @@ class PluginService:
     """
 
     async def reload_all(self) -> ReloadResponse:
-        """Hot-reload all discovered plugins without restarting the application.
+        """Hot-reload discovered plugins that are not disabled.
 
-        Each plugin is unloaded, its module cache cleared, and then re-setup
-        and re-enabled. Failures are captured per-domain and do not abort the
+        A plugin whose memory state is DISABLED keeps that state and drops its
+        imported module. Failures are captured per-domain and do not abort the
         remaining reloads.
 
         Returns:
-            ReloadResponse with per-domain reload outcome ("reloaded" / "failed" / "error: ...").
+            ReloadResponse with per-domain outcome (reloaded / disabled / failed / error: ...).
         """
         plugin_manager = _get_plugin_manager()
 
         results: dict[str, str] = {}
         for domain in list(plugin_manager.plugins.keys()):
             try:
-                success = await plugin_manager.async_reload(domain)
-                results[domain] = "reloaded" if success else "failed"
+                results[domain] = await plugin_manager.async_reload_domain(domain)
             except Exception as e:
                 results[domain] = f"error: {e!s}"
                 logger.exception(f"Failed to reload {domain}: {e}")
@@ -172,10 +173,12 @@ class PluginService:
         """Install or update plugins from their repositories' GitHub Releases.
 
         For each plugin, downloads the release on its track (stable, or beta when
-        prerelease is enabled), installs its ``plugin/`` directory, and then either
-        hot-reloads an existing plugin or activates a newly installed one.
-        Installed plugins are skipped when the selected release is not newer, so
-        turning off prerelease does not downgrade a newer beta.
+        prerelease is enabled), installs its ``plugin/`` directory, and then reloads
+        it. A disabled plugin stays disabled. A plugin that is not yet in memory is
+        registered from its manifest first; ``disabled: true`` in plugins.yaml is
+        copied into memory at that moment. Installed plugins are skipped when the
+        selected release is not newer, so turning off prerelease does not downgrade
+        a newer beta.
 
         Args:
             domains: Plugin domains to install or update. An empty list means every
@@ -230,22 +233,19 @@ class PluginService:
                 continue
 
             try:
-                if domain in plugin_manager.plugins:
-                    # Existing plugin: reload to pick up new files
-                    reloaded = await plugin_manager.async_reload(domain)
-                    if reloaded:
-                        updated.append(domain)
-                        plugin_manager._available_updates.pop(domain, None)
-                    else:
+                if domain not in plugin_manager.plugins:
+                    if not await plugin_manager.async_discover_domain(domain):
                         failed.append(domain)
+                        continue
+                    saved = get_plugin_config(domain)
+                    if isinstance(saved, dict) and saved.get("disabled", False):
+                        plugin_manager.plugins[domain].state = PluginState.DISABLED
+                outcome = await plugin_manager.async_reload_domain(domain)
+                if outcome == PluginReloadResult.FAILED:
+                    failed.append(domain)
                 else:
-                    # New plugin: discover → setup → enable
-                    activated = await plugin_manager.async_activate(domain)
-                    if activated:
-                        updated.append(domain)
-                        plugin_manager._available_updates.pop(domain, None)
-                    else:
-                        failed.append(domain)
+                    updated.append(domain)
+                    plugin_manager._available_updates.pop(domain, None)
             except Exception as e:
                 logger.exception(f"Failed to activate plugin {domain} after update: {e}")
                 failed.append(domain)
@@ -388,8 +388,9 @@ class PluginService:
     async def disable(self, domain: str) -> OperationResult:
         """Unload all active config entries for a plugin and mark it disabled.
 
+        Drops the imported module so memory matches a plugin skipped at startup.
         Persists ``disabled: true`` to plugins.yaml so the plugin is skipped
-        on next application startup.
+        on next application startup. State stays DISABLED, not INSTALLED.
 
         Args:
             domain: Plugin domain identifier.
@@ -410,6 +411,7 @@ class PluginService:
 
         plugin_manager.plugins[domain].state = PluginState.DISABLED
         set_plugin_field(domain, "disabled", True)
+        plugin_manager.unload_disabled_module(domain)
 
         return OperationResult(
             operation=OperationType.DISABLE,
@@ -600,9 +602,11 @@ class PluginService:
     async def reload(self, domain: str) -> OperationResult:
         """Reload one plugin so it reads the current config.
 
-        A disabled plugin is rejected. Plugins with an active entry are hot-reloaded.
-        Plugins that never finished setup (no entry, for example a missing required
-        cookie) are reset from a failed state and set up again.
+        Rejected when the in-memory state is DISABLED. That plugin's imported
+        module is dropped and it is not set up. Plugins with an active entry are
+        hot-reloaded. Plugins that never finished setup (no entry, for example a
+        missing required cookie) receive schema defaults and a default entry from
+        the saved config.
 
         Args:
             domain: Plugin domain identifier.
@@ -619,17 +623,10 @@ class PluginService:
         if domain not in plugin_manager.plugins:
             raise ValueError(f"Plugin '{domain}' not found")
 
-        record = plugin_manager.plugins[domain]
-        if record.state == PluginState.DISABLED:
+        outcome = await plugin_manager.async_reload_domain(domain)
+        if outcome == PluginReloadResult.DISABLED:
             raise PluginNotEnabledError(f"Plugin '{domain}' is not enabled")
-
-        entries = [entry for entry in plugin_manager.config_entries.values() if entry.domain == domain]
-        reloaded = await plugin_manager.async_reload(domain)
-        if reloaded and not entries:
-            entry = PluginEntryData(entry_id=f"{domain}_default", domain=domain, data={})
-            reloaded = await plugin_manager.async_setup_entry(entry)
-
-        if not reloaded:
+        if outcome == PluginReloadResult.FAILED:
             raise RuntimeError(f"Plugin '{domain}' reload failed")
 
         return OperationResult(

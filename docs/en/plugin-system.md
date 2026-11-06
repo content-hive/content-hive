@@ -177,8 +177,10 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | `async_forward_entry_setup(entry, platform)` | Loads the platform submodule (e.g. `parser.py`), injects it into `sys.modules` as `contenthive_plugin_{domain}.{platform}`, calls the platform's `async_setup_entry` |
 | `async_unload_entry(entry_id)` | Calls the plugin's `async_unload_entry` → removes entry → state reverts to LOADED if no other active entries remain |
 | `async_delete(domain)` | Unloads all entries → removes from registry → deletes the plugin directory from disk |
-| `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup + setup_entry |
-| `async_activate(domain)` | First-time activation of a newly installed plugin: discover → setup → setup_entry |
+| `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup, then `setup_entry` with data reloaded from `plugins.yaml` |
+| `async_reload_domain(domain)` | Reloads one in-memory plugin. DISABLED unloads the module and stays disabled. No entry gets schema defaults and a default entry |
+| `async_discover_domain(domain)` | Reads one installed plugin's `manifest.json` and registers it as INSTALLED. Does not set up the module |
+| `unload_disabled_module(domain)` | Drops the imported module and re-reads the manifest. State stays DISABLED; setup is not run |
 | `async_check_updates(catalog=None)` | Fetches only the plugin catalog, picks each plugin's release on its track (stable or beta), compares versions, caches update offers (including `release_notes`) |
 | `has_installed_plugin_updates()` | Whether any installed plugin is behind the catalog version on its track. Health `plugin_updates_available` reflects only this; uninstalled plugins are listed via `/v1/plugins/available` |
 | `register_service(domain, service, callback)` | Registers a named service callable |
@@ -190,7 +192,9 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 1. async_unload_entry  (unload all active entries)
 2. Clear sys.modules entries for plugin_{domain} and contenthive_plugin_{domain}.*
 3. Reset PluginRecord state to INSTALLED
-4. async_setup(config) + async_setup_entry
+4. async_setup
+5. Refresh each entry's data from plugins.yaml (framework keys removed) and async_setup_entry.
+   One entry failure does not skip the remaining entries. Returns false if setup or any entry fails.
 ```
 
 ---
@@ -256,7 +260,7 @@ youtube_parser:
 ```
 
 - `disabled` and `prerelease` are framework-reserved fields (`FRAMEWORK_KEYS`); all other fields are plugin-owned config
-- `prerelease: true` makes the plugin install and update to beta releases; it can be set before the plugin is installed and is kept when the plugin is deleted
+- `prerelease: true` makes the plugin install and update to beta releases; it can be set before the plugin is installed. Deleting the plugin removes the whole config block, including `prerelease`
 - **Atomic writes**: `tempfile.mkstemp` + `Path.replace`, executed inside `_config_lock` thread lock for concurrency safety
 
 | Function | Description |
@@ -265,9 +269,10 @@ youtube_parser:
 | `save_plugins_config(config)` | Atomically writes back to `plugins.yaml` |
 | `get_plugin_config(domain)` | Returns a single plugin's config block |
 | `set_plugin_field(domain, key, value)` | Sets a single field under lock and persists |
-| `remove_plugin_config(domain)` | Removes a plugin's config block, keeping `prerelease: true` (called on plugin deletion) |
+| `remove_plugin_config(domain)` | Removes a plugin's entire config block, including `prerelease` (called on plugin deletion) |
 | `get_prerelease_domains()` | Returns domains that track pre-release versions |
 | `strip_framework_keys(cfg)` | Filters out framework-reserved keys |
+| `plugin_entry_data(domain)` | Saved settings for a config entry, without framework keys |
 | `plugin_get_config(domain, schema_cls)` | Fetches config and deserializes into a `PluginConfigSchema` subclass instance |
 | `plugin_save_config(domain, config)` | Serializes a `PluginConfigSchema` instance and atomically writes it |
 
@@ -303,13 +308,13 @@ Encapsulates plugin management operations for the HTTP router layer.
 | `list_plugins()` | Returns state, version, errors, and update availability for all discovered plugins |
 | `list_available()` | Fetches the catalog, merges with local install state and release tracks, returns all catalog plugins |
 | `check_updates()` | Queries catalog versions on each plugin's track; returns current vs. latest for each plugin |
-| `update_plugins(domains)` | Installs/updates plugins from their GitHub Releases; hot-reloads existing ones, activates new ones |
+| `update_plugins(domains)` | Installs or updates plugins from their GitHub Releases, then reloads each one. A disabled plugin stays disabled. A new plugin is registered from its manifest first |
 | `set_prerelease(domain, enabled)` | Writes `prerelease` to `plugins.yaml` and refreshes cached update offers |
 | `enable(domain)` | Clears disabled flag, dynamically loads and activates the plugin |
-| `disable(domain)` | Unloads plugin and writes `disabled: true` to `plugins.yaml` |
-| `delete(domain)` | Unloads + removes from registry + deletes from disk + cleans up `plugins.yaml` |
-| `reload_all()` | Hot-reloads all plugins |
-| `reload(domain)` | Hot-reloads one plugin. A disabled plugin returns 409 `PLUGIN_NOT_ENABLED`. An existing config entry is unloaded and loaded again; a plugin with no entry is set up. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
+| `disable(domain)` | Unloads entries and the imported module, then writes `disabled: true` to `plugins.yaml`. State stays DISABLED |
+| `delete(domain)` | Unloads the module + removes from registry + deletes from disk + removes the whole `plugins.yaml` block, including `prerelease` |
+| `reload_all()` | Reloads plugins that are not DISABLED. A disabled plugin is reported as `disabled` and is not set up |
+| `reload(domain)` | Reloads one plugin. Memory state DISABLED returns 409 `PLUGIN_NOT_ENABLED` after the imported module is dropped. Existing entries reload with the saved config. A plugin with no entry gets schema defaults and a default entry. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
 | `get_plugin_settings(domain)` | Reads `CONFIG_SCHEMA`; returns field list and current config values |
 | `update_plugin_settings(domain, body)` | Validates and persists plugin config (supports partial updates with strict type checking) |
 
@@ -377,13 +382,12 @@ POST /v1/plugins/update
       │   ├── Check plugin/manifest.json domain and version
       │   └── Copy plugin/ to PLUGINS_DIR/{domain}
       │
-      ├── Existing plugin → manager.async_reload(domain)
-      │   ├── async_unload_entry
-      │   ├── Clear sys.modules cache
-      │   └── Re-run async_setup + async_setup_entry
+      ├── Existing or newly registered plugin → manager.async_reload_domain(domain)
+      │   ├── Memory state DISABLED → unload module, stay DISABLED
+      │   └── Otherwise → async_reload; create a default entry when none exists
       │
-      └── New plugin → manager.async_activate(domain)
-          └── discover → setup → setup_entry
+      └── New plugin, before reload → async_discover_domain(domain)
+          └── Copy plugins.yaml disabled into memory, then async_reload_domain
 ```
 
 ---

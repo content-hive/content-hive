@@ -421,7 +421,7 @@ curl -s -X PUT "$BASE_URL/v1/plugins/douyin/prerelease" \
 ```
 
 - With `prerelease: true`, the plugin uses the latest beta when it is newer than stable, otherwise stable.
-- The setting works before the plugin is installed and is kept when the plugin is deleted.
+- The setting works before the plugin is installed. Deleting the plugin removes it along with the rest of that plugin's config.
 - Turning it off does not downgrade an installed beta; the plugin updates again once a newer stable is released.
 - A plugin that only has beta releases shows `installable: false` in `/v1/plugins/available` until `prerelease` is enabled.
 

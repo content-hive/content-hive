@@ -102,7 +102,9 @@ class ReloadResponse(APIBaseModel):
     """Response model for plugin reload operation"""
 
     message: str = Field(..., description="Human-readable status message")
-    plugins: dict[str, str] = Field(..., description="Per-plugin reload result (reloaded / failed / error: ...)")
+    plugins: dict[str, str] = Field(
+        ..., description="Per-plugin reload result (reloaded / disabled / failed / error: ...)"
+    )
 
 
 class CheckConfigResponse(APIBaseModel):
