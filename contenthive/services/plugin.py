@@ -80,9 +80,9 @@ class PluginService:
     async def reload_all(self) -> ReloadResponse:
         """Hot-reload discovered plugins that are not disabled.
 
-        A plugin whose memory state is DISABLED is set up again and left disabled,
-        with no config entry. Failures are captured per-domain and do not abort the
-        remaining reloads.
+        A plugin whose memory state is DISABLED is set up again and left disabled
+        even if setup fails, with no config entry. Failures are captured per-domain
+        and do not abort the remaining reloads.
 
         Returns:
             ReloadResponse with per-domain outcome (reloaded / disabled / failed / error: ...).
@@ -603,9 +603,9 @@ class PluginService:
         """Reload one plugin so it reads the current config.
 
         Rejected when the in-memory state is DISABLED. The module is set up again
-        and left disabled, with no config entry. Plugins with an active entry are
-        hot-reloaded. Plugins that never finished setup receive schema defaults and
-        a default entry from the saved config.
+        and left DISABLED even if setup fails, with no config entry. Plugins with
+        an active entry are hot-reloaded. Plugins that never finished setup receive
+        schema defaults and a default entry from the saved config.
 
         Args:
             domain: Plugin domain identifier.

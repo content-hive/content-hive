@@ -176,7 +176,7 @@ A lightweight inter-plugin communication mechanism that supports both sync and a
 | `async_unload_entry(entry_id)` | Calls the plugin's `async_unload_entry` → removes entry → state reverts to LOADED if no other active entries remain |
 | `async_delete(domain)` | Unloads all entries → removes from registry → deletes the plugin directory from disk. Aborts before dropping the module or deleting the directory if unload fails |
 | `async_reload(domain)` | Unloads → clears `sys.modules` cache → resets to INSTALLED → re-runs setup, then `setup_entry` with data reloaded from `plugins.yaml`. Aborts before clearing the module if unload fails |
-| `async_reload_domain(domain)` | Reloads one in-memory plugin. DISABLED is set up again and left disabled, with no entry. Otherwise a missing entry gets a default entry from the saved config |
+| `async_reload_domain(domain)` | Reloads one in-memory plugin. DISABLED is set up again and left DISABLED even if setup fails, with no entry. Otherwise a missing entry gets a default entry from the saved config |
 | `async_discover_domain(domain)` | Reads one installed plugin's `manifest.json` and registers it as INSTALLED. Does not set up the module |
 | `unload_disabled_module(domain)` | Drops the imported module and re-reads the manifest. State stays DISABLED; setup is not run |
 | `async_check_updates(catalog=None)` | Fetches only the plugin catalog, picks each plugin's release on its track (stable or beta), compares versions, caches update offers (including `release_notes`) |
@@ -287,6 +287,7 @@ youtube_parser:
 4. Load plugins.yaml
 5. For each plugin:
    ├── async_setup
+   ├── [setup failed] → state stays FAILED
    ├── [disabled: true] → state = DISABLED, module stays loaded, no entry
    └── async_setup_entry
 6. Summary log: X/Y enabled
@@ -312,8 +313,8 @@ Encapsulates plugin management operations for the HTTP router layer.
 | `enable(domain)` | Clears disabled flag, dynamically loads and activates the plugin |
 | `disable(domain)` | Unloads entries and writes `disabled: true`. The module stays loaded. State stays DISABLED. Aborts without changing the disabled state or dropping the module if unload fails |
 | `delete(domain)` | Unloads the module + removes from registry + deletes from disk + removes the whole `plugins.yaml` block, including `prerelease`. Aborts without dropping the module or deleting the directory if unload fails |
-| `reload_all()` | Reloads every plugin. A disabled plugin is set up again, left DISABLED with no entry, and reported as `disabled` |
-| `reload(domain)` | Reloads one plugin. Memory state DISABLED returns 409 `PLUGIN_NOT_ENABLED` after setup, with no entry. Existing entries reload with the saved config. A plugin with no entry gets a default entry from the saved config. An unload failure aborts before dropping the module. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
+| `reload_all()` | Reloads every plugin. A disabled plugin is set up again, left DISABLED even if setup fails, with no entry, and reported as `disabled` |
+| `reload(domain)` | Reloads one plugin. Memory state DISABLED stays DISABLED even if setup fails, creates no entry, and returns 409 `PLUGIN_NOT_ENABLED`. Existing entries reload with the saved config. A plugin with no entry gets a default entry from the saved config. An unload failure aborts before dropping the module. Failure returns 500 `PLUGIN_RELOAD_FAILED` |
 | `get_plugin_settings(domain)` | Reads `CONFIG_SCHEMA`; returns field list and current config values |
 | `update_plugin_settings(domain, body)` | Validates and persists plugin config (supports partial updates with strict type checking) |
 
@@ -382,7 +383,7 @@ POST /v1/plugins/update
       │   └── Copy plugin/ to PLUGINS_DIR/{domain}
       │
       ├── Existing or newly registered plugin → manager.async_reload_domain(domain)
-      │   ├── Memory state DISABLED → async_setup, stay DISABLED, no entry
+      │   ├── Memory state DISABLED → async_setup, stay DISABLED even if setup fails, no entry
       │   └── Otherwise → async_reload; create a default entry when none exists
       │
       └── New plugin, before reload → async_discover_domain(domain)

@@ -415,9 +415,10 @@ class PluginManager:
         """Reload one in-memory plugin.
 
         A disabled plugin is set up again so its CONFIG_SCHEMA stays available,
-        then left DISABLED with no config entry. A plugin with no config entry
-        receives a default entry built from the saved config. Schema defaults
-        are written by async_setup.
+        then left DISABLED with no config entry. Setup failure also keeps
+        DISABLED and returns DISABLED. A plugin with no config entry receives
+        a default entry built from the saved config. Schema defaults are
+        written by async_setup.
         """
         record = self.plugins.get(domain)
         if record is None:
@@ -425,8 +426,7 @@ class PluginManager:
 
         if record.state == PluginState.DISABLED:
             self.unload_disabled_module(domain)
-            if not await self.async_setup(domain):
-                return PluginReloadResult.FAILED
+            await self.async_setup(domain)
             self.plugins[domain].state = PluginState.DISABLED
             return PluginReloadResult.DISABLED
 
