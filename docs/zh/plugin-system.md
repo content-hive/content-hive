@@ -335,6 +335,7 @@ youtube_parser:
 | `PUT` | `/v1/plugins/{domain}/prerelease` | 请求体 `{ "enabled": true }`。响应为 `{ "domain", "prerelease" }`，返回保存后的开关。插件未安装也可以设置 |
 | `POST` | `/v1/plugins/{domain}/enable` | 启用指定插件 |
 | `POST` | `/v1/plugins/{domain}/disable` | 禁用指定插件 |
+| `GET` | `/v1/plugins/{domain}` | 获取一个已安装插件的状态。响应含 `domain`，以及与列表相同的 `state`、`version`、`name`、`error`、`update_available`、`description`、`author`、`prerelease`。未安装返回 404 `PLUGIN_NOT_FOUND` |
 | `DELETE` | `/v1/plugins/{domain}` | 删除插件（卸载 + 删除文件）|
 | `GET` | `/v1/plugins/{domain}/config` | 获取插件配置 Schema 及当前值 |
 | `PUT` | `/v1/plugins/{domain}/config` | 更新插件配置字段 |

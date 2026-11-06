@@ -337,6 +337,7 @@ All endpoints require admin privileges (Bearer Token). Route prefix: `/v1/plugin
 | `PUT` | `/v1/plugins/{domain}/prerelease` | Body `{ "enabled": true }`. Response is `{ "domain", "prerelease" }` with the stored choice. The plugin does not need to be installed |
 | `POST` | `/v1/plugins/{domain}/enable` | Enable a plugin |
 | `POST` | `/v1/plugins/{domain}/disable` | Disable a plugin |
+| `GET` | `/v1/plugins/{domain}` | Get one installed plugin's status. The response includes `domain` and the same status fields as the list: `state`, `version`, `name`, `error`, `update_available`, `description`, `author`, `prerelease`. Returns 404 `PLUGIN_NOT_FOUND` when it is not installed |
 | `DELETE` | `/v1/plugins/{domain}` | Delete a plugin (unload + remove files) |
 | `GET` | `/v1/plugins/{domain}/config` | Get plugin config schema and current values |
 | `PUT` | `/v1/plugins/{domain}/config` | Update plugin config fields |

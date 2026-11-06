@@ -20,6 +20,7 @@ from contenthive.models.plugin import (
     PluginConfigResponse,
     PluginInfo,
     PluginListResponse,
+    PluginStatusResponse,
     PluginUpdateInfo,
     ReloadResponse,
     SetPrereleaseResponse,
@@ -44,7 +45,7 @@ from contenthive.plugins.manager import (
     get_plugin_manager,
     is_plugin_update_available,
 )
-from contenthive.plugins.registry import PluginState
+from contenthive.plugins.registry import PluginRecord, PluginState
 
 
 class ConfigValidationError(Exception):
@@ -324,6 +325,25 @@ class PluginService:
 
         return SetPrereleaseResponse(domain=domain, prerelease=enabled)
 
+    def _to_plugin_info(
+        self,
+        plugin_manager: PluginManager,
+        domain: str,
+        record: PluginRecord,
+        prerelease_domains: set[str],
+    ) -> PluginInfo:
+        offer = plugin_manager._available_updates.get(domain)
+        return PluginInfo(
+            state=record.state,
+            version=record.version,
+            name=record.name,
+            error=record.error if record.state == PluginState.FAILED else None,
+            update_available=offer.latest_version if offer is not None else None,
+            description=record.description,
+            author=record.author,
+            prerelease=domain in prerelease_domains,
+        )
+
     def list_plugins(self) -> PluginListResponse:
         """Return metadata and runtime state for all discovered plugins.
 
@@ -338,22 +358,32 @@ class PluginService:
         if plugin_manager:
             prerelease_domains = get_prerelease_domains()
             for domain, record in plugin_manager.plugins.items():
-                plugin_status[domain] = PluginInfo(
-                    state=record.state,
-                    version=record.version,
-                    name=record.name,
-                    error=record.error if record.state == PluginState.FAILED else None,
-                    update_available=(
-                        offer.latest_version
-                        if (offer := plugin_manager._available_updates.get(domain)) is not None
-                        else None
-                    ),
-                    description=record.description,
-                    author=record.author,
-                    prerelease=domain in prerelease_domains,
-                )
+                plugin_status[domain] = self._to_plugin_info(plugin_manager, domain, record, prerelease_domains)
 
         return PluginListResponse(plugins=plugin_status)
+
+    def get_plugin(self, domain: str) -> PluginStatusResponse:
+        """Return metadata and runtime state for one installed plugin.
+
+        Status fields match the entry ``list_plugins`` would return for this domain.
+
+        Args:
+            domain: Plugin domain identifier.
+
+        Returns:
+            PluginStatusResponse with domain plus state, version, name, error,
+            update_available, description, author, and prerelease.
+
+        Raises:
+            ValueError: If the domain is not found.
+            RuntimeError: If the plugin manager is not initialized.
+        """
+        plugin_manager = _get_plugin_manager()
+        record = plugin_manager.plugins.get(domain)
+        if record is None:
+            raise ValueError(f"Plugin '{domain}' not found")
+        info = self._to_plugin_info(plugin_manager, domain, record, get_prerelease_domains())
+        return PluginStatusResponse(domain=domain, **info.model_dump())
 
     async def disable(self, domain: str) -> OperationResult:
         """Unload all active config entries for a plugin and mark it disabled.

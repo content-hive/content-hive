@@ -16,6 +16,7 @@ from contenthive.models.plugin import (
     CheckUpdatesResponse,
     PluginConfigResponse,
     PluginListResponse,
+    PluginStatusResponse,
     ReloadResponse,
     SetPrereleaseRequest,
     SetPrereleaseResponse,
@@ -182,6 +183,27 @@ async def enable_plugin(
         raise DetailedHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorDetail(code="PLUGIN_ENABLE_FAILED", message=str(e)),
+        ) from e
+    return APIResponse(status=ResponseStatus.SUCCESS, data=data)
+
+
+@router_v1.get("/{domain}", response_model=APIResponse[PluginStatusResponse])
+async def get_plugin(
+    domain: str,
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[PluginStatusResponse]:
+    """Return state and metadata for one installed plugin."""
+    try:
+        data = plugin_service.get_plugin(domain)
+    except ValueError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(code="PLUGIN_NOT_FOUND", message=str(e)),
+        ) from e
+    except RuntimeError as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(code="PLUGIN_MANAGER_NOT_INITIALIZED", message=str(e)),
         ) from e
     return APIResponse(status=ResponseStatus.SUCCESS, data=data)
 
