@@ -1,12 +1,13 @@
 import mimetypes
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
 from contenthive.config import ensure_directories, settings
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartManager, RestartType, set_restart_manager
+from contenthive.core.server_id import get_server_id, init_server_id
 from contenthive.database.database import initialize_db
 from contenthive.logger import logger, setup_file_logging
 from contenthive.models.api import DetailedHTTPException, http_exception_handler
@@ -29,6 +30,7 @@ def register_extra_mimetypes():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_directories()
+    init_server_id()
     init_settings()
     setup_file_logging()
 
@@ -72,6 +74,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def attach_server_id(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Server-Id"] = get_server_id()
+    return response
+
 
 app.add_exception_handler(DetailedHTTPException, http_exception_handler)
 
