@@ -22,6 +22,7 @@ class HealthResponse(APIBaseModel):
     version: str = Field(..., description="Application version")
     plugin_updates_available: bool = Field(..., description="Whether any installed plugin has an update available")
     setup_required: bool = Field(..., description="Whether initial admin setup is still required")
+    server_id: str = Field(..., description="Stable identifier for this deployment")
 
 
 class StorageItemInfo(APIBaseModel):
