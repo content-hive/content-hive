@@ -19,7 +19,7 @@ def _read_server_id(path: Path) -> str | None:
     """Return a canonical UUID string, or None when the file is missing or invalid."""
     try:
         raw = path.read_text(encoding="utf-8").strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     try:
         return str(uuid.UUID(raw))
