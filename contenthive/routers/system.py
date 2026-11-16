@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, status
 
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
+from contenthive.core.server_id import get_server_id
 from contenthive.logger import logger, query_logs
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.enumerates import ResponseStatus
@@ -64,6 +65,7 @@ async def health_check() -> APIResponse[HealthResponse]:
     plugin_manager = get_plugin_manager()
     plugin_updates_available = bool(plugin_manager and plugin_manager.has_installed_plugin_updates())
     setup_complete = setup_service.is_setup_complete()
+    server_id = get_server_id()
 
     return APIResponse(
         status=ResponseStatus.SUCCESS,
@@ -72,6 +74,7 @@ async def health_check() -> APIResponse[HealthResponse]:
             version=APP_VERSION,
             plugin_updates_available=plugin_updates_available,
             setup_required=not setup_complete,
+            server_id=server_id,
         ),
     )
 
