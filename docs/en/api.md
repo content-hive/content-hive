@@ -91,6 +91,8 @@ curl -s "$BASE_URL/v1/system/health"
 | `INVALID_CURSOR` | `400` | `/v1/task/parser/cursor`, `/v1/system/logs` | Cursor is malformed or expired; restart from first page |
 | `PLUGIN_NOT_FOUND` | `404` | `/v1/plugins/{domain}/*` | Plugin domain not installed |
 | `CONFIG_VALIDATION_FAILED` | `400` | `/v1/plugins/{domain}/config` | Submitted plugin config violates schema |
+| `PLUGIN_NOT_ENABLED` | `409` | `/v1/plugins/{domain}/reload` | Plugin is disabled and cannot be reloaded; enable it first. Saved config applies on enable |
+| `PLUGIN_RELOAD_FAILED` | `500` | `/v1/plugins/{domain}/reload` | Reloading the plugin failed; check plugin logs and settings |
 | `STORAGE_STATUS_FAILED` | `500` | `/v1/system/storage` | Storage statistics collection failed; check filesystem and logs |
 | `INVALID_TIME_RANGE` | `400` | `/v1/system/logs` | `from` must be before `to` |
 | `LOG_READ_FAILED` | `500` | `/v1/system/logs` | Log file cannot be parsed or read |

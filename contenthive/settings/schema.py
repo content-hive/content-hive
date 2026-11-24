@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import Field
 
 from contenthive.models.api import APIBaseModel
@@ -8,26 +6,6 @@ DEFAULT_DOWNLOAD_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 "
     "Safari/537.36 Edg/143.0.0.0"
 )
-
-
-class PluginSettings(APIBaseModel):
-    """Plugin repository settings."""
-
-    repo_url: str = Field(
-        default="https://github.com/content-hive/plugins.git",
-        title="Plugin Repository URL",
-        description="Git repository URL for plugin distribution",
-    )
-    repo_ref_type: Literal["branch", "tag", "commit"] = Field(
-        default="branch",
-        title="Ref Type",
-        description="Repository ref type: branch, tag, or commit",
-    )
-    repo_ref: str = Field(
-        default="release",
-        title="Ref Value",
-        description="Repository ref value (branch name, tag, or commit SHA). Use release for Stable, main for Beta.",
-    )
 
 
 class AuthSettings(APIBaseModel):
@@ -64,6 +42,5 @@ class DownloadSettings(APIBaseModel):
 class AppSettings(APIBaseModel):
     """Application settings persisted to settings.yaml."""
 
-    plugins: PluginSettings = Field(default_factory=PluginSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     download: DownloadSettings = Field(default_factory=DownloadSettings)

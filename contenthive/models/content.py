@@ -4,6 +4,7 @@ Models for content-related operations.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -11,6 +12,7 @@ from contenthive.database.orm_models import Author, Media, ParseResult, Platform
 from contenthive.models.api import APIBaseModel
 from contenthive.models.enumerates import MediaStatus, MediaType, ParserResultStatus
 from contenthive.models.tag import TagEntity, TagInfo
+from contenthive.plugins.contracts import MediaStream, parse_streams
 from contenthive.utils.sidecar import SIDECAR_SCHEMA_VERSION
 
 # Database Models
@@ -103,17 +105,18 @@ class MediaEntity:
 
     id: int | None = None
     status: MediaStatus = MediaStatus.PENDING
-    url: str = ""
+    source_key: str = ""
     type: MediaType | None = None
     title: str | None = None
-    cover: str | None = None
-    url_fallbacks: list[str] = field(default_factory=list)
-    cover_fallbacks: list[str] = field(default_factory=list)
-    duration: int | None = None
-    width: int | None = None
-    height: int | None = None
+    streams: list[MediaStream] = field(default_factory=list)
+    extra: dict[str, Any] = field(default_factory=dict)
     media_path: str | None = None
+    media_duration: int | None = None
+    media_width: int | None = None
+    media_height: int | None = None
     cover_path: str | None = None
+    cover_width: int | None = None
+    cover_height: int | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     deleted_at: datetime | None = None
@@ -128,17 +131,18 @@ class MediaEntity:
         return cls(
             id=orm.id,
             status=orm.status,
-            url=orm.url,
+            source_key=orm.source_key,
             type=orm.type,
             title=orm.title,
-            cover=orm.cover,
-            url_fallbacks=orm.url_fallbacks or [],
-            cover_fallbacks=orm.cover_fallbacks or [],
-            duration=orm.duration,
-            width=orm.width,
-            height=orm.height,
+            streams=parse_streams(orm.streams),
+            extra=dict(orm.extra or {}),
             media_path=orm.media_path,
+            media_duration=orm.media_duration,
+            media_width=orm.media_width,
+            media_height=orm.media_height,
             cover_path=orm.cover_path,
+            cover_width=orm.cover_width,
+            cover_height=orm.cover_height,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
             deleted_at=orm.deleted_at,
@@ -257,17 +261,18 @@ class SidecarMediaInfo(APIBaseModel):
     order: int = Field(..., description="Display order within the content")
     id: int = Field(..., description="Media database ID")
     status: MediaStatus = Field(..., description="Download status")
-    url: str = Field(..., description="Original media URL")
+    source_key: str = Field(..., description="Stable identity within the parse result")
     type: MediaType | None = Field(None, description="Media type")
     title: str | None = Field(None, description="Media title")
-    cover: str | None = Field(None, description="Original cover URL")
-    url_fallbacks: list[str] = Field(default_factory=list, description="Fallback media URLs")
-    cover_fallbacks: list[str] = Field(default_factory=list, description="Fallback cover URLs")
-    duration: int | None = Field(None, description="Video duration in seconds")
-    width: int | None = Field(None, description="Media width in pixels")
-    height: int | None = Field(None, description="Media height in pixels")
+    streams: list[MediaStream] = Field(default_factory=list, description="Remote streams for this item")
+    extra: dict[str, Any] = Field(default_factory=dict, description="Platform-specific fields")
     media_path: str | None = Field(None, description="Local media file path")
+    media_duration: int | None = Field(None, description="Probed media duration in milliseconds")
+    media_width: int | None = Field(None, description="Probed media width in pixels")
+    media_height: int | None = Field(None, description="Probed media height in pixels")
     cover_path: str | None = Field(None, description="Local cover file path")
+    cover_width: int | None = Field(None, description="Probed cover width in pixels")
+    cover_height: int | None = Field(None, description="Probed cover height in pixels")
 
     @classmethod
     def from_entity(cls, entity: MediaEntity, order: int) -> "SidecarMediaInfo":
@@ -276,17 +281,18 @@ class SidecarMediaInfo(APIBaseModel):
             order=order,
             id=entity.id if entity.id else 0,
             status=entity.status,
-            url=entity.url,
+            source_key=entity.source_key,
             type=entity.type,
             title=entity.title,
-            cover=entity.cover,
-            url_fallbacks=entity.url_fallbacks,
-            cover_fallbacks=entity.cover_fallbacks,
-            duration=entity.duration,
-            width=entity.width,
-            height=entity.height,
+            streams=entity.streams,
+            extra=entity.extra,
             media_path=entity.media_path,
+            media_duration=entity.media_duration,
+            media_width=entity.media_width,
+            media_height=entity.media_height,
             cover_path=entity.cover_path,
+            cover_width=entity.cover_width,
+            cover_height=entity.cover_height,
         )
 
 
@@ -353,17 +359,18 @@ class DownloadedMediaInfo(BaseModel):
     """Information about downloaded media file"""
 
     status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
-    url: str = Field(..., description="Original media URL")
+    source_key: str = Field(..., description="Stable identity within the parse result")
     type: MediaType | None = Field(None, description="Media type")
     title: str | None = Field(None, description="Media title")
-    cover: str | None = Field(None, description="Original video cover URL")
-    url_fallbacks: list[str] = Field(default_factory=list, description="Fallback media URLs")
-    cover_fallbacks: list[str] = Field(default_factory=list, description="Fallback cover URLs")
-    duration: int | None = Field(None, description="Video duration in seconds")
-    width: int | None = Field(None, description="Media width in pixels")
-    height: int | None = Field(None, description="Media height in pixels")
+    streams: list[MediaStream] = Field(default_factory=list, description="Remote streams for this item")
+    extra: dict[str, Any] = Field(default_factory=dict, description="Platform-specific fields")
     media_path: str | None = Field(None, description="Local media file path")
+    media_duration: int | None = Field(None, description="Probed media duration in milliseconds")
+    media_width: int | None = Field(None, description="Probed media width in pixels")
+    media_height: int | None = Field(None, description="Probed media height in pixels")
     cover_path: str | None = Field(None, description="Local cover file path")
+    cover_width: int | None = Field(None, description="Probed cover width in pixels")
+    cover_height: int | None = Field(None, description="Probed cover height in pixels")
 
 
 # API Response Models
@@ -401,17 +408,18 @@ class MediaInfo(APIBaseModel):
 
     id: int = Field(..., description="Media ID")
     status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
-    url: HttpUrl = Field(..., description="Original media URL")
+    source_key: str = Field(..., description="Stable identity within the parse result")
     type: MediaType | None = Field(None, description="Media type")
     title: str | None = Field(None, description="Media title")
-    duration: int | None = Field(None, description="Video duration in seconds")
-    width: int | None = Field(None, description="Media width in pixels")
-    height: int | None = Field(None, description="Media height in pixels")
-    cover: HttpUrl | None = Field(None, description="Original video cover URL")
-    url_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback media URLs")
-    cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
+    streams: list[MediaStream] = Field(default_factory=list, description="Remote streams for this item")
+    extra: dict[str, Any] = Field(default_factory=dict, description="Platform-specific fields")
     media_path: str | None = Field(None, description="Local media file path")
+    media_duration: int | None = Field(None, description="Probed media duration in milliseconds")
+    media_width: int | None = Field(None, description="Probed media width in pixels")
+    media_height: int | None = Field(None, description="Probed media height in pixels")
     cover_path: str | None = Field(None, description="Local cover file path")
+    cover_width: int | None = Field(None, description="Probed cover width in pixels")
+    cover_height: int | None = Field(None, description="Probed cover height in pixels")
     tags: list[TagInfo] = Field(default_factory=list, description="Per-user tags on this media item")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
@@ -423,17 +431,18 @@ class MediaInfo(APIBaseModel):
         return cls(
             id=entity.id if entity.id else 0,
             status=entity.status,
-            url=entity.url,  # type: ignore
+            source_key=entity.source_key,
             type=entity.type,
             title=entity.title,
-            duration=entity.duration,
-            width=entity.width,
-            height=entity.height,
-            cover=entity.cover,  # type: ignore
-            url_fallbacks=entity.url_fallbacks,  # type: ignore
-            cover_fallbacks=entity.cover_fallbacks,  # type: ignore
+            streams=entity.streams,
+            extra=entity.extra,
             media_path=entity.media_path,
+            media_duration=entity.media_duration,
+            media_width=entity.media_width,
+            media_height=entity.media_height,
             cover_path=entity.cover_path,
+            cover_width=entity.cover_width,
+            cover_height=entity.cover_height,
             tags=[TagInfo.from_entity(tag) for tag in entity.tags],
             created_at=entity.created_at,
             updated_at=entity.updated_at,
@@ -555,17 +564,18 @@ class SyncMediaInfo(APIBaseModel):
 
     id: int = Field(..., description="Media ID")
     status: MediaStatus = Field(..., description="Download status: pending, downloading, completed, failed")
-    url: HttpUrl = Field(..., description="Original media URL")
+    source_key: str = Field(..., description="Stable identity within the parse result")
     type: MediaType | None = Field(None, description="Media type")
     title: str | None = Field(None, description="Media title")
-    duration: int | None = Field(None, description="Video duration in seconds")
-    width: int | None = Field(None, description="Media width in pixels")
-    height: int | None = Field(None, description="Media height in pixels")
-    cover: HttpUrl | None = Field(None, description="Original video cover URL")
-    url_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback media URLs")
-    cover_fallbacks: list[HttpUrl] = Field(default_factory=list, description="Fallback cover URLs")
+    streams: list[MediaStream] = Field(default_factory=list, description="Remote streams for this item")
+    extra: dict[str, Any] = Field(default_factory=dict, description="Platform-specific fields")
     media_path: str | None = Field(None, description="Local media file path")
+    media_duration: int | None = Field(None, description="Probed media duration in milliseconds")
+    media_width: int | None = Field(None, description="Probed media width in pixels")
+    media_height: int | None = Field(None, description="Probed media height in pixels")
     cover_path: str | None = Field(None, description="Local cover file path")
+    cover_width: int | None = Field(None, description="Probed cover width in pixels")
+    cover_height: int | None = Field(None, description="Probed cover height in pixels")
     tag_ids: list[int] = Field(default_factory=list, description="Per-user tag IDs on this media item")
     created_at: datetime = Field(..., description="Database creation timestamp")
     updated_at: datetime = Field(..., description="Database update timestamp")
@@ -577,17 +587,18 @@ class SyncMediaInfo(APIBaseModel):
         return cls(
             id=entity.id if entity.id else 0,
             status=entity.status,
-            url=entity.url,  # type: ignore
+            source_key=entity.source_key,
             type=entity.type,
             title=entity.title,
-            duration=entity.duration,
-            width=entity.width,
-            height=entity.height,
-            cover=entity.cover,  # type: ignore
-            url_fallbacks=entity.url_fallbacks,  # type: ignore
-            cover_fallbacks=entity.cover_fallbacks,  # type: ignore
+            streams=entity.streams,
+            extra=entity.extra,
             media_path=entity.media_path,
+            media_duration=entity.media_duration,
+            media_width=entity.media_width,
+            media_height=entity.media_height,
             cover_path=entity.cover_path,
+            cover_width=entity.cover_width,
+            cover_height=entity.cover_height,
             tag_ids=entity.tag_ids,
             created_at=entity.created_at,
             updated_at=entity.updated_at,

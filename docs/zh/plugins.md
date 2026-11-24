@@ -2,7 +2,7 @@
 
 Content Hive 采用 Home Assistant 风格的插件架构。每个受支持的平台（Twitter、YouTube、TikTok 等）都是独立插件，可以在不重启应用的情况下安装、更新、配置和热重载。
 
-插件通过 GitHub 仓库统一分发，通过 REST API 进行管理。
+每个插件都在自己的 GitHub 仓库里，通过 GitHub Release 发布。Content Hive 通过[插件目录](https://github.com/content-hive/plugins)发现插件，通过 REST API 管理插件。
 
 如需了解系统内部架构，请参阅[插件系统设计](/zh/plugin-system)。
 
@@ -127,10 +127,10 @@ plugins/
 
 ```
 INSTALLED ──async_setup──> LOADED ──async_setup_entry──> ENABLED
-    ▲                         ▲                               │
-    │                         └──────── async_unload_entry ──┘
-    │
-DISABLED                                                  FAILED
+                              │
+                              ├── disabled: true（模块保持加载，不建 entry）
+                              ▼
+                           DISABLED                         FAILED
 ```
 
 | 状态 | 含义 |
@@ -138,7 +138,7 @@ DISABLED                                                  FAILED
 | `INSTALLED` | `manifest.json` 已加载，模块尚未导入 |
 | `LOADED` | 模块已导入，依赖已安装，等待配置条目激活 |
 | `ENABLED` | 配置条目已激活，插件正在运行 |
-| `DISABLED` | `plugins.yaml` 中标记为 `disabled: true`，启动时跳过 |
+| `DISABLED` | 标记为 `disabled: true`。setup 之后模块仍加载，不激活 entry |
 | `FAILED` | 设置或运行时发生错误 |
 
 ---
@@ -230,17 +230,64 @@ async def async_setup_entry(context, entry, async_add_entities):
 
 ### `ParserMediaInfo`
 
+媒体主体只回答「这是帖子里的哪一项、是什么类型」。远程地址写在带角色的 `streams` 里。`source_key` 是帖子内的稳定身份，不要把会轮换的签名参数写进去。`source_key_from_url()` 取路径最后一段并去掉 query。
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `url` | `str` | 主媒体 URL |
-| `type` | `MediaType \| None` | `image`、`video`、`audio` 等 |
+| `source_key` | `str` | 帖子内稳定身份，重解析后必须保持不变 |
+| `type` | `MediaType` | `image`、`gif`、`video`、`audio`、`livephoto` 或 `link` |
 | `title` | `str \| None` | 媒体标题 |
-| `cover` | `str \| None` | 封面/缩略图 URL |
-| `duration` | `int \| None` | 时长（秒，视频/音频）|
-| `width` | `int \| None` | 宽度（像素）|
-| `height` | `int \| None` | 高度（像素）|
-| `url_fallbacks` | `list[str] \| None` | 备用下载 URL 列表 |
-| `cover_fallbacks` | `list[str] \| None` | 备用封面 URL 列表 |
+| `duration` | `int \| None` | 解析器给出的时长（毫秒，文件落盘前作参考）|
+| `width` | `int \| None` | 解析器给出的宽度（像素，文件落盘前作参考）|
+| `height` | `int \| None` | 解析器给出的高度（像素，文件落盘前作参考）|
+| `streams` | `list[MediaStream]` | 按 `role` 区分的轨列表 |
+| `extra` | `dict[str, Any]` | 核心不解释的平台字段（例如 B 站 `cid`、`qn`）|
+
+核心按 `type` 校验轨的组合，缺了必需轨就拒绝这条媒体：
+
+| `type` | 必需轨 | 可选轨 |
+|--------|--------|--------|
+| `image`、`gif` | 一条 `ImageStream` | — |
+| `video` | 一条 `VideoStream` | 一条 `AudioStream`（DASH）、一条 `CoverStream` |
+| `audio` | 一条 `AudioStream` | 一条 `CoverStream` |
+| `livephoto` | 一条 `VideoStream` 加一条 `ImageStream`（静帧） | — |
+| `link` | 一条 `LinkStream` | 一条 `CoverStream` |
+
+实况照片的静帧是成片的一部分，用 `ImageStream`，不用 `CoverStream`。
+
+### 轨类型
+
+每条轨都有 `urls: list[str]`（至少一项）。`urls[0]` 是主地址，后面的是下载备用。`role` 是判别字段。
+
+| 类 | `role` | 额外字段 | 说明 |
+|----|--------|----------|------|
+| `ImageStream` | `image` | `width`、`height` | 图片、GIF，或实况静帧 |
+| `VideoStream` | `video` | `codec`、`bandwidth`、`width`、`height`、`quality` | |
+| `AudioStream` | `audio` | `codec`、`bandwidth`、`quality`、`label` | `label` 放 FLAC、杜比这类音质名 |
+| `CoverStream` | `cover` | — | 海报，不是成片的一部分 |
+| `LinkStream` | `link` | — | 只保存地址，不当成媒体文件下载 |
+
+```python
+from contenthive.plugins.contracts import (
+    CoverStream,
+    ParserMediaInfo,
+    VideoStream,
+    AudioStream,
+    MediaType,
+    source_key_from_url,
+)
+
+ParserMediaInfo(
+    source_key=source_key_from_url(video_url),
+    type=MediaType.VIDEO,
+    streams=[
+        VideoStream(urls=[video_url], width=3840, height=2160, quality="127"),
+        AudioStream(urls=[audio_url], label="FLAC"),
+        CoverStream(urls=[cover_url]),
+    ],
+    extra={"cid": 123, "qn": "127"},
+)
+```
 
 ### `ParserAuthorInfo`
 
@@ -328,21 +375,55 @@ from contenthive.plugins.contracts import ProgressCallback
 async def my_download(data: dict):
     media = data["media"]
     on_progress: ProgressCallback | None = data.get("on_progress")
-    # 自定义下载逻辑（处理签名 URL、登录态等）
-    # on_progress 反映主媒体文件进度（0-100）；封面可并行下载但不计入
+    # 只负责把各轨字节拿回来（签名 URL、登录态等），不要合成或归档。
+    # 返回按 role 索引的临时文件。LinkStream 不下载。
+    # on_progress 反映主轨进度（0-100）；封面可并行下载但不计入
     # 有进度时：先判断非 None；若返回 awaitable 则 await
-    pct = 100  # TODO: 按主媒体 downloaded/total 计算 0–100
+    pct = 100  # TODO: 按主轨 downloaded/total 计算 0–100
     if on_progress is not None:
         result = on_progress(pct)
         if inspect.isawaitable(result):
             await result
-    return {"media_path": "/tmp/file.mp4"}
+    return {"streams": {"video": "/tmp/video.m4s", "audio": "/tmp/audio.m4s"}}
 
 # 在 async_setup_entry 中注册
 context.register_service(DOMAIN, "download", my_download)
 ```
 
-类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主媒体文件的字节比例；子任务是否结束以任务 `status` 为准。任务详情里的 `retry` live 态（`phase` / `attempt` 等）仅由内置下载器上报；插件 `download` 服务不会收到对应回调，`retry` 保持为 `null`。
+类型别名 `ProgressCallback` 定义在 `contenthive.plugins.contracts`（可为同步或异步；调用前需判断 `None`，必要时 `await`）。进度表示主轨的字节比例；子任务是否结束以任务 `status` 为准。核心会把插件返回的临时轨收成归档文件（DASH 音视频由核心用 ffmpeg 混流）。任务详情里的 `retry` live 态（`phase` / `attempt` 等）仅由内置下载器上报；插件 `download` 服务不会收到对应回调，`retry` 保持为 `null`。
+
+---
+
+## 分发
+
+Content Hive 读取内置的插件目录 `https://content-hive.github.io/plugins/catalog.json`。安装或更新插件时，从插件仓库下载对应 Release tag 的源码包，把其中的 `plugin/` 目录拷贝到 `PLUGINS_DIR/<domain>`。
+
+发布插件时，把代码放在 `plugin/` 目录，发布 tag 为 `v<manifest 版本号>` 的 GitHub Release，再把仓库加入插件目录。具体要求见插件目录仓库的 README。
+
+目录里的 `min_core_version` 高于当前核心版本的插件不会出现在列表里。安装时还会校验所选 tag 根目录 `contenthive.json` 的 `contenthive`，因此即使目录条目来自稳定版，要求更新核心的 beta 也不会被装上。
+
+### 发布轨道
+
+默认每个插件都跟踪稳定版，也就是最新的非预发布 GitHub Release。要让某个插件使用预发布（beta）版本，在 `plugins.yaml` 中设置 `prerelease: true`：
+
+```yaml
+douyin:
+  prerelease: true
+```
+
+或调用 API：
+
+```bash
+curl -s -X PUT "$BASE_URL/v1/plugins/douyin/prerelease" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+- 打开 `prerelease` 后，beta 比稳定版新时使用 beta，否则使用稳定版。
+- 可以在插件安装前设置。删除插件时，这个设置会和该插件的其他配置一起被删掉。
+- 关闭后不会把已安装的 beta 降级；等有更新的稳定版发布后才会再次提示更新。
+- 只有 beta 版本的插件，在打开 `prerelease` 之前，`/v1/plugins/available` 中显示 `installable: false`。
 
 ---
 

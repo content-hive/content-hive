@@ -15,7 +15,8 @@ from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.plugins.contracts import PluginConfigSchema
 
-FRAMEWORK_KEYS = {"disabled"}
+PRERELEASE_KEY = "prerelease"
+FRAMEWORK_KEYS = {"disabled", PRERELEASE_KEY}
 
 _yaml = YAML()
 _yaml.preserve_quotes = True
@@ -95,11 +96,20 @@ def set_plugin_field(domain: str, key: str, value: Any) -> None:
 
 
 def remove_plugin_config(domain: str) -> None:
-    """Remove a plugin's entire config block from plugins.yaml and persist."""
+    """Remove a plugin's entire config block from plugins.yaml, including prerelease."""
     with _config_lock:
         config = load_plugins_config()
         config.pop(domain, None)
         save_plugins_config(config)
+
+
+def get_prerelease_domains() -> set[str]:
+    """Return domains that opted into pre-release (beta) versions."""
+    return {
+        domain
+        for domain, cfg in load_plugins_config().items()
+        if isinstance(cfg, dict) and cfg.get(PRERELEASE_KEY) is True
+    }
 
 
 def init_plugin_config_defaults(
@@ -140,6 +150,14 @@ def init_plugin_config_defaults(
 def strip_framework_keys(cfg: dict) -> dict:
     """Remove framework-internal keys (e.g. 'disabled') from a config dict."""
     return {k: v for k, v in cfg.items() if k not in FRAMEWORK_KEYS}
+
+
+def plugin_entry_data(domain: str) -> dict[str, Any]:
+    """Saved settings for a plugin entry, without framework keys such as ``disabled``."""
+    raw = get_plugin_config(domain)
+    if not isinstance(raw, dict):
+        return {}
+    return strip_framework_keys(raw)
 
 
 def plugin_get_config(

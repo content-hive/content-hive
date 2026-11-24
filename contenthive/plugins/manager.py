@@ -10,6 +10,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -17,19 +18,29 @@ from packaging.requirements import Requirement
 from packaging.version import InvalidVersion, Version
 
 from contenthive.logger import logger
+from contenthive.plugins.catalog import CatalogPlugin, fetch_catalog
 from contenthive.plugins.config import (
+    get_prerelease_domains,
     init_plugin_config_defaults,
+    plugin_entry_data,
     plugin_get_config,
     plugin_save_config,
 )
 from contenthive.plugins.contracts import PluginConfigSchema
-from contenthive.plugins.downloader import GitHubPluginDownloader
 from contenthive.plugins.registry import PluginRecord, PluginState
+
+
+class PluginReloadResult(StrEnum):
+    """Outcome of reloading one plugin that is already in memory."""
+
+    RELOADED = "reloaded"
+    DISABLED = "disabled"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True)
 class PluginUpdateOffer:
-    """Remote offer: update for an installed plugin, or install for a registry-only plugin."""
+    """Catalog offer: update for an installed plugin, or install for a plugin not installed yet."""
 
     latest_version: str
     release_notes: str | None = None
@@ -129,7 +140,7 @@ class PluginManager:
     async def async_setup(self, domain: str) -> bool:
         """
         Setup plugin from configuration (HA-style).
-        Calls the plugin module's async_setup function.
+        Writes missing schema defaults, then calls the plugin module's async_setup function.
         """
         record = self.plugins.get(domain)
         if not record:
@@ -152,6 +163,10 @@ class PluginManager:
                 return False
 
             record.instance = module  # Store module, not class instance
+
+            schema_cls = record.config_schema
+            if schema_cls is not None:
+                init_plugin_config_defaults(domain, schema_cls)
 
             # Call module-level async_setup function
             if hasattr(module, "async_setup"):
@@ -281,7 +296,7 @@ class PluginManager:
     def has_installed_plugin_updates(self) -> bool:
         """Return True if any locally installed plugin has a newer remote version.
 
-        Registry-only install offers in ``_available_updates`` are ignored.
+        Catalog-only install offers in ``_available_updates`` are ignored.
 
         Returns:
             True if at least one installed plugin has a cached update offer
@@ -303,51 +318,45 @@ class PluginManager:
         else:
             return callback(data)
 
-    async def async_check_updates(self, repo_url: str, ref: str = "main") -> dict[str, PluginUpdateOffer | None]:
+    async def async_check_updates(
+        self, catalog: dict[str, CatalogPlugin] | None = None
+    ) -> dict[str, PluginUpdateOffer | None]:
         """
-        Check for available plugin updates by comparing local versions against the remote registry.
+        Check for available plugin updates by comparing local versions against the plugin catalog.
 
-        Fetches registry.json from the remote repository. For each remote plugin:
+        Each plugin's release track (stable, or beta when ``prerelease`` is set in
+        plugins.yaml) decides which catalog release is offered:
         - If not installed locally, records an install offer.
         - If installed, compares versions and records an update offer when newer.
-        Results are cached on the manager.
+        Plugins whose chosen track has no release are not offered. Results are cached on the manager.
 
         Args:
-            repo_url: GitHub repository URL
-            ref: Git reference (branch name, tag, or commit SHA)
+            catalog: Already-fetched catalog to reuse; fetched when omitted.
 
         Returns:
             Dict mapping domain to a PluginUpdateOffer when an update is available
-            or the plugin is present only in the remote registry (not yet installed).
+            or the plugin is present only in the catalog (not yet installed).
             ``None`` means the local install is already up to date.
 
         Raises:
-            Exception: If the remote registry could not be fetched
+            CatalogError: If the catalog could not be fetched
         """
-        downloader = GitHubPluginDownloader(self.plugins_dir)
-        remote_manifest = await downloader.fetch_remote_manifest(repo_url, ref)
-
-        if remote_manifest is None:
-            raise Exception("Failed to fetch remote plugins registry")
+        if catalog is None:
+            catalog = await fetch_catalog()
+        prerelease_domains = get_prerelease_domains()
 
         results: dict[str, PluginUpdateOffer | None] = {}
 
-        for plugin_info in remote_manifest.get("plugins", []):
-            domain = plugin_info.get("domain")
-            remote_version_str = plugin_info.get("version")
-
-            if not domain or not remote_version_str:
+        for domain, plugin in catalog.items():
+            release = plugin.select_release(domain in prerelease_domains)
+            if release is None:
                 continue
-
-            release_notes = plugin_info.get("release_notes")
-            if not isinstance(release_notes, str) or not release_notes.strip():
-                release_notes = None
-
-            offer = PluginUpdateOffer(latest_version=remote_version_str, release_notes=release_notes)
+            remote_version_str = release.version
+            offer = PluginUpdateOffer(latest_version=remote_version_str, release_notes=release.release_notes)
 
             local_record = self.plugins.get(domain)
             if not local_record:
-                # Registry-only plugin: surface as an install offer for startup/UI
+                # Catalog-only plugin: surface as an install offer for startup/UI
                 results[domain] = offer
                 continue
 
@@ -369,40 +378,82 @@ class PluginManager:
 
         return results
 
-    async def async_activate(self, domain: str) -> bool:
-        """
-        Discover, setup, and enable a newly installed plugin.
-        Used after installing a plugin that was not previously known to the manager.
+    async def async_discover_domain(self, domain: str) -> bool:
+        """Read one installed plugin's manifest and register it as INSTALLED.
+
+        Does not set up the module. The caller copies ``disabled`` from plugins.yaml
+        into memory before deciding whether to load it.
         """
         plugin_dir = self.plugins_dir / domain
         manifest_path = plugin_dir / "manifest.json"
-
         await self._async_load_manifest(plugin_dir, manifest_path)
-
         if domain not in self.plugins:
-            self.context.logger.warning(f"Plugins[Activate Failed]: {domain} - manifest not loaded")
+            self.context.logger.warning(f"Plugins[Discover Failed]: {domain} - manifest not loaded")
             return False
+        return True
 
-        if not await self.async_setup(domain):
-            return False
+    def unload_disabled_module(self, domain: str) -> None:
+        """Drop the imported module for a plugin that stays DISABLED.
 
-        record = self.plugins[domain]
-        if record.config_schema:
-            init_plugin_config_defaults(domain, record.config_schema)
+        Clears ``sys.modules``, forgets the module object, and re-reads
+        ``manifest.json`` when it is still on disk. Does not run setup.
+        """
+        self._clear_module_cache(domain)
+        record = self.plugins.get(domain)
+        if record is None:
+            return
+        record.instance = None
+        manifest_path = self.plugins_dir / domain / "manifest.json"
+        if manifest_path.exists():
+            try:
+                record.manifest = self._read_plugin_manifest(manifest_path, domain)
+            except Exception as e:
+                self.context.logger.warning(f"Plugins[Unload Module]: {domain} - Failed to re-read manifest: {e}")
+        record.state = PluginState.DISABLED
 
-        entry = PluginEntryData(
-            entry_id=f"{domain}_default",
-            domain=domain,
-            data={},
-        )
-        return await self.async_setup_entry(entry)
+    async def async_reload_domain(self, domain: str) -> PluginReloadResult:
+        """Reload one in-memory plugin.
+
+        A disabled plugin is set up again so its CONFIG_SCHEMA stays available,
+        then left DISABLED with no config entry. Setup failure also keeps
+        DISABLED and returns DISABLED. A plugin with no config entry receives
+        a default entry built from the saved config. Schema defaults are
+        written by async_setup.
+        """
+        record = self.plugins.get(domain)
+        if record is None:
+            raise ValueError(f"Plugin '{domain}' not found")
+
+        if record.state == PluginState.DISABLED:
+            self.unload_disabled_module(domain)
+            await self.async_setup(domain)
+            self.plugins[domain].state = PluginState.DISABLED
+            return PluginReloadResult.DISABLED
+
+        entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
+        reloaded = await self.async_reload(domain)
+        if reloaded and not entries:
+            entry = PluginEntryData(
+                entry_id=f"{domain}_default",
+                domain=domain,
+                data=plugin_entry_data(domain),
+            )
+            reloaded = await self.async_setup_entry(entry)
+        return PluginReloadResult.RELOADED if reloaded else PluginReloadResult.FAILED
 
     async def async_reload(self, domain: str) -> bool:
-        """Reload a plugin."""
+        """Reload a plugin and activate every existing entry with the saved config.
+
+        Each entry's data is replaced from plugins.yaml before its setup callback.
+        One entry failing to activate does not skip the remaining entries.
+        Returns False when unload fails, setup fails, or any entry fails to activate.
+        An unload failure returns before the module cache or instance is cleared.
+        """
         entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
 
         for entry in entries:
-            await self.async_unload_entry(entry.entry_id)
+            if not await self.async_unload_entry(entry.entry_id):
+                return False
 
         self._clear_module_cache(domain)
 
@@ -417,12 +468,17 @@ class PluginManager:
                 except Exception as e:
                     self.context.logger.warning(f"Plugins[Reload]: {domain} - Failed to re-read manifest: {e}")
 
-        if await self.async_setup(domain):
-            for entry in entries:
-                await self.async_setup_entry(entry)
-            return True
+        if not await self.async_setup(domain):
+            return False
 
-        return False
+        saved = plugin_entry_data(domain)
+        activated = True
+        for entry in entries:
+            entry.data = dict(saved)
+            if not await self.async_setup_entry(entry):
+                activated = False
+
+        return activated
 
     async def async_unload_platforms(self, entry: PluginEntryData, platforms: list[str]) -> bool:
         """
@@ -498,7 +554,8 @@ class PluginManager:
 
         Raises:
             ValueError: If the domain is not found in the plugin registry.
-            RuntimeError: If the plugin directory cannot be deleted from disk.
+            RuntimeError: If an entry fails to unload, or the plugin directory cannot be deleted from disk.
+                An unload failure leaves the module and directory in place.
         """
         if domain not in self.plugins:
             raise ValueError(f"Plugin '{domain}' not found")
@@ -506,10 +563,10 @@ class PluginManager:
         # Unload all config entries
         entries = [entry for entry in self.config_entries.values() if entry.domain == domain]
         for entry in entries:
-            await self.async_unload_entry(entry.entry_id)
+            if not await self.async_unload_entry(entry.entry_id):
+                raise RuntimeError(f"Plugin '{domain}' unload failed")
 
-        # Clear cached modules
-        self._clear_module_cache(domain)
+        self.unload_disabled_module(domain)
 
         # Clean up any platform entities that weren't removed during entry unload
         await self._async_cleanup_domain_platforms(domain)

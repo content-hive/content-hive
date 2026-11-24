@@ -1,7 +1,6 @@
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.plugins.config import (
-    init_plugin_config_defaults,
     load_plugins_config,
     strip_framework_keys,
 )
@@ -13,7 +12,6 @@ from contenthive.plugins.manager import (
     set_plugin_manager,
 )
 from contenthive.plugins.registry import PluginState
-from contenthive.settings.store import get_settings
 
 
 async def load_plugins_on_startup():
@@ -37,12 +35,9 @@ async def load_plugins_on_startup():
     # Discover locally installed plugins
     await plugin_manager.async_discover()
 
-    # Fetch remote manifest and compare — no archive download, lightweight check only
+    # Fetch the plugin catalog and compare — no archive download, lightweight check only
     try:
-        check_results = await plugin_manager.async_check_updates(
-            repo_url=get_settings().plugins.repo_url,
-            ref=get_settings().plugins.repo_ref,
-        )
+        check_results = await plugin_manager.async_check_updates()
         installed_domains = set(plugin_manager.plugins)
         new_plugins = {
             d: offer.latest_version
@@ -65,42 +60,33 @@ async def load_plugins_on_startup():
         if not new_plugins and not available_updates:
             logger.debug("All plugins are up to date")
     except Exception:
-        logger.warning("Failed to check for plugin updates from remote registry")
+        logger.warning("Failed to check for plugin updates from the plugin catalog", exc_info=True)
 
-    # Setup and enable plugins
+    # Setup every discovered plugin so CONFIG_SCHEMA is available, then activate
+    # the ones that are not disabled.
     plugins_config = load_plugins_config()
     for domain in plugin_manager.plugins:
         plugin_cfg = plugins_config.get(domain, {})
+        disabled = bool(plugin_cfg.get("disabled", False))
 
-        if plugin_cfg.get("disabled", False):
-            plugin_manager.plugins[domain].state = PluginState.DISABLED
-            logger.info(f"Plugin skipped (disabled): {domain}")
-            continue
-
-        # Setup plugin (load module, install dependencies)
         success = await plugin_manager.async_setup(domain)
-
         if not success:
             logger.warning(f"Plugin setup failed: {domain}")
             continue
 
-        # Write schema defaults to plugins.yaml for any fields not yet present
-        schema_cls = plugin_manager.plugins[domain].config_schema
-        if schema_cls:
-            init_plugin_config_defaults(domain, schema_cls)
-            plugin_cfg = load_plugins_config().get(domain, {})
+        if disabled:
+            plugin_manager.plugins[domain].state = PluginState.DISABLED
+            logger.info(f"Plugin loaded but not enabled (disabled): {domain}")
+            continue
 
-        # Create config entry
+        plugin_cfg = load_plugins_config().get(domain, {})
         config = strip_framework_keys(plugin_cfg)
         entry = PluginEntryData(
             entry_id=f"{domain}_default",
             domain=domain,
             data=config,
         )
-
-        # Setup entry (enable plugin)
         success = await plugin_manager.async_setup_entry(entry)
-
         if success:
             logger.debug(f"Plugin enabled: {domain}")
         else:

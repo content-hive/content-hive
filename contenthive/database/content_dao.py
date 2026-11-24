@@ -30,6 +30,8 @@ from contenthive.plugins.contracts import (
     ParserMediaInfo,
     ParserPlatformInfo,
     ParserResult,
+    cover_locator_from_streams,
+    dump_streams,
 )
 from contenthive.utils.content import ContentDirectory, resolve_content_id
 
@@ -276,8 +278,8 @@ class ContentDAO:
         Save media information for a specific parse result.
 
         Media is owned by a single parse result (one-to-many). Deduplication is
-        scoped to (parse_result_id, url) so downloaded media can update the row
-        created during the parse phase.
+        scoped to (parse_result_id, source_key) so downloaded media can update the
+        row created during the parse phase.
 
         Args:
             media: Media entity
@@ -290,7 +292,9 @@ class ContentDAO:
         session = self._get_session()
         try:
             # Check if media exists within this parse result
-            stmt = select(Media).where((Media.parse_result_id == parse_result_id) & (Media.url == media.url))
+            stmt = select(Media).where(
+                (Media.parse_result_id == parse_result_id) & (Media.source_key == media.source_key)
+            )
             existing_media = session.execute(stmt).scalar_one_or_none()
 
             if existing_media:
@@ -298,42 +302,38 @@ class ContentDAO:
                 # 1. We have new media/cover paths (successful download), or
                 # 2. Current status is 'pending' (allow first status update)
                 if media.media_path or media.cover_path:
-                    # Successful download - update everything
                     existing_media.status = media.status
-                    if media.duration:
-                        existing_media.duration = media.duration
-                    if media.width:
-                        existing_media.width = media.width
-                    if media.height:
-                        existing_media.height = media.height
                     if media.media_path:
                         existing_media.media_path = media.media_path
+                        existing_media.media_duration = media.media_duration
+                        existing_media.media_width = media.media_width
+                        existing_media.media_height = media.media_height
                     if media.cover_path:
                         existing_media.cover_path = media.cover_path
+                        existing_media.cover_width = media.cover_width
+                        existing_media.cover_height = media.cover_height
                     session.flush()
                 elif existing_media.status == MediaStatus.PENDING:
-                    # Allow status update from pending to failed/other
                     existing_media.status = media.status
                     session.flush()
-                # else: Don't overwrite completed/failed status without new files
                 return existing_media.id
 
-            # Insert new media
             new_media = Media(
                 parse_result_id=parse_result_id,
                 order=order,
-                url=media.url,
+                source_key=media.source_key,
                 type=media.type,
                 title=media.title,
-                cover=media.cover,
-                url_fallbacks=media.url_fallbacks,
-                cover_fallbacks=media.cover_fallbacks,
-                duration=media.duration,
-                width=media.width,
-                height=media.height,
-                media_path=media.media_path,
-                cover_path=media.cover_path,
                 status=media.status,
+                streams=dump_streams(media.streams),
+                extra=dict(media.extra or {}),
+                media_path=media.media_path,
+                media_duration=media.media_duration,
+                media_width=media.media_width,
+                media_height=media.media_height,
+                cover_path=media.cover_path,
+                cover_width=media.cover_width,
+                cover_height=media.cover_height,
             )
             session.add(new_media)
             session.flush()
@@ -352,7 +352,7 @@ class ContentDAO:
         self, medias: list[ParserMediaInfo], parse_result_id: int, commit: bool = False
     ) -> tuple[list[int], list[str]]:
         """
-        Reconcile media rows for a parse result by URL (upsert + drop orphans).
+        Reconcile media rows for a parse result by source_key (upsert + drop orphans).
 
         Does not delete on-disk files; returns orphaned relative paths so the
         caller can unlink them after a successful commit.
@@ -384,69 +384,66 @@ class ContentDAO:
         )
         return [MediaEntity.from_orm(row) for row in rows]
 
-    def get_media_by_parse_result_url(self, parse_result_id: int, url: str) -> MediaEntity | None:
-        """Return a media entity for (parse_result_id, url), or None if missing."""
+    def get_media_by_parse_result_source_key(self, parse_result_id: int, source_key: str) -> MediaEntity | None:
+        """Return a media entity for (parse_result_id, source_key), or None if missing."""
         session = self._get_session()
         row = session.execute(
-            select(Media).where((Media.parse_result_id == parse_result_id) & (Media.url == url))
+            select(Media).where((Media.parse_result_id == parse_result_id) & (Media.source_key == source_key))
         ).scalar_one_or_none()
         return MediaEntity.from_orm(row) if row is not None else None
 
     def _reconcile_medias(self, medias: list[ParserMediaInfo], parse_result_id: int) -> tuple[list[int], list[str]]:
         """
-        Align Media rows with a fresh parse list keyed by URL.
+        Align Media rows with a fresh parse list keyed by source_key.
 
-        Same URL: update parse metadata; keep status, local paths, and dimensions.
-        New URL: insert a pending row.
-        Missing URL: delete UserMedia rows, hard-delete the media row, and return
-        paths for post-commit filesystem cleanup. Cover source changes clear
-        cover_path so the download step will refresh the cover.
+        Same key: update streams, extra, and title; keep status, local paths, and
+        probed dimensions. New key: insert a pending row. Missing key: delete
+        UserMedia rows, hard-delete the media row, and return paths for
+        post-commit filesystem cleanup. Cover source changes clear cover_path
+        so the download step will refresh the cover.
         """
         session = self._get_session()
         existing_rows = session.execute(select(Media).where(Media.parse_result_id == parse_result_id)).scalars().all()
-        by_url = {row.url: row for row in existing_rows}
+        by_key = {row.source_key: row for row in existing_rows}
 
         media_ids: list[int] = []
-        seen_urls: set[str] = set()
+        seen_keys: set[str] = set()
         orphan_paths: list[str] = []
 
         for order, media in enumerate(medias):
-            url = str(media.url)
-            seen_urls.add(url)
-            cover = str(media.cover) if media.cover else None
-            url_fallbacks = [str(u) for u in (media.url_fallbacks or [])]
-            cover_fallbacks = [str(u) for u in (media.cover_fallbacks or [])]
-            media_type = media.type if media.type else None
+            source_key = media.source_key
+            seen_keys.add(source_key)
+            media_type = media.type
+            streams_json = dump_streams(media.streams)
 
-            existing = by_url.get(url)
+            existing = by_key.get(source_key)
             if existing is not None:
-                existing_cover_fallbacks = list(existing.cover_fallbacks or [])
-                if existing.cover != cover or existing_cover_fallbacks != cover_fallbacks:
+                if media.cover_locator() != cover_locator_from_streams(existing.streams, existing.type):
                     if existing.cover_path:
                         orphan_paths.append(existing.cover_path)
                     existing.cover_path = None
+                    existing.cover_width = None
+                    existing.cover_height = None
                 existing.order = order
                 existing.type = media_type
                 existing.title = media.title
-                existing.cover = cover
-                existing.url_fallbacks = url_fallbacks
-                existing.cover_fallbacks = cover_fallbacks
+                existing.streams = streams_json
+                existing.extra = dict(media.extra or {})
                 media_ids.append(existing.id)
             else:
                 media_entity = MediaEntity(
                     status=MediaStatus.PENDING,
-                    url=url,
+                    source_key=source_key,
                     type=media_type,
                     title=media.title,
-                    cover=cover,
-                    url_fallbacks=url_fallbacks,
-                    cover_fallbacks=cover_fallbacks,
+                    streams=media.streams,
+                    extra=dict(media.extra or {}),
                 )
                 media_ids.append(self._save_media(media_entity, parse_result_id, order=order, commit=False))
 
         session.flush()
 
-        orphan_rows = [row for url, row in by_url.items() if url not in seen_urls]
+        orphan_rows = [row for key, row in by_key.items() if key not in seen_keys]
         orphan_ids = [row.id for row in orphan_rows]
         if orphan_ids:
             session.execute(delete(UserMedia).where(UserMedia.media_id.in_(orphan_ids)))
@@ -472,7 +469,7 @@ class ContentDAO:
         Save a single downloaded media entity for a parse result.
 
         Updates the row created during the parse phase (matched by
-        (parse_result_id, url)) with download status and local paths.
+        (parse_result_id, source_key)) with download status and local paths.
 
         Args:
             media: Downloaded media info
@@ -485,17 +482,18 @@ class ContentDAO:
         """
         media_entity = MediaEntity(
             status=media.status,
-            url=str(media.url),
+            source_key=media.source_key,
             type=media.type if media.type else None,
             title=media.title,
-            cover=str(media.cover) if media.cover else None,
-            url_fallbacks=[str(u) for u in media.url_fallbacks],
-            cover_fallbacks=[str(u) for u in media.cover_fallbacks],
-            duration=media.duration,
-            width=media.width,
-            height=media.height,
+            streams=list(media.streams),
+            extra=dict(media.extra or {}),
             media_path=media.media_path,
+            media_duration=media.media_duration,
+            media_width=media.media_width,
+            media_height=media.media_height,
             cover_path=media.cover_path,
+            cover_width=media.cover_width,
+            cover_height=media.cover_height,
         )
         media_id = self._save_media(media_entity, parse_result_id, order=order, commit=False)
         if commit:

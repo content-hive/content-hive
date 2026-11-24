@@ -3,10 +3,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 
 from contenthive.config import ensure_directories, settings
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartManager, RestartType, set_restart_manager
+from contenthive.core.server_id import get_server_id, init_server_id
 from contenthive.database.database import initialize_db
 from contenthive.logger import logger, setup_file_logging
 from contenthive.models.api import DetailedHTTPException, http_exception_handler
@@ -29,6 +31,7 @@ def register_extra_mimetypes():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_directories()
+    init_server_id()
     init_settings()
     setup_file_logging()
 
@@ -71,6 +74,26 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application.")
 
 
+class ServerIdHeaderMiddleware:
+    """Attach X-Server-Id outside ServerErrorMiddleware so unhandled 500s include it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_server_id(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Server-Id"] = get_server_id()
+            await send(message)
+
+        await self.app(scope, receive, send_with_server_id)
+
+
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
 
 app.add_exception_handler(DetailedHTTPException, http_exception_handler)
@@ -83,3 +106,5 @@ app.include_router(admin.router_v1)
 app.include_router(plugin.router_v1)
 app.include_router(setup.router_v1)
 app.include_router(system.router_v1)
+
+app = ServerIdHeaderMiddleware(app)

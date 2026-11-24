@@ -81,12 +81,15 @@ def parse_main_task_parameters(task_type: TaskType, raw: dict[str, Any] | None) 
         logger.warning(f"No main task parameters model for type {task_type}")
         return None
     except ValidationError:
-        logger.warning(f"Invalid main task parameters for type {task_type}: {raw!r}", exc_info=True)
+        logger.debug(f"Skipping unreadable main task parameters for type {task_type}")
         return None
 
 
 def parse_sub_task_parameters(task_type: TaskType, raw: dict[str, Any] | None) -> SubTaskParameters | None:
-    """Validate a sub task parameters JSON blob for the given task type."""
+    """Validate a sub task parameters JSON blob for the given task type.
+
+    Unreadable payloads (including pre-streams MEDIA_DOWNLOAD JSON) are skipped.
+    """
     if raw is None:
         return None
     try:
@@ -101,5 +104,5 @@ def parse_sub_task_parameters(task_type: TaskType, raw: dict[str, Any] | None) -
         logger.warning(f"No sub task parameters model for type {task_type}")
         return None
     except ValidationError:
-        logger.warning(f"Invalid sub task parameters for type {task_type}: {raw!r}", exc_info=True)
+        logger.debug(f"Skipping unreadable sub task parameters for type {task_type}")
         return None

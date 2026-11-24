@@ -22,8 +22,6 @@ def _format_validation_errors(error: ValidationError) -> list[str]:
 
 def _merge_settings(current: AppSettings, body: UpdateAppSettingsRequest) -> AppSettings:
     data = current.model_dump()
-    if body.plugins is not None:
-        data["plugins"] = {**data["plugins"], **body.plugins.model_dump(exclude_none=True)}
     if body.auth is not None:
         data["auth"] = {**data["auth"], **body.auth.model_dump(exclude_none=True)}
     if body.download is not None:
@@ -43,7 +41,7 @@ class SettingsService:
 
     def update_app_settings(self, body: UpdateAppSettingsRequest) -> AppSettings:
         """Validate and persist application settings."""
-        if body.plugins is None and body.auth is None and body.download is None:
+        if body.auth is None and body.download is None:
             raise SettingsValidationError(["At least one settings section must be provided"])
 
         try:
