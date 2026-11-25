@@ -1,12 +1,31 @@
+import re
 import secrets
 import string
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import jwt
 from pwdlib import PasswordHash
 
 from contenthive.config import settings
 from contenthive.settings.store import get_settings
+
+_COMMON_PASSWORDS_PATH = Path(__file__).with_name("common_passwords.txt")
+_CONSECUTIVE_CHARACTERS = re.compile(r"(.)\1{2}", re.DOTALL)
+
+
+def _load_common_passwords() -> frozenset[str]:
+    """Load the common-password list, ignoring blanks and source comments."""
+    passwords: set[str] = set()
+    for line in _COMMON_PASSWORDS_PATH.read_text(encoding="utf-8").splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        passwords.add(entry.casefold())
+    return frozenset(passwords)
+
+
+_COMMON_PASSWORDS = _load_common_passwords()
 
 
 class SecretManager:
@@ -34,27 +53,27 @@ class SecretManager:
         secret_file.chmod(0o600)
         return new_secret
 
-    # Punctuation accepted by generated passwords and documented as examples.
-    # Validation accepts any printable, non-whitespace, non-alphanumeric character.
+    # Punctuation included in generated passwords. Validation does not require it.
     _SPECIAL_CHARS = "!@#$%^&*-_."
 
     @staticmethod
-    def password_strength(password: str) -> bool:
-        """Check if the password meets strength requirements.
+    def password_strength(password: str) -> str | None:
+        """Return a failure reason when the password misses a requirement.
 
-        Requires ≥8 chars with at least one lowercase, one uppercase, one digit,
-        and one printable non-alphanumeric, non-whitespace character
-        (hyphen, underscore, etc. all count; spaces/control chars do not).
+        Requires at least 8 characters, one letter, and one digit. Rejects three
+        or more identical characters in a row, and exact case-insensitive matches
+        against the common-password list. Extra characters and punctuation are
+        allowed.
         """
-        return not (
-            len(password) < 8
-            or not any(c.islower() for c in password)
-            or not any(c.isupper() for c in password)
-            or not any(c.isdigit() for c in password)
-            or not any(
-                (not c.isalnum()) and c.isprintable() and not c.isspace() for c in password
-            )
-        )
+        if len(password) < 8:
+            return "Password must be at least 8 characters long"
+        if not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):
+            return "Password must include both letters and numbers"
+        if _CONSECUTIVE_CHARACTERS.search(password):
+            return "Password must not contain more than two identical characters in a row"
+        if password.casefold() in _COMMON_PASSWORDS:
+            return "Password is too common"
+        return None
 
     @staticmethod
     def generate_random_password(length: int = 12) -> str:
@@ -63,23 +82,21 @@ class SecretManager:
             length = 8
 
         special = SecretManager._SPECIAL_CHARS
-
-        # Ensure password contains at least one of each required character type
-        password_chars = [
-            secrets.choice(string.ascii_lowercase),  # At least one lowercase
-            secrets.choice(string.ascii_uppercase),  # At least one uppercase
-            secrets.choice(string.digits),  # At least one digit
-            secrets.choice(special),  # At least one special char
-        ]
-
-        # Fill the rest with random characters
         all_characters = string.ascii_letters + string.digits + special
-        password_chars += [secrets.choice(all_characters) for _ in range(length - 4)]
-
-        # Shuffle to avoid predictable pattern using secrets
-        secrets.SystemRandom().shuffle(password_chars)
-
-        return "".join(password_chars)
+        for _ in range(32):
+            # Keep generated passwords stronger than the minimum: mixed case and punctuation.
+            password_chars = [
+                secrets.choice(string.ascii_lowercase),
+                secrets.choice(string.ascii_uppercase),
+                secrets.choice(string.digits),
+                secrets.choice(special),
+            ]
+            password_chars += [secrets.choice(all_characters) for _ in range(length - 4)]
+            secrets.SystemRandom().shuffle(password_chars)
+            password = "".join(password_chars)
+            if SecretManager.password_strength(password) is None:
+                return password
+        raise RuntimeError("Failed to generate a password that meets strength requirements")
 
     def hash_password(self, password: str) -> str:
         """Hash a password using the recommended password hashing algorithm (e.g., Argon2)"""

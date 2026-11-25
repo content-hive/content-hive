@@ -83,7 +83,8 @@ curl -s "$BASE_URL/v1/system/health"
 
 | Code | Typical HTTP Status | Where | Meaning / Action |
 |------|---------------------|-------|------------------|
-| `SETUP_FAILED` | `400` | `/v1/setup` | Setup failed (admin exists, username conflict, weak password, etc.) |
+| `SETUP_FAILED` | `400` | `/v1/setup` | Setup failed (admin exists, username conflict, etc.) |
+| `REQUEST_VALIDATION_FAILED` | `422` | Endpoints with a body or query parameters | Request body or query parameters failed validation |
 | `AUTHENTICATION_FAILED` | `401` | `/v1/user/login` | Invalid username/password; verify credentials and account status |
 | `INVALID_CREDENTIALS` | `401` | Auth dependencies | Token invalid or expired; login again and refresh token |
 | `TASK_NOT_FOUND` | `404` | `/v1/task/*` | Task ID not found or not visible to current user |
@@ -98,5 +99,5 @@ curl -s "$BASE_URL/v1/system/health"
 | `LOG_READ_FAILED` | `500` | `/v1/system/logs` | Log file cannot be parsed or read |
 | `SETTINGS_VALIDATION_FAILED` | `400` | `/v1/system/settings` | Submitted application settings violate schema |
 | `PERSISTED_SETTINGS_INVALID` | `422` | `/v1/system/settings` | Stored application settings are invalid and cannot be read |
-| `USER_CREATION_FAILED` | `400` | `/v1/admin/users` | User create request invalid (duplicate username/password policy, etc.) |
+| `USER_CREATION_FAILED` | `400` | `/v1/admin/users` | User create request invalid (duplicate username, etc.) |
 | `ADMIN_PRIVILEGES_REQUIRED` | `403` | Admin-protected endpoints | Current user is not admin |

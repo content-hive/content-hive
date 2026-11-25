@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,6 +59,41 @@ class DetailedHTTPException(HTTPException):
             detail=response.model_dump(mode="json"),
             headers=headers,
         )
+
+
+class RequestValidationFailure(APIBaseModel):
+    """One request validation failure. `loc` is for clients; `message` is for display."""
+
+    loc: list[str | int] = Field(..., description="Where the invalid value was found")
+    message: str = Field(..., description="Validation message")
+
+
+def _request_validation_failures(exc: RequestValidationError) -> list[RequestValidationFailure]:
+    """Collect validation failures without echoing submitted input."""
+    failures: list[RequestValidationFailure] = []
+    for err in exc.errors():
+        message = str(err.get("msg", ""))
+        if not message:
+            continue
+        loc = [part if isinstance(part, int) else str(part) for part in (err.get("loc") or ())]
+        failures.append(RequestValidationFailure(loc=loc, message=message))
+    return failures
+
+
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return request validation failures in the standard API error envelope."""
+    failures = _request_validation_failures(exc)
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content=APIResponse(
+            status=ResponseStatus.ERROR,
+            error=ErrorDetail(
+                code="REQUEST_VALIDATION_FAILED",
+                message="; ".join(failure.message for failure in failures),
+                details={"errors": [failure.model_dump() for failure in failures]},
+            ),
+        ).model_dump(mode="json"),
+    )
 
 
 async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
