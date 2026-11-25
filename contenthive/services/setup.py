@@ -27,8 +27,8 @@ class SetupService:
         Raises:
             ValueError: If setup is complete, password is weak, or username/email conflicts.
         """
-        if not secret_manager.password_strength(password):
-            raise ValueError("Password does not meet strength requirements")
+        if message := secret_manager.password_strength(password):
+            raise ValueError(message)
 
         password_hash = secret_manager.hash_password(password)
         with UserDAO() as dao:

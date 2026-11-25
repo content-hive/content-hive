@@ -35,8 +35,8 @@ class UserService:
 
     def change_user_password(self, user_id: int, new_password: str) -> bool:
         """Change the password for a given user"""
-        if not secret_manager.password_strength(new_password):
-            raise ValueError("Password does not meet strength requirements")
+        if message := secret_manager.password_strength(new_password):
+            raise ValueError(message)
 
         with UserDAO() as dao:
             user = dao.get_user_by_id(user_id)

@@ -30,6 +30,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["contenthive"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"contenthive/core/common_passwords.txt" = "contenthive/core/common_passwords.txt"
+
 [tool.uv]
 package = true
 

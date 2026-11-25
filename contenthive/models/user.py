@@ -74,15 +74,8 @@ class CreateUserRequest(APIBaseModel):
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
-        if not secret_manager.password_strength(v):
-            raise PydanticCustomError(
-                "password_strength",
-                "Password must be at least 8 characters long and contain "
-                "at least one lowercase letter, one uppercase letter, "
-                "one digit, and one special character (any printable "
-                "non-alphanumeric, non-whitespace character; "
-                "e.g. !@#$%^&*-_.)",
-            )
+        if message := secret_manager.password_strength(v):
+            raise PydanticCustomError("password_strength", message)
         return v
 
 
@@ -166,15 +159,8 @@ class ChangePasswordRequest(APIBaseModel):
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
-        if not secret_manager.password_strength(v):
-            raise PydanticCustomError(
-                "password_strength",
-                "Password must be at least 8 characters long and contain "
-                "at least one lowercase letter, one uppercase letter, "
-                "one digit, and one special character (any printable "
-                "non-alphanumeric, non-whitespace character; "
-                "e.g. !@#$%^&*-_.)",
-            )
+        if message := secret_manager.password_strength(v):
+            raise PydanticCustomError("password_strength", message)
         return v
 
 
