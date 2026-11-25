@@ -2,6 +2,7 @@ import mimetypes
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 
@@ -11,7 +12,11 @@ from contenthive.core.restart import RestartManager, RestartType, set_restart_ma
 from contenthive.core.server_id import get_server_id, init_server_id
 from contenthive.database.database import initialize_db
 from contenthive.logger import logger, setup_file_logging
-from contenthive.models.api import DetailedHTTPException, http_exception_handler
+from contenthive.models.api import (
+    DetailedHTTPException,
+    http_exception_handler,
+    request_validation_exception_handler,
+)
 from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
 from contenthive.routers import admin, content, plugin, setup, system, tag, task, user
 from contenthive.services.setup import setup_service
@@ -97,6 +102,7 @@ class ServerIdHeaderMiddleware:
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
 
 app.add_exception_handler(DetailedHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
 
 app.include_router(task.router_v1)
 app.include_router(content.router_v1)

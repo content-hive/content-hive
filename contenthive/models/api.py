@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,6 +59,38 @@ class DetailedHTTPException(HTTPException):
             detail=response.model_dump(mode="json"),
             headers=headers,
         )
+
+
+_VALUE_ERROR_PREFIX = "Value error, "
+
+
+def _format_request_validation_errors(exc: RequestValidationError) -> list[str]:
+    """Format request validation errors without echoing submitted input."""
+    formatted: list[str] = []
+    for err in exc.errors():
+        loc = err.get("loc") or ()
+        location = "/".join(str(part) for part in loc)
+        msg = err.get("msg", "")
+        if msg.startswith(_VALUE_ERROR_PREFIX):
+            msg = msg.removeprefix(_VALUE_ERROR_PREFIX)
+        formatted.append(f"{location}: {msg}" if location else msg)
+    return formatted
+
+
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return request validation failures in the standard API error envelope."""
+    errors = _format_request_validation_errors(exc)
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content=APIResponse(
+            status=ResponseStatus.ERROR,
+            error=ErrorDetail(
+                code="REQUEST_VALIDATION_FAILED",
+                message="; ".join(errors),
+                details={"errors": errors},
+            ),
+        ).model_dump(mode="json"),
+    )
 
 
 async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:

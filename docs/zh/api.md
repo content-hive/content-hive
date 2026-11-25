@@ -83,7 +83,8 @@ curl -s "$BASE_URL/v1/system/health"
 
 | 错误码 | 常见 HTTP 状态码 | 位置 | 含义 / 处理建议 |
 |--------|------------------|------|-----------------|
-| `SETUP_FAILED` | `400` | `/v1/setup` | 初始化失败（管理员已存在、用户名冲突、密码不符合要求等） |
+| `SETUP_FAILED` | `400` | `/v1/setup` | 初始化失败（管理员已存在、用户名冲突等） |
+| `REQUEST_VALIDATION_FAILED` | `422` | 带请求体或查询参数的接口 | 请求体或查询参数未通过校验 |
 | `AUTHENTICATION_FAILED` | `401` | `/v1/user/login` | 用户名或密码错误；检查凭据与账号状态 |
 | `INVALID_CREDENTIALS` | `401` | 鉴权依赖 | 令牌无效或过期；重新登录并刷新令牌 |
 | `TASK_NOT_FOUND` | `404` | `/v1/task/*` | 任务 ID 不存在，或当前用户无权访问 |
@@ -98,5 +99,5 @@ curl -s "$BASE_URL/v1/system/health"
 | `LOG_READ_FAILED` | `500` | `/v1/system/logs` | 日志文件读取或解析失败 |
 | `SETTINGS_VALIDATION_FAILED` | `400` | `/v1/system/settings` | 提交的应用设置不符合 schema |
 | `PERSISTED_SETTINGS_INVALID` | `422` | `/v1/system/settings` | 已存储的应用设置无效，无法读取 |
-| `USER_CREATION_FAILED` | `400` | `/v1/admin/users` | 创建用户请求不合法（重名、密码策略等） |
+| `USER_CREATION_FAILED` | `400` | `/v1/admin/users` | 创建用户请求不合法（重名等） |
 | `ADMIN_PRIVILEGES_REQUIRED` | `403` | 管理员受保护接口 | 当前用户不是管理员 |
