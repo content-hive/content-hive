@@ -13,6 +13,7 @@ from contenthive.core.server_id import get_server_id, init_server_id
 from contenthive.database.database import initialize_db
 from contenthive.logger import logger, setup_file_logging
 from contenthive.models.api import (
+    APIResponse,
     DetailedHTTPException,
     http_exception_handler,
     request_validation_exception_handler,
@@ -99,7 +100,17 @@ class ServerIdHeaderMiddleware:
         await self.app(scope, receive, send_with_server_id)
 
 
-app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
+app = FastAPI(
+    title=APP_NAME,
+    version=APP_VERSION,
+    lifespan=lifespan,
+    responses={
+        422: {
+            "model": APIResponse[None],
+            "description": "Request validation failed",
+        }
+    },
+)
 
 app.add_exception_handler(DetailedHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, request_validation_exception_handler)

@@ -11,7 +11,7 @@ from contenthive.config import settings
 from contenthive.settings.store import get_settings
 
 _COMMON_PASSWORDS_PATH = Path(__file__).with_name("common_passwords.txt")
-_CONSECUTIVE_CHARACTERS = re.compile(r"(.)\1{2}")
+_CONSECUTIVE_CHARACTERS = re.compile(r"(.)\1{2}", re.DOTALL)
 
 
 def _load_common_passwords() -> frozenset[str]:
