@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from pydantic import field_validator
+from pydantic_core import PydanticCustomError
 
 from contenthive.core.secret import secret_manager
 from contenthive.models.api import APIBaseModel
@@ -74,12 +75,13 @@ class CreateUserRequest(APIBaseModel):
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
         if not secret_manager.password_strength(v):
-            raise ValueError(
+            raise PydanticCustomError(
+                "password_strength",
                 "Password must be at least 8 characters long and contain "
                 "at least one lowercase letter, one uppercase letter, "
                 "one digit, and one special character (any printable "
                 "non-alphanumeric, non-whitespace character; "
-                "e.g. !@#$%^&*-_.)"
+                "e.g. !@#$%^&*-_.)",
             )
         return v
 
@@ -165,12 +167,13 @@ class ChangePasswordRequest(APIBaseModel):
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets strength requirements"""
         if not secret_manager.password_strength(v):
-            raise ValueError(
+            raise PydanticCustomError(
+                "password_strength",
                 "Password must be at least 8 characters long and contain "
                 "at least one lowercase letter, one uppercase letter, "
                 "one digit, and one special character (any printable "
                 "non-alphanumeric, non-whitespace character; "
-                "e.g. !@#$%^&*-_.)"
+                "e.g. !@#$%^&*-_.)",
             )
         return v
 

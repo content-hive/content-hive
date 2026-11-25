@@ -61,9 +61,6 @@ class DetailedHTTPException(HTTPException):
         )
 
 
-_VALUE_ERROR_PREFIX = "Value error, "
-
-
 def _format_request_validation_errors(exc: RequestValidationError) -> list[str]:
     """Format request validation errors without echoing submitted input."""
     formatted: list[str] = []
@@ -71,8 +68,6 @@ def _format_request_validation_errors(exc: RequestValidationError) -> list[str]:
         loc = err.get("loc") or ()
         location = "/".join(str(part) for part in loc)
         msg = err.get("msg", "")
-        if msg.startswith(_VALUE_ERROR_PREFIX):
-            msg = msg.removeprefix(_VALUE_ERROR_PREFIX)
         formatted.append(f"{location}: {msg}" if location else msg)
     return formatted
 
