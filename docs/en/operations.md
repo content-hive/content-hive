@@ -31,7 +31,7 @@ tar -xzf content-hive-backup-YYYYMMDD-HHMMSS.tar.gz
 docker compose up -d
 ```
 
-For image rollback, pin a previously released version tag in `docker-compose.yml` (for example `ghcr.io/content-hive/content-hive:1.2.3`) and run `docker compose up -d` again. Release tags are produced from Git tags matching `v*` in CI/CD.
+For image rollback, pin a previously released version tag in `docker-compose.yml` (for example `ghcr.io/content-hive/content-hive:1.2.3`) and run `docker compose up -d` again.
 
 ## Forgotten admin password
 
