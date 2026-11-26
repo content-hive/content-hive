@@ -369,7 +369,7 @@ youtube_parser:
 
 不返回状态、错误、版本、更新、预发布，也不返回服务器安装配置。
 
-未登录返回 `401 INVALID_CREDENTIALS`，账号未激活返回 `401 INACTIVE_USER`。
+没有 Bearer 令牌时返回 HTTP `401`，不使用统一错误体。Bearer 令牌无效时返回 `401 INVALID_CREDENTIALS`。账号未激活返回 `401 INACTIVE_USER`。
 
 ---
 

@@ -371,7 +371,7 @@ Each item has only:
 
 The response does not include state, errors, version, updates, pre-release tracking, or server install configuration.
 
-Unauthenticated requests return `401 INVALID_CREDENTIALS`. An inactive account returns `401 INACTIVE_USER`.
+Requests without a Bearer token return HTTP `401` without the unified error envelope. Invalid Bearer tokens return `401 INVALID_CREDENTIALS`. An inactive account returns `401 INACTIVE_USER`.
 
 ---
 
