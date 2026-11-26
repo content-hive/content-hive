@@ -159,7 +159,7 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 ## Docker & CI/CD
 
 - Image builds run when a GitHub Release is published. The workflow checks out `github.event.release.tag_name`
-- The tag must start with `v` (e.g., `v1.2.3`). The version is the tag without that prefix, passed into the image via the `APP_VERSION` build-arg
+- The tag must start with `v` (e.g., `v1.2.3`). The version is the tag without that prefix, passed into the image via the `APP_VERSION` build-arg. It must be a valid Docker tag: ASCII letters, digits, `_`, `.`, and `-`, at most 128 characters, and not starting with `.` or `-`. `+` and `!` are rejected
 - The pre-release checkbox must match the version: a final release (`vX.Y.Z`) also pushes `:latest`; a pre-release such as `vX.Y.Z-beta-N` also pushes `:beta`. Dev versions are local-only and fail the workflow
 - Images are pushed to both **GHCR** (`ghcr.io`) and **Docker Hub**
 ---

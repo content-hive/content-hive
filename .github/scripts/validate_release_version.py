@@ -1,13 +1,18 @@
 """Check a GitHub Release tag against its pre-release checkbox.
 
 Reads ``RELEASE_TAG`` and ``RELEASE_PRERELEASE`` from the environment and appends
-``VERSION`` and ``CHANNEL`` to ``GITHUB_OUTPUT``. Dev versions are rejected.
+``VERSION`` and ``CHANNEL`` to ``GITHUB_OUTPUT``. Dev versions and versions that
+are not valid Docker tags are rejected.
 """
 
 import os
+import re
 import sys
 
 from packaging.version import InvalidVersion, Version
+
+# Docker tag: ASCII letter, digit, or underscore, then up to 127 of those plus "." and "-".
+_DOCKER_TAG = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 
 
 def main() -> None:
@@ -29,6 +34,9 @@ def main() -> None:
         if prerelease:
             sys.exit(f"pre-release checkbox is set, but {raw} is a final version")
         sys.exit(f"pre-release checkbox is unset, but {raw} is a pre-release version")
+
+    if _DOCKER_TAG.fullmatch(raw) is None:
+        sys.exit(f"version {raw!r} is not a valid Docker tag")
 
     channel = "beta" if parsed.is_prerelease else "latest"
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
