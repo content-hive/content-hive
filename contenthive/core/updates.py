@@ -15,6 +15,7 @@ from contenthive.const import APP_VERSION
 from contenthive.logger import logger
 
 RELEASES_URL = "https://api.github.com/repos/content-hive/content-hive/releases?per_page=30"
+MAX_RELEASE_PAGES = 10
 CHECK_INTERVAL_SECONDS = 6 * 60 * 60
 
 
@@ -91,25 +92,33 @@ class CoreUpdateChecker:
         return self._offer
 
     async def _fetch_releases(self) -> list[Any]:
-        """Download the recent GitHub Releases for this repository."""
+        """Download GitHub Releases, following pagination up to MAX_RELEASE_PAGES."""
         timeout = aiohttp.ClientTimeout(total=30)
         headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": "content-hive",
         }
+        releases: list[Any] = []
+        url: str | None = RELEASES_URL
         try:
-            async with (
-                aiohttp.ClientSession(timeout=timeout, trust_env=True) as session,
-                session.get(RELEASES_URL, headers=headers) as response,
-            ):
-                if response.status != 200:
-                    raise RuntimeError(f"GitHub releases request failed: HTTP {response.status}")
-                data = await response.json(content_type=None)
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+                for page in range(MAX_RELEASE_PAGES):
+                    if url is None:
+                        break
+                    async with session.get(url, headers=headers) as response:
+                        if response.status != 200:
+                            raise RuntimeError(f"GitHub releases request failed: HTTP {response.status}")
+                        data = await response.json(content_type=None)
+                        if not isinstance(data, list):
+                            raise RuntimeError("GitHub releases response is not a list")
+                        releases.extend(data)
+                        next_link = response.links.get("next")
+                        url = next_link.get("url") if next_link else None
+                    if url is not None and page == MAX_RELEASE_PAGES - 1:
+                        logger.warning("Stopped after %s GitHub release pages", MAX_RELEASE_PAGES)
         except (aiohttp.ClientError, TimeoutError) as exc:
             raise RuntimeError(f"GitHub releases request failed: {exc}") from exc
-        if not isinstance(data, list):
-            raise RuntimeError("GitHub releases response is not a list")
-        return data
+        return releases
 
     async def refresh(self) -> None:
         """Fetch releases and replace the cache. A failed fetch leaves the cache empty."""
