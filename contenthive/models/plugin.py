@@ -98,6 +98,34 @@ class PluginListResponse(APIBaseModel):
     plugins: dict[str, PluginInfo] = Field(default_factory=dict, description="Plugin status map keyed by domain")
 
 
+class ParsePluginParameter(APIBaseModel):
+    """One parameter a plugin accepts for a single parse.
+
+    No plugin declares any yet. ``ParsePlugin.parameters`` stays empty until plugins
+    publish per-parse parameter specs. Add fields here without changing ``GET /v1/task/plugins``.
+    """
+
+
+class ParsePlugin(APIBaseModel):
+    """A parser plugin an active user can choose when creating a parse task."""
+
+    domain: str = Field(..., description="Plugin domain. Pass this as plugin_id when creating a parse task")
+    name: str = Field(..., description="Plugin display name")
+    parameters: list[ParsePluginParameter] = Field(
+        default_factory=list,
+        description="Parameters this plugin accepts for one parse. Always empty until plugins declare them",
+    )
+
+
+class ParsePluginListResponse(APIBaseModel):
+    """Response for GET /v1/task/plugins."""
+
+    plugins: list[ParsePlugin] = Field(
+        default_factory=list,
+        description="Enabled plugins that registered can_parse, sorted by domain",
+    )
+
+
 class ReloadResponse(APIBaseModel):
     """Response model for plugin reload operation"""
 

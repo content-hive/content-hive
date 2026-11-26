@@ -10,13 +10,29 @@ from contenthive.models.api import (
 )
 from contenthive.models.content import PaginatedResponse
 from contenthive.models.enumerates import OperationType, ResponseStatus, TaskStatus
+from contenthive.models.plugin import ParsePluginListResponse
 from contenthive.models.system import CursorPaginatedResponse
 from contenthive.models.task import MainTaskInfo, TaskCreateRequest
 from contenthive.models.user import UserModel
 from contenthive.routers.user import get_current_active_user
+from contenthive.services.plugin import plugin_service
 from contenthive.services.task import task_service
 
 router_v1 = APIRouter(prefix="/v1/task", tags=["task"])
+
+
+@router_v1.get("/plugins", response_model=APIResponse[ParsePluginListResponse])
+async def list_parse_plugins(
+    current_user: Annotated[UserModel, Depends(get_current_active_user)],
+) -> APIResponse[ParsePluginListResponse]:
+    """List enabled parser plugins the current user can choose when creating a task.
+
+    Each item has domain (pass as plugin_id), display name, and parameters.
+    parameters is always an empty list until plugins declare per-parse parameters.
+    Disabled, failed, and non-parser plugins are omitted. Operational status,
+    versions, and server config are not included.
+    """
+    return APIResponse(status=ResponseStatus.SUCCESS, data=plugin_service.list_parse_plugins())
 
 
 @router_v1.post("/parser", response_model=APIResponse[MainTaskInfo])

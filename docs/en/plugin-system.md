@@ -306,6 +306,7 @@ Encapsulates plugin management operations for the HTTP router layer.
 | Method | Description |
 |--------|-------------|
 | `list_plugins()` | Returns state, version, errors, and update availability for all discovered plugins |
+| `list_parse_plugins()` | Returns plugins that are enabled and registered `can_parse`, with only `domain`, `name`, and an empty `parameters` list. Used by `GET /v1/task/plugins`. Does not read config |
 | `list_available()` | Fetches the catalog, merges with local install state and release tracks, returns all catalog plugins |
 | `check_updates()` | Queries catalog versions on each plugin's track; returns current vs. latest for each plugin |
 | `update_plugins(domains)` | Installs or updates plugins from their GitHub Releases, then reloads each one. A disabled plugin stays disabled. A new plugin is registered from its manifest first |
@@ -346,6 +347,31 @@ All endpoints require admin privileges (Bearer Token). Route prefix: `/v1/plugin
 | `DELETE` | `/v1/plugins/{domain}` | Delete a plugin (unload + remove files) |
 | `GET` | `/v1/plugins/{domain}/config` | Get plugin config schema and current values |
 | `PUT` | `/v1/plugins/{domain}/config` | Update plugin config fields |
+
+---
+
+## Parser List for Signed-in Users
+
+`GET /v1/task/plugins` lives on the task router and is available to any signed-in user with an active account. Admin privileges are not required. Clients use it to choose a plugin when creating a parse task, and later to read the parameters that plugin accepts for one parse. The path is `/plugins`, separate from `GET /v1/task/parser/{task_id}` and from the admin `/v1/plugins` routes.
+
+A plugin is included only when both are true:
+
+- Its state is enabled (`ENABLED`)
+- It has registered `can_parse`
+
+Disabled plugins are removed from `manager.services` and do not appear. Plugins that failed to enable (`FAILED`) and plugins that did not register `can_parse` are also omitted. The list is empty when the plugin manager is not yet initialized. Results are sorted by `domain`.
+
+Each item has only:
+
+| Field | Description |
+|-------|-------------|
+| `domain` | Pass this as `plugin_id` when creating a task |
+| `name` | Display name from the manifest |
+| `parameters` | Parameters accepted for one parse. Always an empty list today. Does not include `CONFIG_SCHEMA` fields or current values |
+
+The response does not include state, errors, version, updates, pre-release tracking, or server install configuration.
+
+Unauthenticated requests return `401 INVALID_CREDENTIALS`. An inactive account returns `401 INACTIVE_USER`.
 
 ---
 
