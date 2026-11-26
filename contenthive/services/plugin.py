@@ -17,6 +17,8 @@ from contenthive.models.plugin import (
     AvailablePluginsResponse,
     CheckConfigResponse,
     CheckUpdatesResponse,
+    ParsePlugin,
+    ParsePluginListResponse,
     PluginConfigResponse,
     PluginInfo,
     PluginListResponse,
@@ -361,6 +363,32 @@ class PluginService:
                 plugin_status[domain] = self._to_plugin_info(plugin_manager, domain, record, prerelease_domains)
 
         return PluginListResponse(plugins=plugin_status)
+
+    def list_parse_plugins(self) -> ParsePluginListResponse:
+        """Return enabled parser plugins for signed-in users.
+
+        Includes only plugins whose state is ENABLED and that registered ``can_parse``.
+        Disabled plugins are removed from the service registry and are omitted.
+        Failed plugins stay omitted even if ``can_parse`` was registered before setup failed.
+        ``parameters`` is always an empty list. This does not read CONFIG_SCHEMA or plugins.yaml.
+
+        Returns:
+            ParsePluginListResponse sorted by domain. Empty when the plugin manager
+            is not yet initialized.
+        """
+        plugin_manager = get_plugin_manager()
+        if plugin_manager is None:
+            return ParsePluginListResponse(plugins=[])
+
+        plugins: list[ParsePlugin] = []
+        for domain in sorted(plugin_manager.services):
+            if "can_parse" not in plugin_manager.services[domain]:
+                continue
+            record = plugin_manager.plugins.get(domain)
+            if record is None or record.state != PluginState.ENABLED:
+                continue
+            plugins.append(ParsePlugin(domain=domain, name=record.name))
+        return ParsePluginListResponse(plugins=plugins)
 
     def get_plugin(self, domain: str) -> PluginStatusResponse:
         """Return metadata and runtime state for one installed plugin.

@@ -4,7 +4,7 @@ Interactive API documentation is available at `http://localhost:6123/docs` (Swag
 
 | Prefix | Description |
 |--------|-------------|
-| `/v1/task` | Submit URLs for parsing, check task status, cancel tasks |
+| `/v1/task` | Submit URLs for parsing, check task status, cancel tasks, and list plugins currently available for parsing |
 | `/v1/content` | Query parsed content, list platforms and authors |
 | `/v1/plugins` | Manage plugins (install, update, configure, enable/disable) |
 | `/v1/user` | User login, token refresh, profile, and password change |

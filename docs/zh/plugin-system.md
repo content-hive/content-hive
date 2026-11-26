@@ -304,6 +304,7 @@ youtube_parser:
 | 方法 | 说明 |
 |------|------|
 | `list_plugins()` | 返回所有已发现插件的状态、版本、错误信息及更新可用性 |
+| `list_parse_plugins()` | 返回当前启用且注册了 `can_parse` 的插件，只含 `domain`、`name` 和空的 `parameters`。供 `GET /v1/task/plugins` 使用，不读配置 |
 | `list_available()` | 拉取插件目录，合并本地安装状态和发布轨道，返回目录中所有插件 |
 | `check_updates()` | 按各插件的发布轨道查询目录版本，返回各插件当前版本与最新版本 |
 | `update_plugins(domains)` | 从插件的 GitHub Release 安装或更新，然后重载。禁用的插件保持 DISABLED。新插件先从 manifest 注册进内存 |
@@ -344,6 +345,31 @@ youtube_parser:
 | `DELETE` | `/v1/plugins/{domain}` | 删除插件（卸载 + 删除文件）|
 | `GET` | `/v1/plugins/{domain}/config` | 获取插件配置 Schema 及当前值 |
 | `PUT` | `/v1/plugins/{domain}/config` | 更新插件配置字段 |
+
+---
+
+## 已登录用户的解析插件列表
+
+`GET /v1/task/plugins` 挂在任务路由上，供已登录且账号有效的用户调用，不要求管理员。创建解析任务时用它选择插件；以后也会用它查看该插件这一次解析可接受的参数。路径用 `/plugins`，和 `GET /v1/task/parser/{task_id}` 分开，也不会进管理员的 `/v1/plugins`。
+
+只返回同时满足下面两点的插件：
+
+- 当前状态为启用（`ENABLED`）
+- 已注册 `can_parse`
+
+停用的插件会从 `manager.services` 移除，不会出现。启用失败（`FAILED`）、没有注册 `can_parse` 的插件也不会出现。插件管理器尚未初始化时返回空列表。结果按 `domain` 字母序排列。
+
+每项只有：
+
+| 字段 | 说明 |
+|------|------|
+| `domain` | 创建任务时传给 `plugin_id` |
+| `name` | 界面显示名，来自 manifest |
+| `parameters` | 这一次解析可接受的参数说明。目前固定为空列表，不含 `CONFIG_SCHEMA` 的字段和当前值 |
+
+不返回状态、错误、版本、更新、预发布，也不返回服务器安装配置。
+
+没有 Bearer 令牌时返回 HTTP `401`，不使用统一错误体。Bearer 令牌无效时返回 `401 INVALID_CREDENTIALS`。账号未激活返回 `401 INACTIVE_USER`。
 
 ---
 
