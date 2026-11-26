@@ -10,6 +10,7 @@ from contenthive.config import ensure_directories, settings
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartManager, RestartType, set_restart_manager
 from contenthive.core.server_id import get_server_id, init_server_id
+from contenthive.core.updates import start_core_update_checks, stop_core_update_checks
 from contenthive.database.database import initialize_db
 from contenthive.logger import logger, setup_file_logging
 from contenthive.models.api import (
@@ -70,11 +71,13 @@ async def lifespan(app: FastAPI):
         logger.warning("Plugins loading skipped (safe mode)")
 
     await task_queue.start()
+    start_core_update_checks()
 
     logger.info("Application started successfully.")
 
     yield
 
+    await stop_core_update_checks()
     await task_queue.stop()
     await shutdown_plugins()
     logger.info("Shutting down application.")
