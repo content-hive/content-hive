@@ -2,7 +2,7 @@
 
 **Prerequisites:** Docker
 
-Images are published to GitHub Container Registry and Docker Hub on every tagged release.
+Images are published to GitHub Container Registry and Docker Hub.
 
 ```yaml
 services:

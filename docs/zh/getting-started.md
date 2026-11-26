@@ -2,7 +2,7 @@
 
 **前置条件：** Docker
 
-每次打 tag 发布时，镜像会同步推送到 GitHub Container Registry 和 Docker Hub。
+镜像发布在 GitHub Container Registry 和 Docker Hub。
 
 ```yaml
 services:
