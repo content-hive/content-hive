@@ -31,7 +31,7 @@ tar -xzf content-hive-backup-YYYYMMDD-HHMMSS.tar.gz
 docker compose up -d
 ```
 
-如需镜像版本回滚，可在 `docker-compose.yml` 中将镜像固定到已发布的历史版本标签（例如 `ghcr.io/content-hive/content-hive:1.2.3`），然后再次执行 `docker compose up -d`。CI/CD 由匹配 `v*` 的 Git tag 触发发布，镜像标签使用去掉 `v` 前缀后的版本号。
+如需镜像版本回滚，可在 `docker-compose.yml` 中将镜像固定到已发布的历史版本标签（例如 `ghcr.io/content-hive/content-hive:1.2.3`），然后再次执行 `docker compose up -d`。
 
 ## 忘记 admin 密码
 
