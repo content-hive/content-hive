@@ -281,15 +281,16 @@ youtube_parser:
 ```
 1. 创建 PluginContext 和 PluginManager，注入 HA 风格方法
 2. async_discover()        并发扫描本地 plugins/ 目录
-3. async_check_updates()   轻量检查插件目录，日志记录可用更新和新插件（不自动安装）
-4. 读取 plugins.yaml
-5. for each plugin:
+3. 读取 plugins.yaml
+4. for each plugin:
    ├── async_setup
    ├── [setup 失败] → 状态保持 FAILED
    ├── [disabled: true] → state = DISABLED，模块保持加载，不建 entry
    └── async_setup_entry
-6. 汇总日志：X/Y enabled
+5. 汇总日志：X/Y enabled
 ```
+
+插件加载结束后（安全模式除外）启动后台检查：立刻调用 `async_check_updates()`，之后每 6 小时再查一次。只写日志并刷新内存缓存，不自动安装。目录拉取失败时保留上次缓存；还没有成功检查过时缓存仍为空。应用关闭时取消这个任务。`GET /v1/plugins/check-updates` 和切换 `prerelease` 仍会立即检查。
 
 #### `shutdown_plugins()`
 

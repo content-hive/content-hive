@@ -19,7 +19,12 @@ from contenthive.models.api import (
     http_exception_handler,
     request_validation_exception_handler,
 )
-from contenthive.plugins.startup import load_plugins_on_startup, shutdown_plugins
+from contenthive.plugins.startup import (
+    load_plugins_on_startup,
+    shutdown_plugins,
+    start_plugin_update_checks,
+    stop_plugin_update_checks,
+)
 from contenthive.routers import admin, content, plugin, setup, system, tag, task, user
 from contenthive.services.setup import setup_service
 from contenthive.services.task_queue import task_queue
@@ -67,6 +72,7 @@ async def lifespan(app: FastAPI):
             logger.exception("Plugin loading timed out; continuing without plugins")
         except Exception:
             logger.exception("Plugin loading failed; continuing without plugins")
+        start_plugin_update_checks()
     else:
         logger.warning("Plugins loading skipped (safe mode)")
 
@@ -78,6 +84,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await stop_core_update_checks()
+    await stop_plugin_update_checks()
     await task_queue.stop()
     await shutdown_plugins()
     logger.info("Shutting down application.")

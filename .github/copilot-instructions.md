@@ -163,6 +163,7 @@ async def async_unload_entry(context: PluginContext, entry: PluginEntryData) -> 
 - The pre-release checkbox must match the version: a final release (`vX.Y.Z`) also pushes `:latest`; a pre-release such as `vX.Y.Z-beta-N` also pushes `:beta`. Dev versions are local-only and fail the workflow
 - Images are pushed to both **GHCR** (`ghcr.io`) and **Docker Hub**
 - The running server checks GitHub Releases every 6 hours and fills health `update_available` from that cache. A failed background check leaves the cache empty, so `update_available` is null. Admins can call `GET /v1/system/check-updates` to check immediately; that response includes `release_notes`. A failed manual check keeps the previous cache and returns 502
+- After plugins finish loading, the server checks the plugin catalog immediately and then every 6 hours. Health `plugin_updates_available` reads that cache. A failed check keeps the previous cache. The check does not install updates. Safe mode skips it
 ---
 
 ## Directory Conventions
