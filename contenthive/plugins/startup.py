@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import suppress
+
 from contenthive.config import settings
 from contenthive.logger import logger
 from contenthive.plugins.config import (
@@ -13,29 +16,15 @@ from contenthive.plugins.manager import (
 )
 from contenthive.plugins.registry import PluginState
 
+CHECK_INTERVAL_SECONDS = 6 * 60 * 60
 
-async def load_plugins_on_startup():
-    """
-    Load and enable plugins on application startup using HA-style workflow.
-    """
-    # Create plugin context
-    context = PluginContext(logger=logger)
 
-    # Create plugin manager with context
-    plugin_manager = PluginManager(settings.plugins_dir, context, deps_dir=settings.plugins_deps_dir)
-    set_plugin_manager(plugin_manager)
+async def check_plugin_updates() -> None:
+    """Fetch the plugin catalog and log offers. A failed fetch leaves the cache unchanged."""
+    plugin_manager = get_plugin_manager()
+    if plugin_manager is None:
+        return
 
-    # Inject HA-style methods into context for plugins to use
-    context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
-    context.async_unload_platforms = plugin_manager.async_unload_platforms
-    context.register_service = plugin_manager.register_service
-    context.get_config = plugin_manager.get_config
-    context.save_config = plugin_manager.save_config
-
-    # Discover locally installed plugins
-    await plugin_manager.async_discover()
-
-    # Fetch the plugin catalog and compare — no archive download, lightweight check only
     try:
         check_results = await plugin_manager.async_check_updates()
         installed_domains = set(plugin_manager.plugins)
@@ -61,6 +50,72 @@ async def load_plugins_on_startup():
             logger.debug("All plugins are up to date")
     except Exception:
         logger.warning("Failed to check for plugin updates from the plugin catalog", exc_info=True)
+
+
+class PluginUpdateChecker:
+    """Refresh cached plugin updates after plugins load, then every six hours."""
+
+    def __init__(self) -> None:
+        self._task: asyncio.Task[None] | None = None
+
+    async def _run(self) -> None:
+        while True:
+            await check_plugin_updates()
+            await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+
+    def start(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._run())
+
+    async def stop(self) -> None:
+        if self._task is None:
+            return
+        self._task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._task
+        self._task = None
+
+
+_checker: PluginUpdateChecker | None = None
+
+
+def start_plugin_update_checks() -> None:
+    """Start the background catalog check. The first fetch does not block plugin setup."""
+    global _checker
+    if get_plugin_manager() is None:
+        return
+    _checker = PluginUpdateChecker()
+    _checker.start()
+
+
+async def stop_plugin_update_checks() -> None:
+    """Cancel the background catalog check."""
+    global _checker
+    if _checker is not None:
+        await _checker.stop()
+        _checker = None
+
+
+async def load_plugins_on_startup():
+    """
+    Load and enable plugins on application startup using HA-style workflow.
+    """
+    # Create plugin context
+    context = PluginContext(logger=logger)
+
+    # Create plugin manager with context
+    plugin_manager = PluginManager(settings.plugins_dir, context, deps_dir=settings.plugins_deps_dir)
+    set_plugin_manager(plugin_manager)
+
+    # Inject HA-style methods into context for plugins to use
+    context.async_forward_entry_setup = plugin_manager.async_forward_entry_setup
+    context.async_unload_platforms = plugin_manager.async_unload_platforms
+    context.register_service = plugin_manager.register_service
+    context.get_config = plugin_manager.get_config
+    context.save_config = plugin_manager.save_config
+
+    # Discover locally installed plugins
+    await plugin_manager.async_discover()
 
     # Setup every discovered plugin so CONFIG_SCHEMA is available, then activate
     # the ones that are not disabled.

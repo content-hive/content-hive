@@ -6,12 +6,13 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, status
 from contenthive.const import APP_NAME, APP_VERSION
 from contenthive.core.restart import RestartType, get_restart_manager
 from contenthive.core.server_id import get_server_id
-from contenthive.core.updates import get_core_update
+from contenthive.core.updates import CoreUpdateCheckerNotInitialized, check_core_update, get_core_update
 from contenthive.logger import logger, query_logs
 from contenthive.models.api import APIResponse, DetailedHTTPException, ErrorDetail
 from contenthive.models.enumerates import ResponseStatus
 from contenthive.models.settings import UpdateAppSettingsRequest
 from contenthive.models.system import (
+    CoreUpdateCheckResponse,
     CursorPaginatedResponse,
     HealthResponse,
     LogEntry,
@@ -75,10 +76,44 @@ async def health_check() -> APIResponse[HealthResponse]:
             app=APP_NAME,
             version=APP_VERSION,
             update_available=core_update.latest_version if core_update else None,
-            release_notes=core_update.release_notes if core_update else None,
             plugin_updates_available=plugin_updates_available,
             setup_required=not setup_complete,
             server_id=server_id,
+        ),
+    )
+
+
+@router_v1.get("/check-updates", response_model=APIResponse[CoreUpdateCheckResponse])
+async def check_core_updates(
+    _: Annotated[UserModel, Depends(get_current_admin_user)],
+) -> APIResponse[CoreUpdateCheckResponse]:
+    """Check GitHub Releases for a newer Content Hive version (Admin only)."""
+    try:
+        core_update = await check_core_update()
+    except CoreUpdateCheckerNotInitialized as e:
+        raise DetailedHTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(
+                code="UPDATE_CHECKER_NOT_INITIALIZED",
+                message="Core update checker is not initialized",
+            ),
+        ) from e
+    except Exception as e:
+        logger.exception("Content Hive update check failed")
+        raise DetailedHTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=ErrorDetail(
+                code="UPDATE_CHECK_FAILED",
+                message=f"Failed to fetch GitHub releases: {e}",
+            ),
+        ) from e
+
+    return APIResponse(
+        status=ResponseStatus.SUCCESS,
+        data=CoreUpdateCheckResponse(
+            version=APP_VERSION,
+            update_available=core_update.latest_version if core_update else None,
+            release_notes=core_update.release_notes if core_update else None,
         ),
     )
 

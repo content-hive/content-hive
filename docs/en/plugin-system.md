@@ -283,15 +283,16 @@ youtube_parser:
 ```
 1. Create PluginContext and PluginManager; inject HA-style methods
 2. async_discover()        concurrently scans the local plugins/ directory
-3. async_check_updates()   lightweight catalog check; logs available updates (no auto-install)
-4. Load plugins.yaml
-5. For each plugin:
+3. Load plugins.yaml
+4. For each plugin:
    ├── async_setup
    ├── [setup failed] → state stays FAILED
    ├── [disabled: true] → state = DISABLED, module stays loaded, no entry
    └── async_setup_entry
-6. Summary log: X/Y enabled
+5. Summary log: X/Y enabled
 ```
+
+After plugins finish loading (except in safe mode), a background check calls `async_check_updates()` immediately and then every 6 hours. It only logs and refreshes the in-memory cache; it does not install updates. A failed catalog fetch keeps the previous cache. The cache stays empty until a check succeeds. Application shutdown cancels the task. `GET /v1/plugins/check-updates` and changing `prerelease` still check immediately.
 
 #### `shutdown_plugins()`
 

@@ -119,6 +119,7 @@ class PluginManager:
         # Update check cache: domain -> offer if update available, else None
         self._available_updates: dict[str, PluginUpdateOffer | None] = {}
         self._last_update_check: datetime | None = None
+        self._update_check_lock = asyncio.Lock()
 
     async def async_discover(self):
         """Discover plugins asynchronously from the plugins directory."""
@@ -341,6 +342,12 @@ class PluginManager:
         Raises:
             CatalogError: If the catalog could not be fetched
         """
+        async with self._update_check_lock:
+            return await self._check_updates_unlocked(catalog)
+
+    async def _check_updates_unlocked(
+        self, catalog: dict[str, CatalogPlugin] | None = None
+    ) -> dict[str, PluginUpdateOffer | None]:
         if catalog is None:
             catalog = await fetch_catalog()
         prerelease_domains = get_prerelease_domains()

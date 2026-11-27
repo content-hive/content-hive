@@ -24,13 +24,23 @@ class HealthResponse(APIBaseModel):
         None,
         description="Latest Content Hive version when a newer GitHub Release is available, otherwise null",
     )
+    plugin_updates_available: bool = Field(..., description="Whether any installed plugin has an update available")
+    setup_required: bool = Field(..., description="Whether initial admin setup is still required")
+    server_id: str = Field(..., description="Stable identifier for this deployment")
+
+
+class CoreUpdateCheckResponse(APIBaseModel):
+    """Response model for an admin core update check"""
+
+    version: str = Field(..., description="Running Content Hive version")
+    update_available: str | None = Field(
+        None,
+        description="Latest Content Hive version when a newer GitHub Release is available, otherwise null",
+    )
     release_notes: str | None = Field(
         None,
         description="Release notes for update_available when that release has a body, otherwise null",
     )
-    plugin_updates_available: bool = Field(..., description="Whether any installed plugin has an update available")
-    setup_required: bool = Field(..., description="Whether initial admin setup is still required")
-    server_id: str = Field(..., description="Stable identifier for this deployment")
 
 
 class StorageItemInfo(APIBaseModel):

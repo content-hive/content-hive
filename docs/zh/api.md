@@ -10,7 +10,7 @@
 | `/v1/user` | 用户登录、令牌刷新、个人资料、修改密码 |
 | `/v1/admin` | 管理员专属：用户管理 |
 | `/v1/setup` | 首次启动创建管理员 |
-| `/v1/system` | 健康检查、存储状态、日志查看、应用设置、应用重启 |
+| `/v1/system` | 健康检查、管理员核心更新检查、存储状态、日志查看、应用设置、应用重启 |
 
 说明：`/v1/user/token` 是 OAuth2 兼容端点，直接返回 `{ "access_token": "...", "token_type": "bearer" }`，不使用统一 `APIResponse` 包装。
 
@@ -79,6 +79,15 @@ curl -s -X GET "$BASE_URL/v1/task/parser/TASK_ID" \
 curl -s "$BASE_URL/v1/system/health"
 ```
 
+`update_available` 是缓存中的新版本号，没有则为 null。健康检查不返回 release notes。
+
+管理员可以立即刷新这份缓存。响应包含 `version`、`update_available` 和 `release_notes`：
+
+```bash
+curl -s "$BASE_URL/v1/system/check-updates" \
+  -H "Authorization: Bearer ACCESS_TOKEN"
+```
+
 ## 错误码速查表
 
 | 错误码 | 常见 HTTP 状态码 | 位置 | 含义 / 处理建议 |
@@ -99,5 +108,7 @@ curl -s "$BASE_URL/v1/system/health"
 | `LOG_READ_FAILED` | `500` | `/v1/system/logs` | 日志文件读取或解析失败 |
 | `SETTINGS_VALIDATION_FAILED` | `400` | `/v1/system/settings` | 提交的应用设置不符合 schema |
 | `PERSISTED_SETTINGS_INVALID` | `422` | `/v1/system/settings` | 已存储的应用设置无效，无法读取 |
+| `UPDATE_CHECK_FAILED` | `502` | `/v1/system/check-updates`、`/v1/plugins/check-updates` | 无法拉取 GitHub Releases 或插件目录 |
+| `UPDATE_CHECKER_NOT_INITIALIZED` | `500` | `/v1/system/check-updates` | 核心更新检查器尚未启动 |
 | `USER_CREATION_FAILED` | `400` | `/v1/admin/users` | 创建用户请求不合法（重名等） |
 | `ADMIN_PRIVILEGES_REQUIRED` | `403` | 管理员受保护接口 | 当前用户不是管理员 |
