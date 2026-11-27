@@ -1,6 +1,7 @@
 """Check GitHub Releases for a newer Content Hive version.
 
 The result is cached in memory. Health checks read the cache and do not call GitHub.
+Admins can refresh it through GET /v1/system/check-updates.
 """
 
 import asyncio
@@ -81,12 +82,17 @@ def select_core_update(releases: list[Any], current_version: str) -> CoreUpdate 
     return CoreUpdate(latest_version=best.version_str, release_notes=best.release_notes)
 
 
+class CoreUpdateCheckerNotInitialized(RuntimeError):
+    """Raised when a manual check runs before the background checker has started."""
+
+
 class CoreUpdateChecker:
-    """Refresh the cached core update on startup and every six hours."""
+    """Refresh the cached core update on startup, every six hours, and on demand."""
 
     def __init__(self) -> None:
         self._offer: CoreUpdate | None = None
         self._task: asyncio.Task[None] | None = None
+        self._lock = asyncio.Lock()
 
     def current(self) -> CoreUpdate | None:
         return self._offer
@@ -120,20 +126,32 @@ class CoreUpdateChecker:
             raise RuntimeError(f"GitHub releases request failed: {exc}") from exc
         return releases
 
+    async def _fetch_and_store(self, *, clear_on_failure: bool) -> CoreUpdate | None:
+        """Fetch releases and replace the cache. Only one fetch runs at a time."""
+        async with self._lock:
+            try:
+                releases = await self._fetch_releases()
+            except Exception:
+                if clear_on_failure:
+                    self._offer = None
+                raise
+            self._offer = select_core_update(releases, APP_VERSION)
+            if self._offer is None:
+                logger.debug("Content Hive is up to date")
+            else:
+                logger.info("Content Hive update available: %s → %s", APP_VERSION, self._offer.latest_version)
+            return self._offer
+
     async def refresh(self) -> None:
         """Fetch releases and replace the cache. A failed fetch leaves the cache empty."""
         try:
-            releases = await self._fetch_releases()
+            await self._fetch_and_store(clear_on_failure=True)
         except Exception:
             logger.warning("Failed to check for Content Hive updates", exc_info=True)
-            self._offer = None
-            return
 
-        self._offer = select_core_update(releases, APP_VERSION)
-        if self._offer is None:
-            logger.debug("Content Hive is up to date")
-        else:
-            logger.info("Content Hive update available: %s → %s", APP_VERSION, self._offer.latest_version)
+    async def check_now(self) -> CoreUpdate | None:
+        """Fetch releases and replace the cache. A failed fetch keeps the previous cache."""
+        return await self._fetch_and_store(clear_on_failure=False)
 
     async def _run(self) -> None:
         while True:
@@ -161,6 +179,16 @@ def get_core_update() -> CoreUpdate | None:
     if _checker is None:
         return None
     return _checker.current()
+
+
+async def check_core_update() -> CoreUpdate | None:
+    """Fetch GitHub Releases now and return the offer.
+
+    Updates the cache on success. A failed fetch keeps the previous cache and raises.
+    """
+    if _checker is None:
+        raise CoreUpdateCheckerNotInitialized("Core update checker is not initialized")
+    return await _checker.check_now()
 
 
 def start_core_update_checks() -> None:

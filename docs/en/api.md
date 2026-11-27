@@ -10,7 +10,7 @@ Interactive API documentation is available at `http://localhost:6123/docs` (Swag
 | `/v1/user` | User login, token refresh, profile, and password change |
 | `/v1/admin` | Admin-only: user management |
 | `/v1/setup` | First-time admin account creation |
-| `/v1/system` | Health check, storage stats, log viewer, application settings, application restart |
+| `/v1/system` | Health check, admin core update check, storage stats, log viewer, application settings, application restart |
 
 Note: `/v1/user/token` is an OAuth2 compatibility endpoint and returns `{ "access_token": "...", "token_type": "bearer" }` directly instead of the unified `APIResponse` envelope.
 
@@ -79,6 +79,15 @@ Poll the endpoint to observe updates. Live fields are cleared on process restart
 curl -s "$BASE_URL/v1/system/health"
 ```
 
+`update_available` is the cached newer version, or null. Health does not include release notes.
+
+Admins can refresh that cache immediately. The response includes `version`, `update_available`, and `release_notes`:
+
+```bash
+curl -s "$BASE_URL/v1/system/check-updates" \
+  -H "Authorization: Bearer ACCESS_TOKEN"
+```
+
 ## Error Code Quick Reference
 
 | Code | Typical HTTP Status | Where | Meaning / Action |
@@ -99,5 +108,7 @@ curl -s "$BASE_URL/v1/system/health"
 | `LOG_READ_FAILED` | `500` | `/v1/system/logs` | Log file cannot be parsed or read |
 | `SETTINGS_VALIDATION_FAILED` | `400` | `/v1/system/settings` | Submitted application settings violate schema |
 | `PERSISTED_SETTINGS_INVALID` | `422` | `/v1/system/settings` | Stored application settings are invalid and cannot be read |
+| `UPDATE_CHECK_FAILED` | `502` | `/v1/system/check-updates`, `/v1/plugins/check-updates` | GitHub releases or the plugin catalog could not be fetched |
+| `UPDATE_CHECKER_NOT_INITIALIZED` | `500` | `/v1/system/check-updates` | Core update checker has not started |
 | `USER_CREATION_FAILED` | `400` | `/v1/admin/users` | User create request invalid (duplicate username, etc.) |
 | `ADMIN_PRIVILEGES_REQUIRED` | `403` | Admin-protected endpoints | Current user is not admin |
