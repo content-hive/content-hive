@@ -99,7 +99,7 @@ async def check_core_updates(
             ),
         ) from e
     except Exception as e:
-        logger.warning(f"Content Hive update check failed: {e}")
+        logger.exception("Content Hive update check failed")
         raise DetailedHTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=ErrorDetail(
